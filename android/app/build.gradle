@@ -2,27 +2,23 @@ apply plugin: 'com.android.application'
 
 android {
     namespace = "com.indie.watchtime"
-    compileSdk = rootProject.ext.compileSdkVersion
+    compileSdk = 36  // Explicit, no root project ext
+    
     defaultConfig {
         applicationId "com.indie.watchtime"
-        minSdkVersion rootProject.ext.minSdkVersion
-        targetSdkVersion rootProject.ext.targetSdkVersion
+        minSdkVersion 24  // Capacitor minimum
+        targetSdkVersion 35  // Required for Play Store, August 2025+
         versionCode 1
         versionName "1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
-             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
-             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    
     buildTypes {
         release {
-            minifyEnabled false
-            // AGP 9 removed the non-optimized 'proguard-android.txt' default
-            // (it forced -dontoptimize, disabling R8). Use the optimize
-            // variant, which is R8-compatible. Evaluated at config time even
-            // though minifyEnabled is false, so it must be valid regardless.
+            minifyEnabled = true  // **Change to true for Play Store**
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
