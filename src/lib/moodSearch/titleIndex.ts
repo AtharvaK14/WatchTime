@@ -186,6 +186,78 @@ export async function buildTitleEmbeddings(
   return { embedded: done - failed, failed };
 }
 
+export interface EmbeddableTitle {
+  kind: "show" | "movie";
+  tmdbId: number;
+  name: string;
+  overview: string | null | undefined;
+}
+
+/**
+ * Resolves vectors for an arbitrary set of titles, embedding only what is not
+ * already cached, and writing new vectors back to the same cache.
+ *
+ * Used by mood DISCOVERY, where candidates come from TMDB and are mostly not
+ * in the library. They share the library's cache table on purpose: the key
+ * space is identical, so a title discovered today and added to the library
+ * tomorrow already has a warm vector, and a repeated search over an
+ * overlapping candidate pool costs nothing the second time.
+ *
+ * Titles with no usable overview are skipped rather than embedded on their
+ * name alone. For a library title that fallback is right (you already track
+ * it, so a weak vector beats none), but for a discovery candidate a
+ * name-only vector produces confident-looking nonsense for a title we know
+ * almost nothing about, which is worse than leaving it out.
+ */
+export async function ensureVectorsFor(
+  titles: EmbeddableTitle[],
+  onProgress?: ProgressCallback,
+  shouldStop?: () => boolean
+): Promise<Map<string, Float32Array>> {
+  const keys = titles.map((t) => embeddingCacheKey(t.kind, t.tmdbId));
+  const cached = await db.titleEmbeddings.bulkGet(keys);
+
+  const resolved = new Map<string, Float32Array>();
+  const pending: { title: EmbeddableTitle; key: string; text: string; hash: string }[] = [];
+
+  titles.forEach((title, i) => {
+    const key = keys[i];
+    if (resolved.has(key)) return; // duplicate in the input
+    const text = buildSourceText(title.name, title.overview);
+    const hash = sourceHash(text);
+    const hit = cached[i];
+    if (hit && hit.sourceHash === hash) {
+      resolved.set(key, hit.vector);
+      return;
+    }
+    if (!(title.overview ?? "").trim()) return; // nothing meaningful to embed
+    pending.push({ title, key, text, hash });
+  });
+
+  if (pending.length === 0) return resolved;
+
+  let done = 0;
+  onProgress?.({ phase: "embedding", done, total: pending.length });
+  for (const item of pending) {
+    if (shouldStop?.()) break;
+    try {
+      const vector = await embed(item.text);
+      resolved.set(item.key, vector);
+      await db.titleEmbeddings.put({
+        cacheKey: item.key,
+        kind: item.title.kind,
+        tmdbId: item.title.tmdbId,
+        vector,
+        sourceHash: item.hash,
+      });
+    } catch {
+      // Skipped for this search; retried next time it appears in a pool.
+    }
+    onProgress?.({ phase: "embedding", done: ++done, total: pending.length });
+  }
+  return resolved;
+}
+
 /** Every cached vector, keyed by `${kind}:${tmdbId}`, for the search pass. */
 export async function loadEmbeddingIndex(): Promise<Map<string, Float32Array>> {
   const rows = await db.titleEmbeddings.toArray();

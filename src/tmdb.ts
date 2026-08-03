@@ -61,12 +61,19 @@ export async function verifyApiKey(key: string): Promise<boolean> {
 
 // ---- Search ---------------------------------------------------------------
 
+// overview is returned by /search and /discover alike, but was not declared
+// here until mood discovery needed it: it is the text that gets embedded to
+// rank a candidate, and it is the only tone-bearing field these endpoints
+// return. Optional because TMDB gives an empty string (not null) for titles
+// with no summary, and older callers never asked for it.
 export interface TvSearchResult {
   id: number;
   name: string;
   first_air_date: string | null;
   poster_path: string | null;
   popularity: number;
+  overview?: string | null;
+  genre_ids?: number[];
 }
 
 export interface MovieSearchResult {
@@ -75,6 +82,8 @@ export interface MovieSearchResult {
   release_date: string | null;
   poster_path: string | null;
   popularity: number;
+  overview?: string | null;
+  genre_ids?: number[];
 }
 
 export async function searchTvShow(query: string): Promise<TvSearchResult[]> {
@@ -205,6 +214,75 @@ export async function discoverMovies(filters: DiscoverFilters): Promise<MovieSea
   if (filters.minRating) params["vote_average.gte"] = String(filters.minRating);
   const data = await tmdbGet<{ results: MovieSearchResult[] }>("/discover/movie", params);
   return data.results;
+}
+
+// ---- Keyword + discovery retrieval (mood discovery) -------------------------
+//
+// TMDB has no semantic search, so mood discovery cannot ask it for "slow burn
+// and unsettling" directly. Instead the query is turned into filters TMDB does
+// understand (keywords, genres, runtime), a candidate pool is fetched, and the
+// on-device model re-ranks that pool. See lib/moodSearch/discover.ts.
+
+export interface TmdbKeyword {
+  id: number;
+  name: string;
+}
+
+/**
+ * Resolves a phrase to TMDB keyword IDs.
+ *
+ * Keywords are the reason this retrieval path can express things genres
+ * cannot: TMDB tags titles with entries like "found footage" and "time loop",
+ * where the genre list only offers Horror. Returns an empty array rather than
+ * throwing, because keyword resolution is an optional precision boost and a
+ * miss must degrade to genre-only retrieval, not fail the search.
+ */
+export async function searchKeywords(query: string): Promise<TmdbKeyword[]> {
+  try {
+    const data = await tmdbGet<{ results: TmdbKeyword[] }>("/search/keyword", { query });
+    return Array.isArray(data.results) ? data.results : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface DiscoverQuery {
+  /** OR-ed together. TMDB treats a pipe-separated list as "any of". */
+  genreIds?: number[];
+  keywordIds?: number[];
+  /** Movies: total runtime. TV: per-episode runtime. */
+  maxRuntimeMinutes?: number | null;
+  minRuntimeMinutes?: number | null;
+  /** Suppresses titles with too few votes to have a meaningful summary. */
+  minVoteCount?: number;
+  page?: number;
+}
+
+function toDiscoverParams(q: DiscoverQuery): Record<string, string> {
+  const params: Record<string, string> = {
+    sort_by: "popularity.desc",
+    include_adult: "false",
+    page: String(q.page ?? 1),
+  };
+  // Pipe is OR, comma is AND. OR is correct here: a query matching several
+  // tags should widen the pool, not demand a title carry every one of them,
+  // which in practice returns nothing.
+  if (q.genreIds?.length) params.with_genres = q.genreIds.join("|");
+  if (q.keywordIds?.length) params.with_keywords = q.keywordIds.join("|");
+  if (q.maxRuntimeMinutes != null) params["with_runtime.lte"] = String(q.maxRuntimeMinutes);
+  if (q.minRuntimeMinutes != null) params["with_runtime.gte"] = String(q.minRuntimeMinutes);
+  if (q.minVoteCount) params["vote_count.gte"] = String(q.minVoteCount);
+  return params;
+}
+
+export async function discoverMoviesBy(q: DiscoverQuery): Promise<MovieSearchResult[]> {
+  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/discover/movie", toDiscoverParams(q));
+  return data.results ?? [];
+}
+
+export async function discoverTvBy(q: DiscoverQuery): Promise<TvSearchResult[]> {
+  const data = await tmdbGet<{ results: TvSearchResult[] }>("/discover/tv", toDiscoverParams(q));
+  return data.results ?? [];
 }
 
 // ---- Exact ID-based lookup, verified against TMDB's own community docs -----

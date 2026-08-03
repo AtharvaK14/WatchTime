@@ -28,7 +28,7 @@ Runs as a web app and, wrapped with Capacitor, as a native **Android** app.
 
 ## Features
 
-- **Mood search**: describe what you feel like watching in plain English ("something slow burn and unsettling, not found footage, under 90 minutes") and filter Home by it. Runs entirely on your device; see [Mood search](#mood-search-on-device).
+- **Mood search**: describe what you feel like watching in plain English ("something slow burn and unsettling, not found footage, under 90 minutes"). Filters your library on Home, and recommends unwatched titles on Discover. Runs entirely on your device; see [Mood search](#mood-search-on-device).
 - **Watch Next** — the next unwatched, released episode for every show you're mid-way through.
 - **Haven't Watched For a While** — shows you started but stopped (configurable threshold, default 60 days).
 - **Haven't Yet Started** — shows added to your library but never begun.
@@ -89,10 +89,56 @@ You can enter/update keys anytime under **Settings → API Keys**.
 
 ## Mood search (on-device)
 
+There are two mood-driven features, in different places, answering different
+questions. Both run the same model on your device, and neither ever sends
+your query or your library anywhere.
+
+| | Where | What it searches | Answers |
+|---|---|---|---|
+| **Mood filter** | Home | Titles already in your library | "What should I watch tonight from what I already track?" |
+| **Mood discovery** | Discover | TMDB's catalogue plus unwatched library titles | "Find me something new I haven't seen." |
+
+### Mood filter (Home)
+
 The search box on Home takes a plain-English description of what you're in
-the mood for and filters Watch Next and your movie watchlist by it. It runs
-entirely on your device: no server, no account, no API key, and nothing about
-your library or your query ever leaves the phone.
+the mood for and filters Watch Next and your movie watchlist by it. Every
+title in your library already has a cached vector, so this is fast: one
+embedding for the query, then arithmetic.
+
+### Mood discovery (Discover)
+
+The box at the top of the Discover tab recommends titles you have **not**
+watched, including ones that are not in your library at all. Results are a
+single ranked list mixing both, with an "In your library" badge on ones you
+already own.
+
+Because there is no local copy of TMDB's catalogue, this cannot work the same
+way. It uses retrieve-then-rerank:
+
+1. **Retrieve.** TMDB has no semantic search, so the query is converted into
+   filters TMDB does understand. Vocabulary tags resolve to TMDB **keyword**
+   IDs (which express things genres cannot, like "found footage") and genre
+   IDs; parsed runtime bounds become `with_runtime`, enforced by the API
+   rather than by discarding results afterwards. Keyword and genre retrieval
+   are issued as separate calls and merged, because TMDB ANDs different
+   filter types and combining them returns almost nothing.
+2. **Re-rank.** The candidates' TMDB summaries are embedded on device and
+   ranked against your query, using the same cache as the library index. A
+   title discovered today and added tomorrow already has a warm vector.
+3. **Exclude.** Anything watched is dropped (for shows, "watched" means any
+   logged episode), then unwatched library titles are folded in.
+
+The honest limit of this design: **the model can only reorder what retrieval
+returned.** A perfect match that TMDB files under a genre and keyword set your
+query never touched is never fetched, and so can never appear. Result quality
+is capped by retrieval, not by the model. The UI shows how many candidates
+were searched and which keywords were used, so this is visible rather than
+mysterious.
+
+Discovery needs your TMDB key. If TMDB can't be reached, it says so plainly
+and falls back to ranking only your own unwatched library, rather than
+showing a plausible-looking list that quietly stopped recommending anything
+new.
 
 ### Why an embedding model and not a generative one
 
@@ -372,14 +418,16 @@ src/
       vocabulary.ts         Mood tag list + calibrated thresholds
       embedder.ts           Lazy Transformers.js pipeline, WASM, shape validation
       titleIndex.ts         Overview backfill + cached per-title embeddings
-      search.ts             Query -> filter object; filter application
+      search.ts             Query -> filter object; filter application (Home)
+      discover.ts           TMDB retrieve-then-rerank recommendations (Discover)
       useMoodSearch.ts      React state for setup/progress/results
     backup.ts               Full export/validate/restore (native + web)
     persistence.ts          Storage-persistence request + backup nudge
     useDraggableSheet.ts    Mobile bottom-sheet drag (capped at 75%)
     native.ts / useOnline.ts / backHandler.ts   Capacitor behaviors
   components/
-    MoodSearch.tsx          Natural-language search box + setup indicator
+    MoodSearch.tsx          Home: natural-language library filter
+    MoodDiscover.tsx        Discover: natural-language recommendations
     DetailsPanel.tsx        Show/movie details + season browser
     EpisodeDetailsPanel.tsx Episode detail (landscape hero, rewatch controls)
     About.tsx               Credits, attribution, privacy link

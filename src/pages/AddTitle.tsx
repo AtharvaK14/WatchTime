@@ -12,6 +12,7 @@ import {
   type MovieSearchResult,
 } from "../tmdb";
 import DetailsPanel from "../components/DetailsPanel";
+import MoodDiscover from "../components/MoodDiscover";
 
 function ShowRow({ items, onOpen }: { items: TvSearchResult[]; onOpen: (id: number) => void }) {
   return (
@@ -126,6 +127,10 @@ export default function AddTitle() {
   return (
     <div className="panel">
       <h2>Discover</h2>
+
+      <MoodDiscover onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })} />
+
+      <h3 className="section-title">Search by title</h3>
       <div className="field-row">
         <input
           type="text"

@@ -1448,3 +1448,24 @@ details[open] > summary::after { transform: rotate(90deg); }
   .mood-search-row { flex-wrap: wrap; }
   .mood-search-input { flex-basis: 100%; }
 }
+
+/* ---- Mood discovery (Discover tab) -------------------------------------- */
+
+.mood-discover {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mood-discover h3 { margin-bottom: 2px; }
+
+/* Distinguishes a suggestion the user already owns from a genuinely new one,
+   which is the main thing to scan for in a mixed result grid. */
+.mood-tag.in-library {
+  display: inline-block;
+  margin-top: 4px;
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
