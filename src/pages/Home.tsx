@@ -2,61 +2,22 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Episode } from "../db";
 import { TMDB_IMAGE_BASE } from "../tmdb";
-import { ensureEpisodesCached, findNextUnwatched, countAdditionalUnwatched, findNextUpcoming } from "../lib/episodeSync";
-import { daysSince, getStaleDaysThreshold } from "../lib/showStatus";
-import { markNextEpisodeWatched, lastProgressionAt } from "../lib/watchEvents";
+import { ensureEpisodesCached, findNextUpcoming } from "../lib/episodeSync";
+import { getStaleDaysThreshold } from "../lib/showStatus";
+import { markNextEpisodeWatched } from "../lib/watchEvents";
 import { useIsMobile } from "../lib/useIsMobile";
 import DetailsPanel from "../components/DetailsPanel";
-
-type Category = "watch-next" | "stale" | "not-started";
-
-interface Row {
-  showId: number;
-  showName: string;
-  posterPath: string | null;
-  nextEpisode: Episode | null; // for not-started: the first episode to start with; for in-progress: the next unseen one. Null when nothing is cached yet.
-  additionalCount: number; // the "+N" badge
-  lastProgressedAt: string | null; // most recent first-watch of an unseen episode; drives the split AND the sort
-  addedAt: string; // for ordering the "Haven't Yet Started" list (recently added first)
-  category: Category;
-}
-
-/**
- * The three mutually-exclusive Home categories, driven purely by real watch
- * data (not the imported tvTimeStatus snapshot, which goes stale the moment
- * you watch anything in-app):
- *
- * - "not-started": zero watch activity ever. A show added to the library
- *   but never begun. Its own section so a long watchlist doesn't crowd out
- *   shows you're actually mid-way through.
- * - "watch-next": at least one episode watched AND a next UNSEEN released
- *   episode exists AND the last PROGRESSION is within the threshold. In
- *   progress and active.
- * - "stale": same as watch-next but the last progression is older than the
- *   threshold. Started, then genuinely dropped for a while.
- * - null (not shown): watched at least one episode but no next unseen
- *   episode remains, i.e. caught up / finished. Rewatching an old episode
- *   updates history/time/recency but must NEVER resurface the show here:
- *   "next" is always the next UNSEEN episode in original progression, never
- *   "the episode after a rewatch". A finished series simply stays off all
- *   three lists.
- *
- * CRITICAL: the split uses last PROGRESSION (the most recent first-watch of
- * a previously-unseen episode), NOT last activity. Rewatching already-seen
- * episodes of a stalled show must not drag it back into Watch Next — only
- * watching the next NEW episode counts as resuming. lastProgressedAt is
- * max(WatchedEpisode.watchedAt), which a rewatch never changes.
- *
- * The tvTimeStatus === "continuing" clause was deliberately dropped: it
- * could force a finished show (all cached episodes watched, next === null)
- * back onto Watch Next via a stale imported flag, which is exactly the
- * rewatch-resurfacing this spec forbids.
- */
-function categorize(next: Episode | null, watchedCount: number, lastProgressedAt: string | null, threshold: number): Category | null {
-  if (watchedCount === 0) return "not-started";
-  if (next === null) return null; // caught up / finished; rewatches don't bring it back
-  return (daysSince(lastProgressedAt) ?? 0) < threshold ? "watch-next" : "stale";
-}
+import MoodSearch from "../components/MoodSearch";
+import { useMoodSearch } from "../lib/moodSearch/useMoodSearch";
+import {
+  matchesMoodFilter,
+  movieToMoodCandidate,
+  rankByMoodFilter,
+  showToMoodCandidate,
+  type MoodCandidate,
+  type MoodFilter,
+} from "../lib/moodSearch/search";
+import { buildWatchNextRows, byAddedAt, byRecency, type WatchNextRow as Row } from "../lib/watchNext";
 
 function EpisodeRow({ row, onOpenShow, onMarkWatched }: { row: Row; onOpenShow: (id: number) => void; onMarkWatched: (row: Row) => void }) {
   const isPremiere = row.nextEpisode?.episodeNumber === 1;
@@ -101,7 +62,7 @@ function EpisodeRow({ row, onOpenShow, onMarkWatched }: { row: Row; onOpenShow: 
   );
 }
 
-function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
+function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => void; filter: MoodFilter | null }) {
   const shows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(), []);
   // Deliberately simple, single-table, whole-table live queries. Each one is
   // independently and unambiguously reactive to writes on its own table.
@@ -154,54 +115,13 @@ function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
     };
   }, [shows]);
 
-  const rows = useMemo<Row[]>(() => {
-    if (!shows || !allEpisodes || !allWatched) return [];
-
-    const episodesByShow = new Map<number, Episode[]>();
-    for (const ep of allEpisodes) {
-      const list = episodesByShow.get(ep.showId);
-      if (list) list.push(ep);
-      else episodesByShow.set(ep.showId, [ep]);
-    }
-    const watchedByShow = new Map<number, typeof allWatched>();
-    for (const w of allWatched) {
-      const list = watchedByShow.get(w.showId);
-      if (list) list.push(w);
-      else watchedByShow.set(w.showId, [w]);
-    }
-
-    const staleThreshold = getStaleDaysThreshold();
-    const result: Row[] = [];
-    for (const show of shows) {
-      const episodes = episodesByShow.get(show.tmdbId) ?? [];
-      const watched = watchedByShow.get(show.tmdbId) ?? [];
-      const watchedKeys = new Set(watched.map((w) => w.key));
-      // next = the first UNSEEN released episode in original progression.
-      // For a never-started show this is the first episode (the one to
-      // begin with); for an in-progress show it's the genuine next up.
-      // Rewatches never enter this: watched episodes stay in watchedKeys,
-      // so "next" only ever moves forward through unseen episodes.
-      const next = findNextUnwatched(episodes, watchedKeys);
-      // Split by last PROGRESSION, not last activity: a rewatch never
-      // changes watchedAt, so rewatching a stalled show leaves this stuck
-      // in the past and the show stays under "Haven't Watched For a While".
-      const lastProgressedAt = lastProgressionAt(watched);
-      const category = categorize(next, watchedKeys.size, lastProgressedAt, staleThreshold);
-      if (category === null) continue; // caught up / finished
-
-      result.push({
-        showId: show.tmdbId,
-        showName: show.name,
-        posterPath: show.posterPath,
-        nextEpisode: next,
-        additionalCount: next ? countAdditionalUnwatched(episodes, watchedKeys) : 0,
-        lastProgressedAt,
-        addedAt: show.addedAt,
-        category,
-      });
-    }
-    return result;
-  }, [shows, allEpisodes, allWatched]);
+  const rows = useMemo<Row[]>(
+    () =>
+      !shows || !allEpisodes || !allWatched
+        ? []
+        : buildWatchNextRows(shows, allEpisodes, allWatched, getStaleDaysThreshold(), filter),
+    [shows, allEpisodes, allWatched, filter]
+  );
 
   async function markWatched(row: Row) {
     if (!row.nextEpisode) return;
@@ -213,13 +133,12 @@ function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
 
   if (!shows || !allEpisodes || !allWatched) return <p className="muted">Loading...</p>;
 
-  // Three MUTUALLY EXCLUSIVE lists (see categorize() above). Watch Next and
-  // the stale list sort by most recent PROGRESSION (rewatches don't reorder
-  // them); Haven't Yet Started sorts by most recently added to the library.
-  const byRecency = (a: Row, b: Row) => (b.lastProgressedAt ?? "").localeCompare(a.lastProgressedAt ?? "");
+  // Three MUTUALLY EXCLUSIVE lists (see categorize() in lib/watchNext.ts).
+  // Watch Next and the stale list sort by most recent PROGRESSION (rewatches
+  // don't reorder them); Haven't Yet Started sorts by most recently added.
   const watchNext = rows.filter((r) => r.category === "watch-next").sort(byRecency);
   const stale = rows.filter((r) => r.category === "stale").sort(byRecency);
-  const notStarted = rows.filter((r) => r.category === "not-started").sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""));
+  const notStarted = rows.filter((r) => r.category === "not-started").sort(byAddedAt);
   const activeList = tab === "next" ? watchNext : tab === "stale" ? stale : notStarted;
 
   return (
@@ -252,7 +171,11 @@ function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
         </details>
       )}
 
-      {activeList.length === 0 && !syncing && (
+      {activeList.length === 0 && !syncing && filter && (
+        <p className="muted">Nothing in this list matches that search. Clear it to see everything again.</p>
+      )}
+
+      {activeList.length === 0 && !syncing && !filter && (
         <p className="muted">
           {tab === "next"
             ? "Nothing queued up. If you're sure some shows should be here, check Diagnostics in Settings, or re-import using the newer TV Time export format."
@@ -414,7 +337,7 @@ const MTW_GAP = 14;
 // of up to 5 movies, with the view-all tile as the 6th card.
 const MTW_MOBILE_MAX = 5;
 
-function MoviesHome({ onViewAll }: { onViewAll: () => void }) {
+function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: MoodFilter | null }) {
   const wantToWatch = useLiveQuery(() => db.movies.filter((m) => !m.watched && m.wantsToWatch).toArray(), []);
   const [openDetails, setOpenDetails] = useState<number | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
@@ -424,11 +347,21 @@ function MoviesHome({ onViewAll }: { onViewAll: () => void }) {
   // Most recently added first, the same comparator as the Movies page's
   // "Recently added" sort: movies from before addedAt existed have it
   // undefined and deliberately sort as oldest.
-  const sorted = useMemo(
-    () =>
-      wantToWatch ? [...wantToWatch].sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? "")) : undefined,
-    [wantToWatch]
-  );
+  //
+  // With a mood filter active the order changes to match strength instead,
+  // since "how well does this fit what I asked for" is the only ordering
+  // that makes sense once the user has stated what they want.
+  const sorted = useMemo(() => {
+    if (!wantToWatch) return undefined;
+    if (filter) {
+      const candidates = wantToWatch.map((m) => ({
+        movie: m,
+        ...movieToMoodCandidate(m),
+      }));
+      return rankByMoodFilter(candidates, filter).map((c) => c.movie);
+    }
+    return [...wantToWatch].sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""));
+  }, [wantToWatch, filter]);
 
   // Real dynamic fit: measure the rail's actual rendered width (which
   // itself depends on the app shell, the side rail, and the viewport, not
@@ -518,13 +451,55 @@ function MoviesHome({ onViewAll }: { onViewAll: () => void }) {
 
 export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void }) {
   const [openShow, setOpenShow] = useState<number | null>(null);
+  const mood = useMoodSearch();
+
+  // Mood search spans both lists on this page, so the candidate set is
+  // assembled here rather than inside either child. Shows are restricted to
+  // the followed/unarchived set that ShowsHome itself renders, so the model
+  // never ranks titles that could not appear in the results anyway.
+  const searchableShows = useLiveQuery(
+    () => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(),
+    []
+  );
+  const searchableMovies = useLiveQuery(
+    () => db.movies.filter((m) => !m.watched && m.wantsToWatch).toArray(),
+    []
+  );
+
+  const candidates = useMemo<MoodCandidate[]>(
+    () => [
+      ...(searchableShows ?? []).map(showToMoodCandidate),
+      ...(searchableMovies ?? []).map(movieToMoodCandidate),
+    ],
+    [searchableShows, searchableMovies]
+  );
+
+  // Counted the same way the two lists below filter, so the summary line
+  // never claims a number the user cannot see.
+  const resultCount = useMemo(
+    () => (mood.filter ? candidates.filter((c) => matchesMoodFilter(c, mood.filter!)).length : 0),
+    [candidates, mood.filter]
+  );
 
   return (
     <div className="panel">
-      <ShowsHome onOpenShow={setOpenShow} />
+      <MoodSearch
+        setup={mood.setup}
+        filter={mood.filter}
+        searching={mood.searching}
+        dismissed={mood.dismissed}
+        resultCount={resultCount}
+        onSearch={(q) => mood.run(q, candidates)}
+        onClear={mood.clear}
+        onCancelSetup={mood.cancelSetup}
+      />
 
-      <MoviesHome onViewAll={onViewAllMovies} />
+      <ShowsHome onOpenShow={setOpenShow} filter={mood.filter} />
 
+      <MoviesHome onViewAll={onViewAllMovies} filter={mood.filter} />
+
+      {/* Coming up is calendar data, not recommendations, so a mood filter
+          deliberately does not apply to it. */}
       <ComingUp onOpenShow={setOpenShow} />
 
       {openShow !== null && <DetailsPanel kind="show" tmdbId={openShow} onClose={() => setOpenShow(null)} />}

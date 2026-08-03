@@ -1389,3 +1389,62 @@ details[open] > summary::after { transform: rotate(90deg); }
   font-size: 0.8rem;
   font-weight: 800;
 }
+
+/* ---- Mood search (on-device natural-language search) --------------------- */
+
+.mood-search { display: flex; flex-direction: column; gap: 8px; }
+
+.mood-search-row { display: flex; gap: 8px; align-items: center; }
+
+/* Grows to fill the row: the placeholder is a full example sentence, and at
+   the shared 220px min-width it would be unreadably truncated. */
+.mood-search-input { flex: 1; min-width: 0; }
+
+.mood-search-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* A text-weight button, not a real one: dismissing setup is a secondary
+   escape hatch and should not compete with Search for attention. */
+.mood-search-dismiss {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-decoration: underline;
+}
+.mood-search-dismiss:hover { color: var(--text); }
+
+.mood-search-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mood-tags { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+
+.mood-tag {
+  font-size: 0.75rem;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.mood-tag.excluded {
+  border-color: var(--accent-dim);
+  text-decoration: line-through;
+}
+
+@media (max-width: 720px) {
+  /* The button labels stay on the first line and the input takes the full
+     width below them, rather than all three squeezing into one row. */
+  .mood-search-row { flex-wrap: wrap; }
+  .mood-search-input { flex-basis: 100%; }
+}

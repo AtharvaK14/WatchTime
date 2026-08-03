@@ -15,6 +15,7 @@ Runs as a web app and, wrapped with Capacitor, as a native **Android** app.
 - [Tech stack](#tech-stack)
 - [Getting started (development)](#getting-started-development)
 - [API keys](#api-keys)
+- [Mood search (on-device)](#mood-search-on-device)
 - [Importing from TV Time](#importing-from-tv-time)
 - [Backup & restore](#backup--restore)
 - [Building the Android app](#building-the-android-app)
@@ -27,6 +28,7 @@ Runs as a web app and, wrapped with Capacitor, as a native **Android** app.
 
 ## Features
 
+- **Mood search**: describe what you feel like watching in plain English ("something slow burn and unsettling, not found footage, under 90 minutes") and filter Home by it. Runs entirely on your device; see [Mood search](#mood-search-on-device).
 - **Watch Next** — the next unwatched, released episode for every show you're mid-way through.
 - **Haven't Watched For a While** — shows you started but stopped (configurable threshold, default 60 days).
 - **Haven't Yet Started** — shows added to your library but never begun.
@@ -84,6 +86,108 @@ keys are stored only on your device.
 You can enter/update keys anytime under **Settings → API Keys**.
 
 ---
+
+## Mood search (on-device)
+
+The search box on Home takes a plain-English description of what you're in
+the mood for and filters Watch Next and your movie watchlist by it. It runs
+entirely on your device: no server, no account, no API key, and nothing about
+your library or your query ever leaves the phone.
+
+### Why an embedding model and not a generative one
+
+This is the part worth explaining, because "use an LLM" is the obvious answer
+and it is the wrong one here.
+
+A generative model that could read a query and pick titles needs WebGPU to
+run at a tolerable speed in a WebView. WebGPU support across the Android
+range this app targets (API 24 through API 36) is inconsistent: it is absent
+on older WebViews and unreliable on several that nominally report it. A
+generative path would therefore work well on new flagship devices and either
+crawl or fail outright on a large share of the rest, which for a feature
+positioned as a headline capability is worse than not shipping it.
+
+A small sentence-embedding model has a different performance profile. It runs
+once per short piece of text, produces a 384-number vector, and needs no
+token-by-token generation, so it is fast enough on the WASM CPU fallback path
+that exists everywhere. That makes it the choice that works across the whole
+device range rather than the choice that is most capable in the best case.
+
+The tradeoff is real and worth stating plainly: an embedding model matches on
+overall semantic similarity. It does not reason. It cannot handle a genuinely
+compositional request, and it has no reliable notion of negation, which is why
+negation is parsed deterministically with regex before the model sees the text
+(see `src/lib/moodSearch/constraints.ts`) rather than being left to the model.
+
+A WebGPU-accelerated generative path is a plausible future addition for
+devices that support it, as an upgrade layered on top of this, not a
+replacement for it.
+
+### How it works
+
+1. **Deterministic parse first.** Runtime bounds ("under 90 minutes", "one and
+   a half hours or less") and negations ("not found footage", "no jump scares")
+   are extracted with plain string parsing. Those spans are then stripped from
+   the query, so the model only ever embeds what you want *included*, never
+   the thing you asked to avoid.
+2. **Embed the query** with `all-MiniLM-L6-v2`, int8-quantised (roughly 25MB),
+   via Transformers.js.
+3. **Match vocabulary tags** against a fixed mood vocabulary whose embeddings
+   are precomputed at build time and committed as a static asset. These are
+   what the UI shows you as chips, so a result set is explainable rather than
+   a black box.
+4. **Rank your titles** by cosine similarity between the query and each
+   title's stored TMDB summary.
+5. **Apply negations** by embedding each negated phrase and excluding titles
+   too close to it.
+
+### First run
+
+The model downloads once (roughly 25MB) from the Hugging Face Hub and is
+cached by the browser, so it is not re-fetched on later sessions. Your
+library is then indexed once: WatchTime fetches each title's TMDB summary and
+embeds it locally, caching the vectors in IndexedDB. Both passes are
+resumable and both show progress without blocking the UI. You can dismiss the
+indicator at any point and use plain title search instead.
+
+If the model cannot be downloaded or run at all (offline, storage full,
+unsupported WebView) the search box quietly falls back to plain title
+matching, keeps applying the runtime and negation parsing, and says so. The
+rest of the app is unaffected.
+
+### Regenerating the vocabulary
+
+Re-run this after editing `MOOD_VOCABULARY` or `EMBEDDING_MODEL_ID` in
+`src/lib/moodSearch/vocabulary.ts`:
+
+```bash
+npm run build:mood-vocabulary
+```
+
+The app validates at runtime that the committed vocabulary file was built
+with the same model it embeds queries with, and refuses to use it otherwise,
+since mismatched vectors would produce meaningless similarity scores that
+nothing downstream could detect.
+
+### Notes and limitations
+
+- **APK size.** The ONNX Runtime WASM binary is bundled with the app (roughly
+  23MB uncompressed, considerably less over the wire after Play's
+  compression). It is bundled rather than fetched from a CDN so that the only
+  thing needing a download is the model itself.
+- **Privacy.** Your query and your library are never transmitted. The one
+  outbound request the feature makes is fetching the model file from the
+  Hugging Face Hub, and it carries no data about you. Nothing is sent on any
+  later run.
+- **Quality.** A 25MB embedding model is a genuinely small model. It is good
+  at broad tone ("scary", "funny", "a real disaster") and weaker at narrow
+  sub-genre distinctions. Ranking is relative to the best match for your
+  query rather than an absolute cutoff, so a small library will return some
+  loose matches near the bottom of the list.
+- **Dev-only dependency warning.** `npm audit` reports advisories against
+  `onnxruntime-node` and `sharp`. Those are Node-side optional dependencies
+  of Transformers.js used only by the build script; the app ships the WASM
+  build and does not include them.
 
 ## Importing from TV Time
 
@@ -262,11 +366,20 @@ src/
     episodeSync.ts          Episode caching + "next unwatched" logic
     watchEvents.ts          Watch/rewatch writes; progression helpers
     showStatus.ts           Staleness threshold (configurable)
+    watchNext.ts            Home's three-way categorisation (+ optional mood filter)
+    moodSearch/
+      constraints.ts        Deterministic runtime/negation parsing (no model)
+      vocabulary.ts         Mood tag list + calibrated thresholds
+      embedder.ts           Lazy Transformers.js pipeline, WASM, shape validation
+      titleIndex.ts         Overview backfill + cached per-title embeddings
+      search.ts             Query -> filter object; filter application
+      useMoodSearch.ts      React state for setup/progress/results
     backup.ts               Full export/validate/restore (native + web)
     persistence.ts          Storage-persistence request + backup nudge
     useDraggableSheet.ts    Mobile bottom-sheet drag (capped at 75%)
     native.ts / useOnline.ts / backHandler.ts   Capacitor behaviors
   components/
+    MoodSearch.tsx          Natural-language search box + setup indicator
     DetailsPanel.tsx        Show/movie details + season browser
     EpisodeDetailsPanel.tsx Episode detail (landscape hero, rewatch controls)
     About.tsx               Credits, attribution, privacy link
@@ -286,7 +399,9 @@ assets/                    App icon / splash source images
 
 WatchTime collects nothing. Your library, watch history, and API keys live
 only on your device. The only network requests go directly from your device
-to TMDB, OMDb, and TVmaze, using your own keys. No accounts, no analytics,
+to TMDB, OMDb, and TVmaze, using your own keys, plus a one-time model
+download from the Hugging Face Hub if you use [mood search](#mood-search-on-device)
+(that request sends nothing about you). No accounts, no analytics,
 no ads. Full policy: [`docs/privacy.html`](docs/privacy.html).
 
 > This product uses the TMDB API but is not endorsed or certified by TMDB.

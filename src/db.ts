@@ -29,6 +29,13 @@ export interface Show {
   // the watched/total progress bar on the Shows grid. Undefined for shows
   // added before this field existed, until backfilled.
   numberOfEpisodes?: number | null;
+  // TMDB's plot summary. Displayed live by DetailsPanel without ever being
+  // stored, until v12: mood search needs a persisted per-title text to
+  // embed, and this is the only tone-bearing text TMDB gives us per show.
+  // undefined means "never fetched", null means "fetched and TMDB has none"
+  // (or the fetch failed), matching the episodeRuntimeMinutes convention so
+  // the backfill can distinguish the two and retry only the latter.
+  overview?: string | null;
 }
 
 export interface Episode {
@@ -85,6 +92,9 @@ export interface Movie {
   // they're left undefined rather than backfilled with a fabricated
   // value. The "Recently added" sort treats undefined as oldest.
   addedAt?: string;
+  // TMDB's plot summary, persisted for mood search. Same undefined/null
+  // convention as Show.overview above.
+  overview?: string | null;
 }
 
 // Remembers how a raw TV Time title string was resolved, so re-running an
@@ -118,6 +128,30 @@ export interface OmdbCacheEntry {
   data: unknown;
 }
 
+// Cached sentence embedding for one library title (mood search). Computing
+// these is the expensive part of the feature: it runs the on-device model
+// once per title, which for a large imported library is a one-time pass of
+// a few minutes on the WASM path. Storing the result means that cost is
+// paid once ever, not once per search or once per app launch.
+//
+// Like omdbCache this is a pure derived cache: it is re-derivable from
+// Show.overview / Movie.overview plus the model, so it is deliberately NOT
+// part of the backup format.
+export interface TitleEmbedding {
+  // `${kind}:${tmdbId}` — kind is needed in the key because show and movie
+  // TMDB IDs are separate ID spaces and do collide.
+  cacheKey: string;
+  kind: "show" | "movie";
+  tmdbId: number;
+  // L2-normalised sentence vector. Stored as a Float32Array, which
+  // IndexedDB round-trips natively via structured clone (no JSON bloat).
+  vector: Float32Array;
+  // Identifies the model AND the exact source text the vector was built
+  // from. If either changes, the cached vector is stale and is recomputed
+  // rather than silently compared against vectors from a different model.
+  sourceHash: string;
+}
+
 // ---- Database -----------------------------------------------------------
 
 class TrackerDB extends Dexie {
@@ -128,6 +162,7 @@ class TrackerDB extends Dexie {
   titleMatches!: Table<TitleMatch, string>;
   settings!: Table<Setting, string>;
   omdbCache!: Table<OmdbCacheEntry, string>;
+  titleEmbeddings!: Table<TitleEmbedding, string>;
 
   constructor() {
     super("tv-tracker");
@@ -277,6 +312,26 @@ class TrackerDB extends Dexie {
       titleMatches: "rawTitle, kind",
       settings: "key",
       omdbCache: "cacheKey, kind",
+    });
+    // v12: added Show.overview / Movie.overview (persisted TMDB plot text,
+    // the only tone-bearing per-title text available to embed) and the
+    // titleEmbeddings cache table for mood search.
+    //
+    // Same shape as v11: purely additive. The two overview fields need no
+    // index and no clearing — they start undefined on existing rows and
+    // are filled by the backfill in lib/moodSearch/titleIndex.ts, exactly
+    // how episodeRuntimeMinutes/numberOfEpisodes were handled in v4/v8.
+    // titleEmbeddings is a new re-derivable cache table, so nothing
+    // existing is touched.
+    this.version(12).stores({
+      shows: "tmdbId, name, isFollowed, lastWatchedAt, tvdbId",
+      episodes: "key, showId, [showId+seasonNumber]",
+      watchedEpisodes: "key, showId, watchedAt",
+      movies: "tmdbId, title, watched, wantsToWatch",
+      titleMatches: "rawTitle, kind",
+      settings: "key",
+      omdbCache: "cacheKey, kind",
+      titleEmbeddings: "cacheKey, kind",
     });
   }
 }
