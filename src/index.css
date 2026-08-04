@@ -1307,6 +1307,14 @@ summary:focus-visible,
    left into the space. */
 .mtw-item {
   display: grid;
+  /* flex-shrink:0 is NOT optional here. .mtw-rail is a flex row and this
+     wrapper is now the flex CHILD — the `flex-shrink: 0` on .mtw-card inside
+     it no longer applies to the rail's layout. Without it every item shrank
+     to fit the rail's width, and because the card inside keeps its explicit
+     124px, overflow:hidden below clipped it: posters cut off mid-image,
+     titles truncated, and ragged card heights from aspect-ratio resolving
+     against the squeezed widths. */
+  flex: 0 0 auto;
   /* minmax(0, ...), not a bare fr: .mtw-card has an explicit width: 124px, so
      a plain `0fr` track still floors at its min-content size and never
      actually closes. The explicit zero minimum is what lets it reach 0.
@@ -2053,18 +2061,25 @@ summary:focus-visible,
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
 }
 
-/* Scoped to the hero specifically via this second class; .close-x itself
-   (used by the episode panel and the desktop dialog) is untouched.
+/* ── CLOSE BUTTON POSITION (mobile bottom sheet) ─────────────────────────
+   THIS IS THE RULE TO EDIT if the button should sit somewhere else.
+   `top` moves it down from the sheet's top edge, `right` moves it in from
+   the sheet's right edge. Both are plain offsets — nothing else depends on
+   them, so they can be changed freely.
 
-   Inset equally from the top and right, on the same 20px as
-   .sheet-scroll-area's horizontal padding — so its right edge lines up with
-   the right edge of the title and body text rather than sitting 8px further
-   out. The old value also max()'d against env(safe-area-inset-top), which
-   was meaningless here: the sheet is bottom-anchored and its top edge is
-   ~15% down the screen, nowhere near the status bar. */
+   Current values: it clears the drag handle above it (which occupies the
+   first 24px of the sheet) and sits close to the corner rather than lining
+   up with the body text's 20px inset — a floating control over artwork
+   reads better tucked into the corner than aligned to a text column it is
+   not part of.
+
+   Scoped to the hero via this second class; .close-x itself (used by the
+   episode panel and the desktop dialog) is untouched. The old value also
+   max()'d against env(safe-area-inset-top), which was meaningless here: the
+   sheet is bottom-anchored, so its top edge is nowhere near the status bar. */
 .hero-close-x {
-  top: var(--space-5);
-  right: var(--space-5);
+  top: var(--space-8); /* 32px — clears the 24px drag handle */
+  right: var(--space-4); /* 16px from the sheet's right edge */
   width: 36px;
   height: 36px;
   font-size: var(--text-lg);

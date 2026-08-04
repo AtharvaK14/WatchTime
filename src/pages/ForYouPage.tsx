@@ -25,16 +25,22 @@ export default function ForYouPage() {
 
   return (
     <div className="panel">
+      {/* No page <h2> here: <ForYou> renders its own, next to the "Why these?"
+          toggle. A second one would duplicate the heading.
+
+          Rendered whether or not a key is configured, matching Discover.
+          Gating it on hasApiKey() meant the search box vanished completely on
+          a fresh install — the one situation where the user is most likely to
+          be hunting for it. The warning below explains why it will not return
+          anything yet; an absent control explains nothing. */}
+      <UniversalSearch
+        onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })}
+        onResults={setResults}
+        onClear={() => setResults(null)}
+      />
+
       {!hasApiKey() && (
         <p className="status-error">Add your TMDB API key on the Settings page to search or see recommendations.</p>
-      )}
-
-      {hasApiKey() && (
-        <UniversalSearch
-          onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })}
-          onResults={setResults}
-          onClear={() => setResults(null)}
-        />
       )}
 
       {results ? (
