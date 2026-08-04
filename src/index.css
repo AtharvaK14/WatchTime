@@ -1830,3 +1830,19 @@ details[open] > summary::after { transform: rotate(90deg); }
 
 .wn-episode-button .wn-episode-line { display: block; }
 .wn-episode-button .wn-episode-name { display: block; }
+
+/* ---- Screen-reader-only containment -------------------------------------
+   .sr-only is position:absolute, and an absolutely positioned element is
+   only clipped by an ancestor's overflow when that ancestor is its
+   CONTAINING BLOCK. The rail cards were position:static, so every .sr-only
+   span resolved against the initial containing block instead, escaped the
+   rail's overflow, and spread across the rail's full scroll width. That
+   inflated the document (2330px -> 3048px) and, because the fixed bottom
+   nav resolves against that block, pushed the nav off the viewport: it only
+   appeared after scrolling to the very bottom of a tall empty area, and
+   only on For You, the one page with horizontally scrolling rails.
+
+   Giving every .sr-only parent a containing block keeps the span inside the
+   card, where the rail's overflow can clip it. */
+.rail-card,
+.wn-episode-button { position: relative; }
