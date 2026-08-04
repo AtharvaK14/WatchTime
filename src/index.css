@@ -1389,3 +1389,460 @@ details[open] > summary::after { transform: rotate(90deg); }
   font-size: 0.8rem;
   font-weight: 800;
 }
+
+/* ---- Mood search (on-device natural-language search) --------------------- */
+
+.mood-search { display: flex; flex-direction: column; gap: 8px; }
+
+.mood-search-row { display: flex; gap: 8px; align-items: center; }
+
+/* Grows to fill the row: the placeholder is a full example sentence, and at
+   the shared 220px min-width it would be unreadably truncated. */
+.mood-search-input { flex: 1; min-width: 0; }
+
+.mood-search-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* A text-weight button, not a real one: dismissing setup is a secondary
+   escape hatch and should not compete with Search for attention. */
+.mood-search-dismiss {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-decoration: underline;
+}
+.mood-search-dismiss:hover { color: var(--text); }
+
+.mood-search-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mood-tags { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+
+.mood-tag {
+  font-size: 0.75rem;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  color: var(--muted);
+}
+
+.mood-tag.excluded {
+  border-color: var(--accent-dim);
+  text-decoration: line-through;
+}
+
+
+
+
+/* ---- Universal search (Discover) ---------------------------------------- */
+
+.usearch { display: flex; flex-direction: column; gap: 6px; }
+
+/* position: relative anchors the absolutely-positioned suggestion list to the
+   whole form, so the dropdown spans input + button rather than jumping. */
+.usearch-form { display: flex; gap: 8px; align-items: stretch; position: relative; }
+
+
+
+.usearch-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.usearch-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.usearch-option.active { background: var(--surface); }
+
+.usearch-option-poster {
+  width: 32px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* Truncates rather than wrapping, so every option stays one row tall and the
+   list length is predictable while arrowing through it. */
+.usearch-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- For you ------------------------------------------------------------ */
+
+.for-you { display: flex; flex-direction: column; gap: 6px; }
+
+.for-you-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+
+.link-button {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-decoration: underline;
+}
+.link-button:hover { color: var(--accent); }
+
+/* ---- Taste insights ----------------------------------------------------- */
+
+.insights {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.insights-genres { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+
+.insights-genre { display: flex; flex-direction: column; gap: 5px; }
+.insights-genre-head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.85rem; }
+
+.insights-bar { height: 5px; background: var(--surface-raised); border-radius: 3px; overflow: hidden; }
+.insights-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+
+.insights-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; }
+
+/* ---- Recommendation rails ----------------------------------------------- */
+
+.rail-section { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+
+.rail-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.rail-head h4 { margin: 0; font-size: 1rem; font-weight: 600; }
+
+/* Horizontal rail, not a grid: keeps each section one row tall so the page
+   stays scannable by heading no matter how many sections exist. */
+.rail {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding-bottom: 6px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+}
+
+.rail-card {
+  flex: 0 0 auto;
+  width: 116px;
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+  scroll-snap-align: start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* Anchors the poster overlays. Markers live here rather than under the
+   title because the title wraps to one or two lines, so anything after it
+   lands at a different height on every card. */
+.rail-poster-wrap { position: relative; display: block; line-height: 0; }
+
+.rail-poster {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  display: block;
+}
+/* aspect-ratio reserves the exact box before the image loads, so a rail of
+   posters never reflows as they arrive. */
+
+.rail-card:hover .rail-poster,
+.rail-card:focus-visible .rail-poster { border-color: var(--accent-dim); }
+.rail-card:focus-visible { outline: none; }
+.rail-card:focus-visible .rail-poster { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Season marker, on the poster. Gradient-free flat chip keeps it legible
+   over both bright and dark artwork. */
+.rail-pill {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 5px;
+  background: rgba(10, 10, 11, 0.85);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+/* "In your library" as a dot rather than a text badge: it is a binary fact
+   that does not need a word, and a dot costs no vertical space. The text
+   equivalent still reaches screen readers via .sr-only in the card. */
+.rail-owned {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(10, 10, 11, 0.9);
+}
+
+/* Reserves two lines whether or not the title needs them, so every card in
+   a rail is exactly the same height and the row reads flush. */
+.rail-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.3;
+  min-height: 2.6em;
+  color: var(--text);
+}
+
+.rail-badge {
+  font-size: 0.65rem;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* Accessible-only text: conveys what the dot and pill show visually. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 720px) {
+  .rail-card { width: 104px; }
+}
+
+/* ---- Header settings button --------------------------------------------- */
+
+/* margin-left:auto pushes it to the far right without needing
+   justify-content on .app-header, which would also move the brand. */
+.header-settings {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 999px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--muted);
+  line-height: 0;
+}
+.header-settings:hover:not(:disabled) { color: var(--text); border-color: var(--border); }
+/* Settings left the nav, so this button is the only indicator of being on
+   that page; it needs a clearly visible active state.
+   The :hover variant is listed explicitly because the hover rule above
+   carries higher specificity, and without it the active colour disappears
+   the moment the pointer rests on the button, which is exactly when a user
+   is most likely to be looking at it. */
+.header-settings.active,
+.header-settings.active:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+
+/* ---- Shared search field (Home mood search + Discover universal search) ---
+   Both pages now use the same two-item row: a field with an inline clear,
+   then one button. Keeping the clear inside the field is what lets the row
+   stay on ONE line at every width; with a third sibling button it had to
+   wrap on narrow screens. */
+
+.mood-search-row,
+.usearch-form {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+  flex-wrap: nowrap;
+}
+
+.search-field { position: relative; flex: 1; min-width: 0; display: flex; }
+
+/* min-width:0 overrides the global 220px min on text inputs, which would
+   otherwise refuse to shrink and force the button off the line. */
+.search-field input[type="text"] {
+  flex: 1;
+  min-width: 0;
+  padding-right: 38px;
+}
+
+/* 44x44 hit area per the touch-target rule, achieved with padding rather
+   than a visible box so it still reads as a subtle inline affordance. */
+.search-clear {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.search-clear:hover:not(:disabled) { color: var(--text); border-color: transparent; }
+
+.mood-search-row > button[type="submit"],
+.usearch-form > button[type="submit"] {
+  flex: 0 0 auto;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+/* The gear was a 36px target; the minimum for a primary icon control is 44. */
+.header-settings { min-width: 44px; min-height: 44px; }
+
+/* Respect the OS reduced-motion preference across the app. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---- Touch-target compliance pass ---------------------------------------
+   Measured at the 768px breakpoint: several controls sat under the 44x44
+   minimum (side rail 42x42, nudge dismiss 28x28, text-style buttons ~15px
+   tall). Sizes are raised via min-height/min-width and padding rather than
+   by scaling the visuals, so nothing looks bigger, it is just tappable. */
+
+.side-rail-item { min-width: 44px; min-height: 44px; }
+
+/* Text-style buttons keep their inline look but get a real hit area.
+   inline-flex + centring means the extra height does not shift the label. */
+.link-button,
+.mood-search-dismiss,
+.backup-nudge-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.backup-nudge-dismiss { min-width: 44px; }
+.backup-nudge-cta { min-height: 44px; }
+
+/* ---- Horizontal overflow containment (For You rails on mobile) ----------
+   Symptom: the whole page became horizontally scrollable, which pushed the
+   fixed bottom nav to document width (its items stretched to ~300px each,
+   so only "Home" was on screen) and left a tall empty column to the right.
+
+   Cause: a flex item's default `min-width: auto` refuses to shrink below its
+   content's min-content width. The rails are flex items several levels deep,
+   so their combined card width propagated up the chain and widened the
+   document instead of scrolling inside the rail. Setting min-width: 0 on the
+   chain is the documented fix and is what makes `overflow-x: auto` on .rail
+   actually take effect.
+
+   Not solved with `overflow-x: hidden` on html/body: that forces the block
+   axis to `auto` too, which moves the scroll container off the viewport and
+   breaks the `position: sticky` headers this app already uses. */
+
+.panel,
+.for-you,
+.rail-section,
+.rail,
+.discover-sections { min-width: 0; }
+
+/* The rail is the only element allowed to scroll sideways. */
+.rail { max-width: 100%; }
+
+/* Belt and braces: even if some future element does widen the document, the
+   nav stays one viewport wide and usable rather than stretching off screen. */
+.bottom-nav { max-width: 100vw; }
+.bottom-nav-item { min-width: 0; }
+
+/* ---- Watch Next episode button ------------------------------------------
+   The episode block is now a control that opens the episode panel. Styled to
+   look exactly as it did as static text, so the row reads unchanged; only
+   the hit area, focus ring and hover cue are new. */
+.wn-episode-button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.wn-episode-button:hover:not(:disabled) { border-color: transparent; }
+.wn-episode-button:hover .wn-episode-name { color: var(--text); }
+.wn-episode-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.wn-episode-button .wn-episode-line { display: block; }
+.wn-episode-button .wn-episode-name { display: block; }
+
+/* ---- Screen-reader-only containment -------------------------------------
+   .sr-only is position:absolute, and an absolutely positioned element is
+   only clipped by an ancestor's overflow when that ancestor is its
+   CONTAINING BLOCK. The rail cards were position:static, so every .sr-only
+   span resolved against the initial containing block instead, escaped the
+   rail's overflow, and spread across the rail's full scroll width. That
+   inflated the document (2330px -> 3048px) and, because the fixed bottom
+   nav resolves against that block, pushed the nav off the viewport: it only
+   appeared after scrolling to the very bottom of a tall empty area, and
+   only on For You, the one page with horizontally scrolling rails.
+
+   Giving every .sr-only parent a containing block keeps the span inside the
+   card, where the rail's overflow can clip it. */
+.rail-card,
+.wn-episode-button { position: relative; }

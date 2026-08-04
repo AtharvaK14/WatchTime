@@ -36,7 +36,8 @@ export default function Movies({
   const isMobile = useIsMobile();
   const [openDetails, setOpenDetails] = useState<number | null>(null);
   const [query, setQuery] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("title");
+  // Recently added first, same reasoning as the Shows grid.
+  const [sortKey, setSortKey] = useState<SortKey>("recentlyAdded");
   const [filterKey, setFilterKey] = useState<FilterKey>("all");
   const [genreFilter, setGenreFilter] = useState<number | null>(null);
   const [genres, setGenres] = useState<Genre[]>([]);

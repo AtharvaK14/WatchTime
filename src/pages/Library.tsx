@@ -38,7 +38,10 @@ export default function Library() {
   }, []);
   const [openDetails, setOpenDetails] = useState<number | null>(null);
   const [query, setQuery] = useState("");
-  const [sortKey, setSortKey] = useState<SortKey>("name");
+  // Recently added first: a tracker is used to keep up with what you just
+  // started following, and alphabetical buries that under whatever begins
+  // with "A". Alphabetical is still one tap away in the sort control.
+  const [sortKey, setSortKey] = useState<SortKey>("recentlyAdded");
   const [filterKey, setFilterKey] = useState<FilterKey>("all");
   const [genreFilter, setGenreFilter] = useState<number | null>(null);
   const [genres, setGenres] = useState<Genre[]>([]);
