@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { TMDB_IMAGE_BASE, hasApiKey } from "../tmdb";
 import { buildForYouSections, type ForYouResult, type SectionItem } from "../lib/recommend/sections";
 import type { TasteProfile } from "../lib/recommend/tasteProfile";
+import EmptyState from "./EmptyState";
+import { RailSkeleton, LoadingAnnouncement } from "./Skeleton";
+import { ForYouIcon } from "./icons";
 
 /**
  * The For You page.
@@ -146,14 +149,27 @@ export default function ForYou({ onOpen }: { onOpen: (kind: "show" | "movie", tm
   }, []);
 
   if (!hasApiKey()) return null;
-  if (loading) return <p className="muted small">Working out what you might like...</p>;
+
+  // Building the profile and fetching candidates takes long enough that a
+  // single line of text reads as a stall. The skeleton holds the rail shape
+  // instead, so the sections drop into place rather than shoving the page.
+  if (loading) {
+    return (
+      <div className="for-you">
+        <h2>For you</h2>
+        <LoadingAnnouncement label="Working out what you might like" />
+        <RailSkeleton />
+      </div>
+    );
+  }
+
   if (!result) return null;
 
   if (result.status === "cold-start") {
     return (
       <div className="for-you">
         <h2>For you</h2>
-        <p className="muted">{result.message}</p>
+        <EmptyState icon={ForYouIcon} title="Not enough to go on yet" body={result.message} />
       </div>
     );
   }

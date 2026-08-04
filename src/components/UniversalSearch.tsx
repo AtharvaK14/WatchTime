@@ -9,6 +9,7 @@ import {
 import { looksDescriptive } from "../lib/moodSearch/constraints";
 import { discoverByMood, type DiscoveryItem } from "../lib/moodSearch/discover";
 import type { IndexProgress } from "../lib/moodSearch/titleIndex";
+import { CloseIcon } from "./icons";
 
 /**
  * One search box replaces what used to be three (title search, mood
@@ -242,7 +243,7 @@ export default function UniversalSearch({
           />
           {query && (
             <button type="button" className="search-clear" onClick={clear} aria-label="Clear search">
-              &times;
+              <CloseIcon size={16} />
             </button>
           )}
         </div>

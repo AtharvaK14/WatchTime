@@ -61,6 +61,33 @@ export function MovieRailSkeleton({ count = 5 }: { count?: number }) {
 }
 
 /**
+ * Placeholder for a For You recommendation rail. Building the sections runs
+ * a taste profile over the whole library and then hits TMDB, so this is the
+ * one screen where the wait is reliably long enough to need holding.
+ */
+export function RailSkeleton({ sections = 2, cards = 6 }: { sections?: number; cards?: number }) {
+  return (
+    <div aria-hidden="true">
+      {Array.from({ length: sections }, (_, s) => (
+        <section key={s} className="rail-section">
+          <div className="rail-head">
+            <SkeletonText width="180px" style={{ height: "1.1em" }} />
+          </div>
+          <div className="rail">
+            {Array.from({ length: cards }, (_, i) => (
+              <div key={i} className="rail-card">
+                <div className="skeleton skeleton-poster" />
+                <SkeletonText width="85%" />
+              </div>
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
+  );
+}
+
+/**
  * Placeholder for the details sheet / dialog while TMDB is queried. Mirrors
  * the hero-then-body composition so the sheet does not visibly reflow when
  * the response lands.

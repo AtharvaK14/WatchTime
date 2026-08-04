@@ -11,20 +11,28 @@ import {
 } from "../tmdb";
 import DetailsPanel from "../components/DetailsPanel";
 import UniversalSearch, { type SearchResults } from "../components/UniversalSearch";
+import { ShowGridSkeleton } from "../components/Skeleton";
+import EmptyState from "../components/EmptyState";
+import { SearchIcon } from "../components/icons";
 
 function ShowRow({ items, onOpen }: { items: TvSearchResult[]; onOpen: (id: number) => void }) {
   return (
     <div className="show-grid">
       {items.map((r) => (
         <button key={r.id} className="show-card" onClick={() => onOpen(r.id)}>
-          {r.poster_path ? (
-            <img src={`${TMDB_IMAGE_BASE}${r.poster_path}`} alt={r.name} />
-          ) : (
-            <div className="poster-placeholder" />
-          )}
-          <div className="show-card-body">
-            <p className="show-name">{r.name}</p>
-            <p className="muted small">{r.first_air_date?.slice(0, 4) ?? "?"}</p>
+          {/* .show-card-media is what clips the poster corners and carries
+              the inset hairline and press state; without it these cards
+              render differently from the identical grids on Shows/Movies. */}
+          <div className="show-card-media">
+            {r.poster_path ? (
+              <img src={`${TMDB_IMAGE_BASE}${r.poster_path}`} alt={r.name} loading="lazy" decoding="async" />
+            ) : (
+              <div className="poster-placeholder" />
+            )}
+            <div className="show-card-body">
+              <p className="show-name">{r.name}</p>
+              <p className="show-card-meta">{r.first_air_date?.slice(0, 4) ?? "?"}</p>
+            </div>
           </div>
         </button>
       ))}
@@ -37,14 +45,16 @@ function MovieRow({ items, onOpen }: { items: MovieSearchResult[]; onOpen: (id: 
     <div className="show-grid">
       {items.map((r) => (
         <button key={r.id} className="show-card" onClick={() => onOpen(r.id)}>
-          {r.poster_path ? (
-            <img src={`${TMDB_IMAGE_BASE}${r.poster_path}`} alt={r.title} />
-          ) : (
-            <div className="poster-placeholder" />
-          )}
-          <div className="show-card-body">
-            <p className="show-name">{r.title}</p>
-            <p className="muted small">{r.release_date?.slice(0, 4) ?? "?"}</p>
+          <div className="show-card-media">
+            {r.poster_path ? (
+              <img src={`${TMDB_IMAGE_BASE}${r.poster_path}`} alt={r.title} loading="lazy" decoding="async" />
+            ) : (
+              <div className="poster-placeholder" />
+            )}
+            <div className="show-card-body">
+              <p className="show-name">{r.title}</p>
+              <p className="show-card-meta">{r.release_date?.slice(0, 4) ?? "?"}</p>
+            </div>
           </div>
         </button>
       ))}
@@ -73,17 +83,19 @@ function Results({
                 className="show-card"
                 onClick={() => onOpen(t.kind, t.tmdbId)}
               >
-                {t.posterPath ? (
-                  <img src={`${TMDB_IMAGE_BASE}${t.posterPath}`} alt={t.name} />
-                ) : (
-                  <div className="poster-placeholder" />
-                )}
-                <div className="show-card-body">
-                  <p className="show-name">{t.name}</p>
-                  <p className="muted small">
-                    {t.kind === "show" ? "TV" : "Film"}
-                    {t.year ? ` · ${t.year}` : ""}
-                  </p>
+                <div className="show-card-media">
+                  {t.posterPath ? (
+                    <img src={`${TMDB_IMAGE_BASE}${t.posterPath}`} alt={t.name} loading="lazy" decoding="async" />
+                  ) : (
+                    <div className="poster-placeholder" />
+                  )}
+                  <div className="show-card-body">
+                    <p className="show-name">{t.name}</p>
+                    <p className="show-card-meta">
+                      {t.kind === "show" ? "TV" : "Film"}
+                      {t.year ? ` · ${t.year}` : ""}
+                    </p>
+                  </div>
                 </div>
               </button>
             ))}
@@ -106,18 +118,20 @@ function Results({
                   className="show-card"
                   onClick={() => onOpen(m.kind, m.tmdbId)}
                 >
-                  {m.posterPath ? (
-                    <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.name} />
-                  ) : (
-                    <div className="poster-placeholder" />
-                  )}
-                  <div className="show-card-body">
-                    <p className="show-name">{m.name}</p>
-                    <p className="muted small">
-                      {m.kind === "show" ? "TV" : "Film"}
-                      {m.year ? ` · ${m.year}` : ""}
-                    </p>
-                    {m.inLibrary && <span className="rail-badge">In your library</span>}
+                  <div className="show-card-media">
+                    {m.posterPath ? (
+                      <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.name} loading="lazy" decoding="async" />
+                    ) : (
+                      <div className="poster-placeholder" />
+                    )}
+                    <div className="show-card-body">
+                      <p className="show-name">{m.name}</p>
+                      <p className="show-card-meta">
+                        {m.kind === "show" ? "TV" : "Film"}
+                        {m.year ? ` · ${m.year}` : ""}
+                      </p>
+                      {m.inLibrary && <span className="rail-badge">In your library</span>}
+                    </div>
                   </div>
                 </button>
               ))}
@@ -126,7 +140,13 @@ function Results({
         </>
       )}
 
-      {nothing && !results.moodAttempted && <p className="muted">No results for "{results.query}".</p>}
+      {nothing && !results.moodAttempted && (
+        <EmptyState
+          icon={SearchIcon}
+          title="No results"
+          body={`Nothing on TMDB matched "${results.query}". Try fewer words, or describe what you're in the mood for instead of naming a title.`}
+        />
+      )}
     </>
   );
 }
@@ -192,13 +212,13 @@ export default function AddTitle() {
                 tab; this page is search plus the same-for-everyone rails. */}
             <h3 className="section-title">Trending this week</h3>
             {!popularShows ? (
-              <p className="muted small">Loading...</p>
+              <ShowGridSkeleton count={5} />
             ) : (
               <ShowRow items={popularShows.slice(0, 10)} onOpen={(id) => setOpenDetails({ kind: "show", tmdbId: id })} />
             )}
 
             {!popularMovies ? (
-              <p className="muted small">Loading...</p>
+              <ShowGridSkeleton count={5} />
             ) : (
               <MovieRow
                 items={popularMovies.slice(0, 10)}
@@ -208,7 +228,7 @@ export default function AddTitle() {
 
             <h3 className="section-title">Upcoming movies</h3>
             {!upcomingMovies ? (
-              <p className="muted small">Loading...</p>
+              <ShowGridSkeleton count={5} />
             ) : (
               <MovieRow
                 items={upcomingMovies.slice(0, 10)}
@@ -222,7 +242,7 @@ export default function AddTitle() {
               same curation, an approximation built from TMDB's own release-type data.
             </p>
             {!atHomeMovies ? (
-              <p className="muted small">Loading...</p>
+              <ShowGridSkeleton count={5} />
             ) : atHomeMovies.length === 0 ? (
               <p className="muted small">Nothing found in the last 45 days.</p>
             ) : (

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { SetupPhase } from "../lib/moodSearch/useMoodSearch";
 import type { MoodFilter } from "../lib/moodSearch/search";
+import { CloseIcon } from "./icons";
 
 const EXAMPLE = "something slow burn and unsettling, not found footage, under 90 minutes";
 
@@ -77,7 +78,7 @@ export default function MoodSearch({
           />
           {(text || filter) && (
             <button type="button" className="search-clear" onClick={clear} aria-label="Clear search">
-              &times;
+              <CloseIcon size={16} />
             </button>
           )}
         </div>
