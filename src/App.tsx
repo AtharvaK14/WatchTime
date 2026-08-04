@@ -5,6 +5,7 @@ import Home from "./pages/Home";
 import Library from "./pages/Library";
 import Movies from "./pages/Movies";
 import AddTitle from "./pages/AddTitle";
+import ForYouPage from "./pages/ForYouPage";
 import Settings from "./pages/Settings";
 import BackupNudge from "./components/BackupNudge";
 import FirstRunWizard from "./components/FirstRunWizard";
@@ -20,18 +21,23 @@ import {
 } from "./lib/persistence";
 import { initNative } from "./lib/native";
 import { useOnline } from "./lib/useOnline";
-import { HomeIcon, ShowsIcon, MoviesIcon, DiscoverIcon, SettingsIcon, type IconProps } from "./components/icons";
+import { HomeIcon, ShowsIcon, MoviesIcon, DiscoverIcon, ForYouIcon, SettingsIcon, type IconProps } from "./components/icons";
 import "./index.css";
 
-type Tab = "home" | "shows" | "movies" | "discover" | "settings";
+type Tab = "home" | "shows" | "movies" | "discover" | "forYou" | "settings";
 
-const TAB_ORDER: Tab[] = ["home", "shows", "movies", "discover", "settings"];
+// Settings is deliberately NOT in the nav. It is a destination people visit
+// rarely (keys, backup, import) and it was taking a slot of equal prominence
+// to the content tabs; it now lives as an icon in the header. That freed slot
+// goes to For You, which is content and belongs alongside the rest.
+const TAB_ORDER: Tab[] = ["home", "shows", "movies", "discover", "forYou"];
 
 const TAB_LABELS: Record<Tab, string> = {
   home: "Home",
   shows: "Shows",
   movies: "Movies",
   discover: "Discover",
+  forYou: "For You",
   settings: "Settings",
 };
 
@@ -40,6 +46,7 @@ const TAB_ICONS: Record<Tab, ComponentType<IconProps>> = {
   shows: ShowsIcon,
   movies: MoviesIcon,
   discover: DiscoverIcon,
+  forYou: ForYouIcon,
   settings: SettingsIcon,
 };
 
@@ -131,10 +138,26 @@ function App() {
 
       <div className="app-shell">
         <header className="app-header">
-          <span className="brand">
-            <BrandMark size={24} />
-            {APP_NAME}
+          {/* Logo only. The app name is redundant once someone is inside
+              the app, and dropping it lets the mark carry the identity at a
+              size where its detail actually reads. APP_NAME is still the
+              single source of truth for the launcher label and the a11y name
+              here, so the wordmark leaving the header changes nothing for
+              screen readers. */}
+          <span className="brand" aria-label={APP_NAME}>
+            <BrandMark size={48} />
           </span>
+          {/* aria-current marks it as the active page when Settings is open,
+              since it is the only way in now that it has left the nav. */}
+          <button
+            type="button"
+            className={`header-settings ${tab === "settings" ? "active" : ""}`}
+            onClick={() => setTab(tab === "settings" ? "home" : "settings")}
+            aria-label="Settings"
+            aria-current={tab === "settings" ? "page" : undefined}
+          >
+            <SettingsIcon size={20} />
+          </button>
         </header>
 
         {!online && (
@@ -154,6 +177,7 @@ function App() {
             <Movies initialFilter={moviesInitialFilter} onInitialFilterConsumed={() => setMoviesInitialFilter(null)} />
           )}
           {tab === "discover" && <AddTitle />}
+          {tab === "forYou" && <ForYouPage />}
           {tab === "settings" && <Settings />}
         </main>
 

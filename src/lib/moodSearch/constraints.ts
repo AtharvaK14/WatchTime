@@ -278,6 +278,30 @@ export function isEmptyConstraints(parsed: ParsedConstraints): boolean {
   );
 }
 
+/**
+ * Word count at or above which a query reads as a description rather than a
+ * title. Four is deliberately conservative: real titles routinely run three
+ * words ("Better Call Saul"), and misreading a title as a mood query is the
+ * more annoying error, since title results are shown for every query anyway.
+ */
+const DESCRIPTIVE_WORD_COUNT = 4;
+
+/**
+ * Whether a query should also run the (expensive) mood pipeline, or is just
+ * a title lookup. Lives here rather than in the search component because it
+ * is pure query analysis, and because it needs to be testable without a DOM.
+ */
+export function looksDescriptive(query: string): boolean {
+  const trimmed = query.trim();
+  if (!trimmed) return false;
+  const parsed = parseConstraints(trimmed);
+  // An explicit constraint ("under 90 minutes", "not found footage") is
+  // conclusive on its own: no title contains one.
+  if (parsed.runtime.maxMinutes !== null || parsed.runtime.minMinutes !== null) return true;
+  if (parsed.negatedPhrases.length > 0) return true;
+  return trimmed.split(/\s+/).length >= DESCRIPTIVE_WORD_COUNT;
+}
+
 /** Applies the runtime bounds. A title with unknown runtime is never excluded. */
 export function satisfiesRuntime(runtimeMinutes: number | null | undefined, c: RuntimeConstraint): boolean {
   // Unknown runtime passes deliberately. Show.episodeRuntimeMinutes and

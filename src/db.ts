@@ -36,6 +36,12 @@ export interface Show {
   // (or the fetch failed), matching the episodeRuntimeMinutes convention so
   // the backfill can distinguish the two and retry only the latter.
   overview?: string | null;
+  // TMDB original_language (ISO 639-1, e.g. "en", "ja", "ko"). Powers the
+  // language preference in the taste profile: someone whose library is half
+  // Japanese should not be recommended exclusively English-language titles.
+  // Filled by the same backfill pass as overview, since it arrives in the
+  // same details response and costs no extra request.
+  originalLanguage?: string | null;
 }
 
 export interface Episode {
@@ -95,6 +101,8 @@ export interface Movie {
   // TMDB's plot summary, persisted for mood search. Same undefined/null
   // convention as Show.overview above.
   overview?: string | null;
+  // TMDB original_language. See Show.originalLanguage.
+  originalLanguage?: string | null;
 }
 
 // Remembers how a raw TV Time title string was resolved, so re-running an
@@ -324,6 +332,20 @@ class TrackerDB extends Dexie {
     // titleEmbeddings is a new re-derivable cache table, so nothing
     // existing is touched.
     this.version(12).stores({
+      shows: "tmdbId, name, isFollowed, lastWatchedAt, tvdbId",
+      episodes: "key, showId, [showId+seasonNumber]",
+      watchedEpisodes: "key, showId, watchedAt",
+      movies: "tmdbId, title, watched, wantsToWatch",
+      titleMatches: "rawTitle, kind",
+      settings: "key",
+      omdbCache: "cacheKey, kind",
+      titleEmbeddings: "cacheKey, kind",
+    });
+    // v13: added Show.originalLanguage / Movie.originalLanguage for the
+    // taste profile's language preference. Purely additive, same pattern as
+    // v12: no index, nothing cleared, filled lazily by the existing overview
+    // backfill (which already fetches the details response these come in).
+    this.version(13).stores({
       shows: "tmdbId, name, isFollowed, lastWatchedAt, tvdbId",
       episodes: "key, showId, [showId+seasonNumber]",
       watchedEpisodes: "key, showId, watchedAt",

@@ -77,8 +77,15 @@ export async function backfillOverviews(
   onProgress?: ProgressCallback,
   shouldStop?: () => boolean
 ): Promise<{ attempted: number; failed: number }> {
-  const shows = await db.shows.filter((s) => s.overview === undefined).toArray();
-  const movies = await db.movies.filter((m) => m.overview === undefined).toArray();
+  // Also catches rows backfilled before v13 added originalLanguage: they have
+  // an overview already, so an overview-only check would skip them forever
+  // and the taste profile's language preference would never populate for an
+  // existing library. Both fields come from the same details response, so
+  // filling them together costs no extra request.
+  const shows = await db.shows.filter((s) => s.overview === undefined || s.originalLanguage === undefined).toArray();
+  const movies = await db.movies
+    .filter((m) => m.overview === undefined || m.originalLanguage === undefined)
+    .toArray();
   const total = shows.length + movies.length;
   if (total === 0) return { attempted: 0, failed: 0 };
 
@@ -90,9 +97,12 @@ export async function backfillOverviews(
     if (shouldStop?.()) break;
     try {
       const details = await getTvShowDetails(show.tmdbId);
-      await db.shows.update(show.tmdbId, { overview: details.overview ?? null });
+      await db.shows.update(show.tmdbId, {
+        overview: details.overview ?? null,
+        originalLanguage: details.original_language ?? null,
+      });
     } catch {
-      await db.shows.update(show.tmdbId, { overview: null });
+      await db.shows.update(show.tmdbId, { overview: null, originalLanguage: null });
       failed++;
     }
     onProgress?.({ phase: "fetching-overviews", done: ++done, total });
@@ -102,9 +112,12 @@ export async function backfillOverviews(
     if (shouldStop?.()) break;
     try {
       const details = await getMovieDetails(movie.tmdbId);
-      await db.movies.update(movie.tmdbId, { overview: details.overview ?? null });
+      await db.movies.update(movie.tmdbId, {
+        overview: details.overview ?? null,
+        originalLanguage: details.original_language ?? null,
+      });
     } catch {
-      await db.movies.update(movie.tmdbId, { overview: null });
+      await db.movies.update(movie.tmdbId, { overview: null, originalLanguage: null });
       failed++;
     }
     onProgress?.({ phase: "fetching-overviews", done: ++done, total });

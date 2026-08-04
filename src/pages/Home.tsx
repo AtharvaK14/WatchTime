@@ -4,9 +4,10 @@ import { db, type Episode } from "../db";
 import { TMDB_IMAGE_BASE } from "../tmdb";
 import { ensureEpisodesCached, findNextUpcoming } from "../lib/episodeSync";
 import { getStaleDaysThreshold } from "../lib/showStatus";
-import { markNextEpisodeWatched } from "../lib/watchEvents";
+import { markNextEpisodeWatched, recordEpisodeRewatch } from "../lib/watchEvents";
 import { useIsMobile } from "../lib/useIsMobile";
 import DetailsPanel from "../components/DetailsPanel";
+import EpisodeDetailsPanel from "../components/EpisodeDetailsPanel";
 import MoodSearch from "../components/MoodSearch";
 import { useMoodSearch } from "../lib/moodSearch/useMoodSearch";
 import {
@@ -19,7 +20,17 @@ import {
 } from "../lib/moodSearch/search";
 import { buildWatchNextRows, byAddedAt, byRecency, type WatchNextRow as Row } from "../lib/watchNext";
 
-function EpisodeRow({ row, onOpenShow, onMarkWatched }: { row: Row; onOpenShow: (id: number) => void; onMarkWatched: (row: Row) => void }) {
+function EpisodeRow({
+  row,
+  onOpenShow,
+  onOpenEpisode,
+  onMarkWatched,
+}: {
+  row: Row;
+  onOpenShow: (id: number) => void;
+  onOpenEpisode: (row: Row) => void;
+  onMarkWatched: (row: Row) => void;
+}) {
   const isPremiere = row.nextEpisode?.episodeNumber === 1;
   return (
     <div className="watch-next-row">
@@ -34,12 +45,18 @@ function EpisodeRow({ row, onOpenShow, onMarkWatched }: { row: Row; onOpenShow: 
         </span>
         {row.nextEpisode ? (
           <>
-            <p className="wn-episode-line">
-              S{String(row.nextEpisode.seasonNumber).padStart(2, "0")} | E
-              {String(row.nextEpisode.episodeNumber).padStart(2, "0")}
-              {row.additionalCount > 0 && <span className="muted"> +{row.additionalCount}</span>}
-            </p>
-            <p className="muted small wn-episode-name">{row.nextEpisode.name}</p>
+            {/* The episode block opens the same episode panel the season
+                browser uses. A real button, not a click handler on a <p>, so
+                it is keyboard reachable and announced as a control. */}
+            <button type="button" className="wn-episode-button" onClick={() => onOpenEpisode(row)}>
+              <span className="wn-episode-line">
+                S{String(row.nextEpisode.seasonNumber).padStart(2, "0")} | E
+                {String(row.nextEpisode.episodeNumber).padStart(2, "0")}
+                {row.additionalCount > 0 && <span className="muted"> +{row.additionalCount}</span>}
+              </span>
+              <span className="muted small wn-episode-name">{row.nextEpisode.name}</span>
+              <span className="sr-only">Episode details</span>
+            </button>
             {isPremiere && <span className="premiere-tag">PREMIERE</span>}
           </>
         ) : (
@@ -75,6 +92,11 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
   const [syncing, setSyncing] = useState(false);
   const [syncErrors, setSyncErrors] = useState<string[]>([]);
   const [tab, setTab] = useState<"next" | "stale" | "not-started">("next");
+  // The episode panel opened from a Watch Next row. Only the show/episode
+  // identity is stored; watched state is derived live from allWatched below,
+  // so ticking the episode updates the open panel in place rather than
+  // showing a stale snapshot.
+  const [openEpisode, setOpenEpisode] = useState<{ showId: number; episode: Episode } | null>(null);
 
   // Network side effect: make sure TMDB episode lists are cached for every
   // followed show. Writes to db.episodes, which allEpisodes above reacts to,
@@ -122,6 +144,11 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
         : buildWatchNextRows(shows, allEpisodes, allWatched, getStaleDaysThreshold(), filter),
     [shows, allEpisodes, allWatched, filter]
   );
+
+  // Live lookups for the open episode panel. Both read from the same live
+  // queries the lists use, so a watch recorded anywhere is reflected here.
+  const openEpisodeShow = openEpisode ? shows?.find((sh) => sh.tmdbId === openEpisode.showId) : undefined;
+  const openEpisodeWatch = openEpisode ? allWatched?.find((w) => w.key === openEpisode.episode.key) : undefined;
 
   async function markWatched(row: Row) {
     if (!row.nextEpisode) return;
@@ -187,9 +214,33 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
 
       <div className="watch-next-list">
         {activeList.map((row) => (
-          <EpisodeRow key={row.showId} row={row} onOpenShow={onOpenShow} onMarkWatched={markWatched} />
+          <EpisodeRow
+            key={row.showId}
+            row={row}
+            onOpenShow={onOpenShow}
+            onOpenEpisode={(r) => r.nextEpisode && setOpenEpisode({ showId: r.showId, episode: r.nextEpisode })}
+            onMarkWatched={markWatched}
+          />
         ))}
       </div>
+
+      {openEpisodeShow && openEpisode && (
+        <EpisodeDetailsPanel
+          show={{ name: openEpisodeShow.name, imdbId: openEpisodeShow.imdbId }}
+          episode={openEpisode.episode}
+          watched={openEpisodeWatch !== undefined}
+          watchCount={openEpisodeWatch?.watchCount ?? 0}
+          // Deliberately stays open on toggle, matching the season browser:
+          // the panel re-renders from live data so the tick and the rewatch
+          // count update in place.
+          onToggleWatched={async () => {
+            if (openEpisodeWatch) await db.watchedEpisodes.delete(openEpisode.episode.key);
+            else await markNextEpisodeWatched(openEpisode.showId, openEpisode.episode);
+          }}
+          onWatchAgain={() => recordEpisodeRewatch(openEpisode.showId, [openEpisode.episode])}
+          onClose={() => setOpenEpisode(null)}
+        />
+      )}
     </>
   );
 }

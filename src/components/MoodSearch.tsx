@@ -57,27 +57,33 @@ export default function MoodSearch({
     onClear();
   }
 
+
   const progressMessage = dismissed ? null : setupMessage(setup);
 
   return (
     <div className="mood-search">
-      <form className="mood-search-row" onSubmit={submit}>
-        <input
-          type="text"
-          className="mood-search-input"
-          value={text}
-          placeholder={`Describe what you're in the mood for, e.g. "${EXAMPLE}"`}
-          aria-label="Search by mood"
-          onChange={(e) => setText(e.target.value)}
-        />
+      {/* Same shape as Discover's search: field with an inline clear, then
+          one button. Clear moved inside the field so the row is always
+          exactly two items and can stay on a single line at any width. */}
+      <form className="mood-search-row" onSubmit={submit} role="search">
+        <div className="search-field">
+          <input
+            type="text"
+            className="mood-search-input"
+            value={text}
+            placeholder={`Describe what you're in the mood for, e.g. "${EXAMPLE}"`}
+            aria-label="Search by mood"
+            onChange={(e) => setText(e.target.value)}
+          />
+          {(text || filter) && (
+            <button type="button" className="search-clear" onClick={clear} aria-label="Clear search">
+              &times;
+            </button>
+          )}
+        </div>
         <button type="submit" disabled={searching || !text.trim()}>
           {searching ? "Searching..." : "Search"}
         </button>
-        {filter && (
-          <button type="button" onClick={clear}>
-            Clear
-          </button>
-        )}
       </form>
 
       {/* Non-blocking by design: the lists below stay interactive and usable

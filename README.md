@@ -16,6 +16,7 @@ Runs as a web app and, wrapped with Capacitor, as a native **Android** app.
 - [Getting started (development)](#getting-started-development)
 - [API keys](#api-keys)
 - [Mood search (on-device)](#mood-search-on-device)
+- [Recommendations ("For you")](#recommendations-for-you)
 - [Importing from TV Time](#importing-from-tv-time)
 - [Backup & restore](#backup--restore)
 - [Building the Android app](#building-the-android-app)
@@ -28,7 +29,8 @@ Runs as a web app and, wrapped with Capacitor, as a native **Android** app.
 
 ## Features
 
-- **Mood search**: describe what you feel like watching in plain English ("something slow burn and unsettling, not found footage, under 90 minutes"). Filters your library on Home, and recommends unwatched titles on Discover. Runs entirely on your device; see [Mood search](#mood-search-on-device).
+- **Mood search**: describe what you feel like watching in plain English ("something slow burn and unsettling, not found footage, under 90 minutes"). Filters your library on Home; on Discover the same search box also finds titles you don't own. Runs entirely on your device; see [Mood search](#mood-search-on-device).
+- **Recommendations**: a personalised **For You** tab, built from a taste profile of your genres, completion rate, rewatches, and language. See [Recommendations](#recommendations-for-you).
 - **Watch Next** — the next unwatched, released episode for every show you're mid-way through.
 - **Haven't Watched For a While** — shows you started but stopped (configurable threshold, default 60 days).
 - **Haven't Yet Started** — shows added to your library but never begun.
@@ -85,6 +87,11 @@ keys are stored only on your device.
 
 You can enter/update keys anytime under **Settings → API Keys**.
 
+> **Where is Settings?** The gear icon in the top-right of the header. It is
+> deliberately not one of the five nav tabs: those are for content you visit
+> constantly, and Settings (keys, backup, import) is not. That freed slot went
+> to **For You**.
+
 ---
 
 ## Mood search (on-device)
@@ -107,10 +114,10 @@ embedding for the query, then arithmetic.
 
 ### Mood discovery (Discover)
 
-The box at the top of the Discover tab recommends titles you have **not**
-watched, including ones that are not in your library at all. Results are a
-single ranked list mixing both, with an "In your library" badge on ones you
-already own.
+Discover's single search box (see [Recommendations](#recommendations-for-you)
+for how it decides) also accepts a description, and returns titles you have
+**not** watched, including ones not in your library at all, with an "In your
+library" badge on ones you already own.
 
 Because there is no local copy of TMDB's catalogue, this cannot work the same
 way. It uses retrieve-then-rerank:
@@ -139,6 +146,9 @@ Discovery needs your TMDB key. If TMDB can't be reached, it says so plainly
 and falls back to ranking only your own unwatched library, rather than
 showing a plausible-looking list that quietly stopped recommending anything
 new.
+
+The two features share one embedding cache, so a title indexed for the Home
+filter costs nothing to rank here, and vice versa.
 
 ### Why an embedding model and not a generative one
 
@@ -234,6 +244,126 @@ nothing downstream could detect.
   `onnxruntime-node` and `sharp`. Those are Node-side optional dependencies
   of Transformers.js used only by the build script; the app ships the WASM
   build and does not include them.
+
+## Recommendations ("For you")
+
+**For You** is its own tab; **Discover** is one search box plus the
+same-for-everyone trending rails. They were split because they answer
+different questions ("show me what's mine" vs "let me go find something"),
+and neither should have to be scrolled past to reach the other.
+
+### One search box, two kinds of query
+
+There used to be three search inputs on this page (title search, mood
+search, and a refine box inside For You). They are now one, because users do
+not experience "find The Sopranos" and "find me something bleak and slow" as
+different features. The box works out which is which:
+
+| Query | Treated as | Why |
+|---|---|---|
+| `Sopranos` | Title | Short |
+| `Better Call Saul` | Title | Three words; real titles run this long |
+| `something slow and unsettling` | Description | Four or more words |
+| `a comedy under 90 minutes` | Description | Contains a runtime constraint |
+| `horror but not found footage` | Description | Contains a negation |
+
+Title lookup is cheap, so it runs as you type and fills an autocomplete
+dropdown (arrow keys and Enter work). Mood search runs a model over a fetched
+candidate pool, so it only runs on submit, and only for descriptive queries.
+Title matches are shown for every query either way, so a long exact title is
+never lost to the heuristic.
+
+The threshold is deliberately set at four words rather than three:
+misreading a title as a mood query is the more annoying error, and it costs
+a model run.
+
+### Recommendations come from a taste profile, not from single titles
+
+An earlier version seeded rows from individual watched titles ("Because you
+watched X"). That was replaced because it had two structural problems: it
+over-fitted to whatever you happened to watch last (one sampled documentary
+produced a whole row of documentaries), and it could not express anything
+you like in general.
+
+[`tasteProfile.ts`](src/lib/recommend/tasteProfile.ts) aggregates the whole
+library into one profile:
+
+| Input | How it is used |
+|---|---|
+| Rewatches, completions, episode depth | Per-title affinity (via `signals.ts`) |
+| Genres | Affinity split across a title's genres, then normalised to shares |
+| Recency | Halves yearly; also drives a separate recent-genre view |
+| Abandonment | Genres abandoned twice or more, never enjoyed, are excluded |
+| Original language | Filters recommendations when one language covers 25%+ of the library |
+| Runtime | Median watched runtime, widened into a band |
+| Completion rate | Series finished / series started |
+| TMDB episode ratings | Average score of episodes actually watched |
+
+Two details worth knowing:
+
+**Affinity is split across a title's genres, not counted once per genre.**
+Otherwise a title tagged with five genres contributes five times as much as
+a focused single-genre title of identical engagement, which systematically
+over-weights sprawling franchise entries.
+
+**A genre needs corroboration to become a favourite.** One heavily engaged
+single-genre title (rewatched, finished, recent) can take a huge share on its
+own. Genres appearing across two or more titles are preferred, unless too few
+qualify, in which case single-title genres are allowed rather than leaving
+the profile empty.
+
+The app has no user-rating feature, so "highly rated" always means TMDB's
+public score for something you watched, never your own rating.
+
+### Page structure
+
+Sections, in priority order. Local sections lead: they are about your own
+library, which is more trustworthy than anything retrieved, and they survive
+TMDB being unreachable.
+
+| Section | Source | Answers |
+|---|---|---|
+| New seasons you've missed | Local | A season that has **already aired** since you caught up, and you have not started it. Home cannot show this: its lists exclude archived and unfollowed shows, so a finished series drops off the app entirely |
+| Shows / Movies we think you'll like | TMDB discover | The core recommendation, filtered by profile genres, language, and avoided genres |
+| Based on what you've watched lately | TMDB discover | Recent taste rather than lifetime taste |
+| Acclaimed and unwatched | TMDB discover | Highly rated titles in your genres |
+| Hidden gems for your taste | TMDB discover | Well reviewed, few votes |
+| Coming soon you'll probably like | TMDB discover | Releasing in the next six months in your genres |
+
+Three rules keep the page from becoming a wall of posters:
+
+1. **A title appears in at most one section.** Sections claim items in
+   priority order. Without this the same popular titles repeat down every
+   row, which is what makes a recommendation page feel padded.
+2. **Empty sections are dropped**, never rendered as an empty shelf.
+3. **Rails, not grids.** Each section is one screen-row tall, so the page
+   stays scannable by heading however many sections exist.
+4. **Nothing sits below a card title.** Titles wrap to one or two lines, so
+   anything after them lands at a different height on every card and the rail
+   reads ragged. Year, season, and library markers moved onto the poster (or
+   were dropped); the title reserves two lines so all cards match exactly.
+
+### "Why these?"
+
+The insights panel shows the profile driving the page: top genres as bars,
+completion rate, average score, typical runtime, language, and confidence.
+
+It exists because a recommendation page that only shows results is
+unfalsifiable. When a suggestion looks wrong there is otherwise no way to
+tell whether the taste model is wrong or the retrieval was unlucky. Showing
+the profile makes the system's belief about you visible, and therefore
+arguable.
+
+### Deliberately not built
+
+**Actors and directors.** A real signal, but the app stores no credits, so
+using it would mean a `/credits` call per library title plus a schema change
+to store people, and a re-fetch to keep it current. TMDB's discover supports
+`with_cast` and `with_crew`, so the retrieval half is ready; the blocker is
+data collection, not ranking. Worth doing as its own change.
+
+**A "Continue watching" row.** Home's Watch Next already is this, and
+duplicating it here would pad the page rather than improve discovery.
 
 ## Importing from TV Time
 
@@ -421,13 +551,18 @@ src/
       search.ts             Query -> filter object; filter application (Home)
       discover.ts           TMDB retrieve-then-rerank recommendations (Discover)
       useMoodSearch.ts      React state for setup/progress/results
+    recommend/
+      signals.ts            Watch history -> per-title affinity scores
+      tasteProfile.ts       Whole-library profile: genres, language, runtime, completion
+      sections.ts           Builds the For You sections; cross-section de-duplication
     backup.ts               Full export/validate/restore (native + web)
     persistence.ts          Storage-persistence request + backup nudge
     useDraggableSheet.ts    Mobile bottom-sheet drag (capped at 75%)
     native.ts / useOnline.ts / backHandler.ts   Capacitor behaviors
   components/
     MoodSearch.tsx          Home: natural-language library filter
-    MoodDiscover.tsx        Discover: natural-language recommendations
+    UniversalSearch.tsx     Discover: one box, titles + autocomplete + mood
+    ForYou.tsx              Discover: personalised rails + taste insights
     DetailsPanel.tsx        Show/movie details + season browser
     EpisodeDetailsPanel.tsx Episode detail (landscape hero, rewatch controls)
     About.tsx               Credits, attribution, privacy link
@@ -435,6 +570,7 @@ src/
     icons.tsx               Tab icons
   pages/
     Home.tsx                Watch Next / stale / not-started
+    ForYouPage.tsx          Personalised recommendations (own tab)
     Library.tsx  Movies.tsx  AddTitle.tsx
     Settings.tsx            Backup, import, keys, Watch Next, diagnostics, about
     Stats.tsx  Diagnostics.tsx
