@@ -1895,6 +1895,41 @@ summary:focus-visible,
   will-change: transform;
   box-shadow: var(--shadow-sheet);
   z-index: var(--z-sheet);
+
+  /* Height is CSS's job, not JavaScript's.
+     It used to be computed from window.innerHeight and written as an inline
+     px value. That is exactly the number that is unreliable on a real
+     device: innerHeight moves as browser chrome and the WebView's own insets
+     settle, so a value captured a frame too early left the sheet short and
+     the page showing beneath it. dvh tracks the *dynamic* viewport, and
+     letting the content size the box means the common case needs no
+     measurement at all. JS now only observes the rendered height for the
+     drag maths. */
+  height: auto;
+  max-height: 85dvh;
+  min-height: min(220px, 85dvh);
+}
+
+/* Fallback for engines without dvh. Ordered after so dvh wins where supported. */
+@supports not (height: 1dvh) {
+  .details-sheet {
+    max-height: 85vh;
+    min-height: min(220px, 85vh);
+  }
+}
+
+/* The sheet's own backdrop carries NO padding.
+   .modal-backdrop is shared with the centred dialogs, which need their 20px
+   inset. But backdrop-filter makes an element the containing block for its
+   position:fixed descendants, so on engines that implement that, the sheet's
+   `bottom: 0` resolves against the backdrop's PADDING box — parking it 20px
+   above the bottom of the screen and 20px in from each side. That is a gap
+   that appears only on some engines, which is the worst kind. Zeroing the
+   padding here makes the sheet flush whether or not the containing block is
+   established. */
+.sheet-backdrop {
+  padding: 0;
+  align-items: flex-end;
 }
 
 .details-sheet.details-modal-wide {
@@ -1954,8 +1989,12 @@ summary:focus-visible,
   overscroll-behavior: contain;
   /* Bottom padding clears the ::after fade above, so the last line of content
      can always be scrolled clear of the gradient rather than ending
-     underneath it. */
-  padding: 0 var(--space-5) var(--space-12);
+     underneath it. env(safe-area-inset-bottom) additionally keeps the last
+     line clear of the Android gesture bar / iOS home indicator: the sheet
+     itself deliberately extends BEHIND those (that is what makes it look
+     like it emerges from the edge), so the inset belongs on the content, not
+     on the sheet's own box. */
+  padding: 0 var(--space-5) calc(var(--space-12) + env(safe-area-inset-bottom));
 }
 
 /* Hero. The blurred poster fills the banner; a sharp thumbnail and the title

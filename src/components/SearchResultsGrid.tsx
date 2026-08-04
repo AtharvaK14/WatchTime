@@ -3,6 +3,7 @@ import { db } from "../db";
 import { TMDB_IMAGE_BASE } from "../tmdb";
 import type { SearchResults } from "./UniversalSearch";
 import EmptyState from "./EmptyState";
+import { ShowGridSkeleton } from "./Skeleton";
 import { SearchIcon } from "./icons";
 
 interface LibraryEntry {
@@ -13,24 +14,22 @@ interface LibraryEntry {
 /**
  * Library membership for every title the user tracks, keyed by TMDB id.
  *
- * Search results come from TMDB, so they carry no knowledge of what the user
+ * Title results come from TMDB, so they carry no knowledge of what the user
  * already has. This supplies that, live — adding a title from a result card
- * updates the badge without a refetch.
+ * updates the badge without a refetch. (Recommendation results already carry
+ * their own inLibrary flag from the discovery pipeline, which computes it
+ * against the same tables.)
  *
- * A show counts as "watched" only when it is archived (the user stopped it).
- * Shows are ongoing by nature; a part-watched series is still something you
- * are tracking, so it keeps the badge. Movies are binary.
+ * A show counts as "watched" only when it is archived. Shows are ongoing by
+ * nature; a part-watched series is still something you are tracking, so it
+ * keeps the badge. Movies are binary.
  */
 function useLibraryIndex(): Map<string, LibraryEntry> {
   const shows = useLiveQuery(() => db.shows.toArray(), []);
   const movies = useLiveQuery(() => db.movies.toArray(), []);
   const index = new Map<string, LibraryEntry>();
-  for (const s of shows ?? []) {
-    index.set(`show:${s.tmdbId}`, { inLibrary: true, watched: !!s.isArchived });
-  }
-  for (const m of movies ?? []) {
-    index.set(`movie:${m.tmdbId}`, { inLibrary: true, watched: !!m.watched });
-  }
+  for (const s of shows ?? []) index.set(`show:${s.tmdbId}`, { inLibrary: true, watched: !!s.isArchived });
+  for (const m of movies ?? []) index.set(`movie:${m.tmdbId}`, { inLibrary: true, watched: !!m.watched });
   return index;
 }
 
@@ -44,17 +43,13 @@ interface Card {
 
 function ResultCard({
   item,
-  entry,
+  badge,
   onOpen,
 }: {
   item: Card;
-  entry: LibraryEntry | undefined;
+  badge: boolean;
   onOpen: (kind: "show" | "movie", tmdbId: number) => void;
 }) {
-  // Only unwatched library titles are badged. A title you have already
-  // finished does not need "you own this" attached to it — that is noise on a
-  // result you searched for deliberately.
-  const showBadge = entry?.inLibrary && !entry.watched;
   return (
     <button className="show-card" onClick={() => onOpen(item.kind, item.tmdbId)}>
       <div className="show-card-media">
@@ -63,7 +58,7 @@ function ResultCard({
         ) : (
           <div className="poster-placeholder" />
         )}
-        {showBadge && <span className="library-badge">From library</span>}
+        {badge && <span className="library-badge">In library</span>}
         <div className="show-card-body">
           <p className="show-name">{item.name}</p>
           <p className="show-card-meta">
@@ -76,14 +71,42 @@ function ResultCard({
   );
 }
 
+function Grid({
+  items,
+  badge,
+  onOpen,
+}: {
+  items: Card[];
+  badge: boolean;
+  onOpen: (kind: "show" | "movie", tmdbId: number) => void;
+}) {
+  return (
+    <div className="show-grid">
+      {items.map((i) => (
+        <ResultCard key={`${i.kind}:${i.tmdbId}`} item={i} badge={badge} onOpen={onOpen} />
+      ))}
+    </div>
+  );
+}
+
 /**
  * Renders the output of UniversalSearch.
  *
- * Results are whatever TMDB returned for the query — the user's library is
- * never the source of the list, only an annotation on it. That is the
- * difference between a search and a filter, and it is the behaviour Home's
- * old mood box got wrong: it could only ever return titles already owned, so
- * searching for anything new came back empty.
+ * Ordering depends on what the query WAS, which is the whole point of the
+ * recommendation-vs-lookup split:
+ *
+ *   - A description ("something scary") leads with recommendations, and
+ *     within those, with titles already in the library. Somebody asking for
+ *     something scary is best served by the horror film they already own and
+ *     have not watched. Literal title matches for that text are almost always
+ *     noise, so they go last under a heading that says what they are.
+ *   - A title lookup ("Silo") leads with titles, because that is what was
+ *     asked for.
+ *
+ * Results are never sourced FROM the library — TMDB is always the source, and
+ * library membership only reorders and annotates. That is the difference
+ * between a search and a filter, and it is what Home's old mood box got
+ * wrong: it could only ever return titles already owned.
  */
 export default function SearchResultsGrid({
   results,
@@ -94,59 +117,94 @@ export default function SearchResultsGrid({
 }) {
   const library = useLibraryIndex();
 
-  // Mood matches are suggestions rather than a requested title, so anything
-  // already watched is dropped from them: re-recommending something you have
-  // finished is the one case where library state should remove a result
-  // rather than annotate it. Title matches are left alone — if you typed the
-  // name, you want the title, watched or not.
-  const mood = results.mood.filter((m) => !library.get(`${m.kind}:${m.tmdbId}`)?.watched);
-  const nothing = results.titles.length === 0 && mood.length === 0;
+  // Anything already watched is dropped from recommendations: re-suggesting
+  // something you finished is the one case where library state should remove
+  // a result rather than annotate it. (discoverByMood already excludes these;
+  // this also covers the movie you marked watched since the search ran.)
+  const recommendations = results.mood.filter((m) => !library.get(`${m.kind}:${m.tmdbId}`)?.watched);
+  const fromLibrary = recommendations.filter((m) => m.inLibrary);
+  const fromCatalog = recommendations.filter((m) => !m.inLibrary);
+
+  const searching = results.moodAttempted && recommendations.length === 0 && !results.moodMessage;
+  const nothing = results.titles.length === 0 && recommendations.length === 0;
+
+  // A query can be routed to the recommender AND be an exact title — any
+  // title of four or more words trips the word-count fallback in
+  // looksDescriptive ("Margo's Got Money Troubles"). When the text names a
+  // real title outright, that title is the answer, so titles lead regardless.
+  const normalise = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const exactTitleMatch = results.titles.some((t) => normalise(t.name) === normalise(results.query));
+
+  const titlesBlock = results.titles.length > 0 && (
+    <>
+      <h3 className="section-title">{results.moodAttempted ? "Titles matching that text" : "Titles"}</h3>
+      <Grid
+        items={results.titles}
+        badge={false}
+        onOpen={onOpen}
+      />
+    </>
+  );
+
+  if (!results.moodAttempted || exactTitleMatch) {
+    return (
+      <>
+        {titlesBlock}
+        {exactTitleMatch && recommendations.length > 0 && (
+          <>
+            <h3 className="section-title">You might also like</h3>
+            <Grid items={recommendations} badge={false} onOpen={onOpen} />
+          </>
+        )}
+        {nothing && (
+          <EmptyState
+            icon={SearchIcon}
+            title="No results"
+            body={`Nothing on TMDB matched "${results.query}". Try describing what you're in the mood for instead — "something scary", "slow burn mystery", "feel good movies".`}
+          />
+        )}
+      </>
+    );
+  }
 
   return (
     <>
-      {results.titles.length > 0 && (
+      {fromLibrary.length > 0 && (
         <>
-          <h3 className="section-title">Titles</h3>
-          <div className="show-grid">
-            {results.titles.map((t) => (
-              <ResultCard
-                key={`${t.kind}:${t.tmdbId}`}
-                item={t}
-                entry={library.get(`${t.kind}:${t.tmdbId}`)}
-                onOpen={onOpen}
-              />
-            ))}
-          </div>
+          <h3 className="section-title">
+            From your library
+            <span className="section-count">{fromLibrary.length}</span>
+          </h3>
+          <p className="discover-subhead">Unwatched titles you already have that fit</p>
+          <Grid items={fromLibrary} badge onOpen={onOpen} />
         </>
       )}
 
-      {results.moodAttempted && (
+      {fromCatalog.length > 0 && (
         <>
-          <h3 className="section-title">Matching your description</h3>
-          {results.moodMessage && <p className="muted small">{results.moodMessage}</p>}
-          {mood.length === 0 && !results.moodMessage && <p className="muted small">Still looking...</p>}
-          {mood.length > 0 && (
-            <div className="show-grid">
-              {mood.map((m) => (
-                <ResultCard
-                  key={`${m.kind}:${m.tmdbId}`}
-                  item={m}
-                  entry={library.get(`${m.kind}:${m.tmdbId}`)}
-                  onOpen={onOpen}
-                />
-              ))}
-            </div>
+          <h3 className="section-title">
+            {fromLibrary.length > 0 ? "More to add" : "Recommended for you"}
+            <span className="section-count">{fromCatalog.length}</span>
+          </h3>
+          {fromLibrary.length > 0 && (
+            <p className="discover-subhead">Not in your library yet — open one to add it</p>
           )}
+          <Grid items={fromCatalog} badge={false} onOpen={onOpen} />
         </>
       )}
 
-      {nothing && !results.moodAttempted && (
-        <EmptyState
-          icon={SearchIcon}
-          title="No results"
-          body={`Nothing on TMDB matched "${results.query}". Try fewer words, or describe what you're in the mood for instead of naming a title.`}
-        />
+      {searching && (
+        <>
+          <h3 className="section-title">Finding matches</h3>
+          <ShowGridSkeleton count={6} />
+        </>
       )}
+
+      {results.moodMessage && recommendations.length === 0 && (
+        <EmptyState icon={SearchIcon} title="No matches for that" body={results.moodMessage} />
+      )}
+
+      {titlesBlock}
     </>
   );
 }

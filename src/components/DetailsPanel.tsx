@@ -60,7 +60,7 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   // mobile-specific. useDraggableSheet's output is only wired into the
   // JSX on the mobile render path below, it's inert otherwise.
   useLockBodyScroll();
-  const { sheetStyle, handleProps, contentRef } = useDraggableSheet(onClose);
+  const { sheetStyle, handleProps, sheetRef } = useDraggableSheet(onClose);
   // Sheet vs centred dialog. Portrait-aware, not the 640px phone breakpoint —
   // see usePrefersBottomSheet for why.
   const isMobile = usePrefersBottomSheet();
@@ -639,8 +639,9 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
 
   if (isMobile) {
     return (
-      <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal-backdrop sheet-backdrop" onClick={onClose}>
         <div
+          ref={sheetRef}
           className={`details-sheet ${showsSeasonBrowser ? "details-modal-wide" : ""} ${
             atEnd ? "is-at-end" : ""
           }`}
@@ -656,8 +657,6 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
           </button>
 
           <div className="sheet-scroll-area" ref={scrollAreaRef}>
-            {/* Hugs its content so useDraggableSheet can size the sheet to it. */}
-            <div ref={contentRef}>
             {error && (
               <div className="sheet-message" role="alert">
                 <p className="status-error">{error}</p>
@@ -720,7 +719,6 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
                 {seasonBrowserBlock}
               </>
             )}
-            </div>
           </div>
         </div>
 

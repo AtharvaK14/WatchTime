@@ -280,16 +280,87 @@ export function isEmptyConstraints(parsed: ParsedConstraints): boolean {
 
 /**
  * Word count at or above which a query reads as a description rather than a
- * title. Four is deliberately conservative: real titles routinely run three
- * words ("Better Call Saul"), and misreading a title as a mood query is the
- * more annoying error, since title results are shown for every query anyway.
+ * title, when nothing else in it gives the game away.
+ *
+ * This is now a last resort rather than the primary test. On its own it was
+ * badly wrong in the common case: "something scary", "funny sitcom", "slow
+ * burn mystery" and "feel good movies" are all obviously descriptions and all
+ * under four words, so every one of them was routed to a literal title lookup
+ * and came back with nothing. The lexical checks below run first.
  */
 const DESCRIPTIVE_WORD_COUNT = 4;
 
 /**
- * Whether a query should also run the (expensive) mood pipeline, or is just
- * a title lookup. Lives here rather than in the search component because it
- * is pure query analysis, and because it needs to be testable without a DOM.
+ * Phrasings that ask for a recommendation. Matching any of these is
+ * conclusive regardless of what follows — "shows like Breaking Bad" contains
+ * a real title but is plainly not a request for that title.
+ */
+const DISCOVERY_PHRASES = [
+  /\b(something|anything)\b/,
+  /\b(shows?|movies?|films?|series)\s+(like|similar\s+to|about|with|for)\b/,
+  /\bsimilar\s+to\b/,
+  /\b(recommend|suggest|suggestions?|recommendations?)\b/,
+  /\bin\s+the\s+mood\s+for\b/,
+  /\bwhat\s+(should|can)\s+i\s+watch\b/,
+  /\bto\s+watch\b/,
+];
+
+/**
+ * Descriptor words. A query containing any of these is describing a KIND of
+ * thing rather than naming one.
+ *
+ * Kept as a plain lexicon on purpose: this is a cheap pre-filter that decides
+ * whether to spend the cost of loading the embedding model, so it cannot
+ * itself require the model. The actual semantic understanding still happens
+ * downstream in buildMoodFilter/discoverByMood — this only has to be right
+ * about "is this worth interpreting", and it is deliberately generous, since
+ * the cost of a false positive is one extra pipeline run while the cost of a
+ * false negative is the feature silently not working.
+ *
+ * Multi-word entries are matched as phrases, so "feel good" is caught without
+ * "good" alone triggering on "The Good Place".
+ */
+const DESCRIPTOR_TERMS = [
+  // tone and mood
+  "scary", "spooky", "creepy", "frightening", "terrifying", "unsettling", "disturbing",
+  "funny", "hilarious", "comedic", "lighthearted", "light hearted", "feel good", "feelgood",
+  "uplifting", "wholesome", "heartwarming", "cozy", "cosy", "calming", "relaxing",
+  "dark", "bleak", "grim", "gritty", "brutal", "violent", "gory", "bloody",
+  "sad", "emotional", "moving", "heartbreaking", "tearjerker", "depressing",
+  "tense", "suspenseful", "gripping", "thrilling", "intense", "edge of your seat",
+  "romantic", "sexy", "steamy", "wholesome", "nostalgic", "surreal", "weird", "strange",
+  "atmospheric", "moody", "slow burn", "slow paced", "fast paced", "bingeable", "addictive",
+  "mind bending", "mindbending", "thought provoking", "cerebral", "smart", "clever",
+  "twisty", "twist", "twists", "psychological", "campy", "cheesy", "silly", "absurd",
+  "epic", "sweeping", "quirky", "offbeat", "satirical", "wholesome",
+  // genre and form
+  "horror", "comedy", "sitcom", "drama", "thriller", "mystery", "romance", "rom com",
+  "romcom", "sci fi", "scifi", "sci-fi", "science fiction", "fantasy", "documentary",
+  "docuseries", "true crime", "crime", "western", "anime", "animated", "animation",
+  "action", "adventure", "war", "historical", "period", "biopic", "musical",
+  "reality", "supernatural", "paranormal", "ghost", "zombie", "vampire", "slasher",
+  "found footage", "heist", "spy", "noir", "dystopian", "post apocalyptic", "apocalyptic",
+  "coming of age", "whodunit", "procedural", "anthology", "miniseries", "limited series",
+];
+
+// Longest-first so "slow burn" is tested before "slow", and word-bounded so a
+// term never matches inside an unrelated word ("war" in "warehouse").
+const DESCRIPTOR_PATTERN = new RegExp(
+  `\\b(${[...DESCRIPTOR_TERMS]
+    .sort((a, b) => b.length - a.length)
+    .map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/[\s-]+/g, "[\\s-]*"))
+    .join("|")})\\b`,
+  "i"
+);
+
+/**
+ * Whether a query should run the mood/recommendation pipeline, or is just a
+ * title lookup. Lives here rather than in the search component because it is
+ * pure query analysis, and because it needs to be testable without a DOM.
+ *
+ * Title results are shown for EVERY query regardless, so the only cost of
+ * answering true here is running the recommender as well. That asymmetry is
+ * why the checks below lean towards true.
  */
 export function looksDescriptive(query: string): boolean {
   const trimmed = query.trim();
@@ -299,6 +370,11 @@ export function looksDescriptive(query: string): boolean {
   // conclusive on its own: no title contains one.
   if (parsed.runtime.maxMinutes !== null || parsed.runtime.minMinutes !== null) return true;
   if (parsed.negatedPhrases.length > 0) return true;
+
+  const lower = trimmed.toLowerCase();
+  if (DISCOVERY_PHRASES.some((re) => re.test(lower))) return true;
+  if (DESCRIPTOR_PATTERN.test(lower)) return true;
+
   return trimmed.split(/\s+/).length >= DESCRIPTIVE_WORD_COUNT;
 }
 

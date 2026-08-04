@@ -1,21 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 
-// The sheet's height is capped at this fraction of the viewport (its
-// maximum expansion). Bounding the HEIGHT — rather than translating a
-// full-height sheet down — keeps the whole sheet on screen when expanded,
-// so all of its content stays scrollable. It also leaves part of the
-// underlying screen visible, keeps the drag handle reachable, and avoids
-// starting a drag-down right under the system notification/quick-settings
-// pull zone.
+// Assumed height for the single frame before the first measurement lands.
+// The REAL cap lives in CSS (.details-sheet max-height: 85dvh) — keep the two
+// in step if either changes. Bounding the height, rather than translating a
+// full-height sheet down, is what keeps the whole sheet on screen when
+// expanded so all of its content stays scrollable, leaves part of the page
+// behind visible, and avoids starting a drag-down under the system
+// notification pull zone.
 const SHEET_VISIBLE_FRACTION = 0.85;
-
-// Floor for the content-sized height below. Absolute px, not a fraction of
-// the viewport: a fraction is the wrong unit here — 40% of a tall phone is
-// ~370px, which re-introduced the very void this sizing exists to remove
-// whenever the content was short (an error state, a film with a one-line
-// synopsis). This is only meant to stop a nearly-empty sheet collapsing into
-// an unreadable strip, so it wants a small fixed number.
-const SHEET_MIN_PX = 220;
 
 // How much of the viewport is visible in the COLLAPSED state — the peek you
 // get by dragging the sheet down one notch. Judgment call, not a spec.
@@ -77,15 +69,10 @@ export interface DraggableSheetHandle {
   isDragging: boolean;
   sheetStyle: CSSProperties;
   /**
-   * Attach to the element wrapping the sheet's scrollable content. The sheet
-   * sizes itself to whatever this measures, capped at SHEET_VISIBLE_FRACTION.
-   *
-   * Without it the sheet was always exactly 85% of the viewport, so a short
-   * title (one season, a two-line synopsis) left ~590px of empty sheet below
-   * its content — a void that reads as the panel failing to reach the bottom
-   * of the screen, even though it was flush the whole time.
+   * Attach to the sheet element itself. Its rendered height drives the drag
+   * and dismiss offsets; CSS owns the height (see .details-sheet).
    */
-  contentRef: (node: HTMLElement | null) => void;
+  sheetRef: (node: HTMLElement | null) => void;
   handleProps: {
     onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
     onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
@@ -129,11 +116,10 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
   // True only for the first two frames after mount, while the sheet is parked
   // off-screen waiting to be released into its slide-up.
   const [entering, setEntering] = useState(true);
-  // The sheet's natural height: everything above the scroll area (the drag
-  // handle) plus the content plus the scroll area's own bottom padding.
-  // null until first measured, in which case we fall back to the cap.
-  const [naturalHeight, setNaturalHeight] = useState<number | null>(null);
-  const contentCleanup = useRef<(() => void) | null>(null);
+  // The sheet's rendered height, observed rather than computed. null until
+  // the first measurement lands.
+  const [measuredHeight, setMeasuredHeight] = useState<number | null>(null);
+  const sheetCleanup = useRef<(() => void) | null>(null);
   const dragState = useRef<DragState | null>(null);
   const dismissTimeoutRef = useRef<number | null>(null);
   const onDismissRef = useRef(onDismiss);
@@ -146,13 +132,9 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
-  // Height: hug the content, but never exceed the cap and never look like a
-  // sliver. Derived rather than stored so it always reflects the latest
-  // measurement and viewport together, with no ordering to get wrong.
-  const maxHeight = viewportHeight * SHEET_VISIBLE_FRACTION;
-  const minHeight = Math.min(SHEET_MIN_PX, maxHeight);
-  const sheetHeight =
-    naturalHeight === null ? maxHeight : Math.max(minHeight, Math.min(maxHeight, naturalHeight));
+  // Until the first measurement, assume the cap — the sheet is off-screen
+  // during that frame anyway, so the value only has to be non-zero.
+  const sheetHeight = measuredHeight ?? viewportHeight * SHEET_VISIBLE_FRACTION;
   const collapsedOffset = collapsedFor(sheetHeight, viewportHeight);
   // Fully off-screen = translated down by the sheet's own height, so its top
   // edge lands at the bottom of the viewport.
@@ -177,31 +159,27 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
   useEffect(() => {
     return () => {
       if (dismissTimeoutRef.current !== null) window.clearTimeout(dismissTimeoutRef.current);
-      contentCleanup.current?.();
+      sheetCleanup.current?.();
     };
   }, []);
 
-  // Measures the content and everything above it, deriving the chrome from
-  // the live DOM rather than hard-coding the drag handle's height and the
-  // scroll area's padding — those live in CSS and would silently drift.
-  // offsetTop works because .details-sheet is position:fixed, making it the
-  // offsetParent, so it already includes the handle.
-  const contentRef = useCallback((node: HTMLElement | null) => {
-    contentCleanup.current?.();
-    contentCleanup.current = null;
+  // Observes the sheet's OWN rendered height.
+  //
+  // CSS decides that height now (content-sized, capped at 85dvh — see
+  // .details-sheet). This only needs to know the result, because the drag
+  // maths is expressed in translateY offsets and "fully dismissed" means
+  // "translated down by exactly the sheet's height". Measuring the rendered
+  // box instead of recomputing it from window.innerHeight removes the whole
+  // class of bug where JS's idea of the viewport disagreed with the browser's.
+  const sheetRef = useCallback((node: HTMLElement | null) => {
+    sheetCleanup.current?.();
+    sheetCleanup.current = null;
     if (!node) return;
-
-    const measure = () => {
-      const scrollArea = node.parentElement;
-      const padBottom = scrollArea ? parseFloat(getComputedStyle(scrollArea).paddingBottom) || 0 : 0;
-      setNaturalHeight(node.offsetTop + node.getBoundingClientRect().height + padBottom);
-    };
+    const measure = () => setMeasuredHeight(node.getBoundingClientRect().height);
     measure();
-    // Content arrives asynchronously and grows again when a season is
-    // expanded, so this has to keep watching, not measure once.
     const observer = new ResizeObserver(measure);
     observer.observe(node);
-    contentCleanup.current = () => observer.disconnect();
+    sheetCleanup.current = () => observer.disconnect();
   }, []);
 
   const onPointerDown = useCallback(
@@ -295,7 +273,6 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
     setExpanded,
     isDragging,
     sheetStyle: {
-      height: `${Math.round(sheetHeight)}px`,
       transform: `translateY(${currentTranslateY}px)`,
       opacity: entering ? 0 : 1,
       transition: isDragging ? "none" : entering ? "none" : ENTER_TRANSITION,
@@ -310,6 +287,6 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
       onPointerUp: endDrag,
       onPointerCancel: endDrag,
     },
-    contentRef,
+    sheetRef,
   };
 }
