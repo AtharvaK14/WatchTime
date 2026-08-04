@@ -10,6 +10,8 @@ import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useBackHandler } from "../lib/backHandler";
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
+import { CheckIcon, CloseIcon } from "./icons";
+import { DetailsSkeleton, LoadingAnnouncement } from "./Skeleton";
 
 interface Props {
   kind: "show" | "movie";
@@ -598,8 +600,9 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
                           className={`watch-toggle ${watchedKeys.has(ep.key) ? "on" : ""}`}
                           onClick={() => toggleEpisodeWatched(ep)}
                           aria-label={watchedKeys.has(ep.key) ? "Mark unwatched" : "Mark watched"}
+                          aria-pressed={watchedKeys.has(ep.key)}
                         >
-                          &#10003;
+                          <CheckIcon size={16} />
                         </button>
                       )}
                     </li>
@@ -641,16 +644,34 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
           </div>
 
           <button className="close-x hero-close-x" onClick={onClose} aria-label="Close">
-            &times;
+            <CloseIcon size={18} />
           </button>
 
           <div className="sheet-scroll-area">
-            {error && <p className="status-error">{error}</p>}
-            {!details && !error && <p className="muted">Loading...</p>}
+            {error && (
+              <div className="sheet-message" role="alert">
+                <p className="status-error">{error}</p>
+                <p className="muted small">
+                  Your saved library still works offline; only fresh details and artwork need TMDB.
+                </p>
+              </div>
+            )}
+            {!details && !error && (
+              <>
+                <LoadingAnnouncement label="Loading details" />
+                <DetailsSkeleton />
+              </>
+            )}
 
             {details && (
+              // Hero anatomy now matches the desktop dialog: artwork behind,
+              // poster and title seated together on the lower edge. The old
+              // "centered" variant floated a lone title in the middle of the
+              // banner whenever a backdrop existed, which left the sheet
+              // looking like two unrelated designs depending on what TMDB
+              // happened to have for that title.
               <>
-                <div className={`details-hero ${details.backdropPath ? "centered" : ""}`}>
+                <div className="details-hero">
                   {details.backdropPath ? (
                     // Real horizontal image from TMDB, shown sharp, no blur needed.
                     <img
@@ -670,6 +691,13 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
                     )
                   )}
                   <div className="details-hero-scrim" />
+                  {details.posterPath && (
+                    <img
+                      src={`${TMDB_IMAGE_BASE}${details.posterPath}`}
+                      alt=""
+                      className="details-hero-poster"
+                    />
+                  )}
                   <h2 className="details-hero-title">{details.name}</h2>
                 </div>
 
@@ -696,8 +724,23 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
         className={`modal details-modal-desktop ${showsSeasonBrowser ? "details-modal-desktop-wide" : ""}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {error && <p className="status-error">{error}</p>}
-        {!details && !error && <p className="muted">Loading...</p>}
+        {error && (
+          <div className="sheet-message" role="alert">
+            <p className="status-error">{error}</p>
+            <p className="muted small">
+              Your saved library still works offline; only fresh details and artwork need TMDB.
+            </p>
+            <button type="button" onClick={onClose} style={{ alignSelf: "center", marginTop: 8 }}>
+              Close
+            </button>
+          </div>
+        )}
+        {!details && !error && (
+          <>
+            <LoadingAnnouncement label="Loading details" />
+            <DetailsSkeleton />
+          </>
+        )}
 
         {details && (
           <>
@@ -718,7 +761,7 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
               )}
               <div className="details-hero-scrim" />
               <button className="desktop-hero-close-x" onClick={onClose} aria-label="Close">
-                &times;
+                <CloseIcon size={18} />
               </button>
             </div>
 

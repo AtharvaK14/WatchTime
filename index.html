@@ -6,12 +6,20 @@
     <!-- viewport-fit=cover exposes env(safe-area-inset-*) so content clears
          the Android status bar / gesture area (see safe-area CSS). -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0A0A0B" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <meta name="theme-color" content="#0B0B0C" />
+    <!-- Inter is self-hosted from /public/fonts (see the @font-face block in
+         src/index.css), not fetched from fonts.googleapis.com. In the
+         Capacitor build there is no network at launch time, so a remote
+         stylesheet meant the app silently rendered in Roboto whenever the
+         device was offline. Preloading the latin subset here (the only one
+         needed to paint the shell) keeps first paint off the critical
+         request chain. -->
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
-      rel="stylesheet"
+      rel="preload"
+      href="/fonts/inter-latin-var.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
     />
     <title>WatchTime</title>
   </head>

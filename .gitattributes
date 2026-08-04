@@ -1,2 +1,7 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Bundled webfonts. Explicitly binary so `text=auto` above can never apply
+# line-ending normalization to them and corrupt the files.
+*.woff2 binary
+*.woff binary

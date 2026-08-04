@@ -7,6 +7,9 @@ import { daysSince, getStaleDaysThreshold } from "../lib/showStatus";
 import { markNextEpisodeWatched, lastProgressionAt } from "../lib/watchEvents";
 import { useIsMobile } from "../lib/useIsMobile";
 import DetailsPanel from "../components/DetailsPanel";
+import EmptyState from "../components/EmptyState";
+import { WatchNextSkeleton, MovieRailSkeleton, LoadingAnnouncement } from "../components/Skeleton";
+import { CheckCircleIcon, StackIcon, MoviesIcon, CheckIcon } from "../components/icons";
 
 type Category = "watch-next" | "stale" | "not-started";
 
@@ -60,26 +63,39 @@ function categorize(next: Episode | null, watchedCount: number, lastProgressedAt
 
 function EpisodeRow({ row, onOpenShow, onMarkWatched }: { row: Row; onOpenShow: (id: number) => void; onMarkWatched: (row: Row) => void }) {
   const isPremiere = row.nextEpisode?.episodeNumber === 1;
+  const episodeCode = row.nextEpisode
+    ? `S${String(row.nextEpisode.seasonNumber).padStart(2, "0")} · E${String(row.nextEpisode.episodeNumber).padStart(2, "0")}`
+    : null;
   return (
     <div className="watch-next-row">
       {row.posterPath ? (
-        <img src={`${TMDB_IMAGE_BASE}${row.posterPath}`} alt={row.showName} onClick={() => onOpenShow(row.showId)} />
+        <img
+          src={`${TMDB_IMAGE_BASE}${row.posterPath}`}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          onClick={() => onOpenShow(row.showId)}
+        />
       ) : (
         <div className="poster-placeholder wn-poster" onClick={() => onOpenShow(row.showId)} />
       )}
       <div className="wn-body">
-        <span className="show-pill" onClick={() => onOpenShow(row.showId)}>
+        {/* A real button, not a styled span: this is the row's primary way
+            into the show and it has to be reachable from the keyboard.
+            .hit-slop grows the target vertically over the episode code
+            beneath it — that text is not interactive, so the extra area
+            costs nothing and takes the label from 15px to 48px of reach. */}
+        <button type="button" className="show-pill hit-slop" onClick={() => onOpenShow(row.showId)}>
           {row.showName} &rsaquo;
-        </span>
+        </button>
         {row.nextEpisode ? (
           <>
             <p className="wn-episode-line">
-              S{String(row.nextEpisode.seasonNumber).padStart(2, "0")} | E
-              {String(row.nextEpisode.episodeNumber).padStart(2, "0")}
+              {episodeCode}
               {row.additionalCount > 0 && <span className="muted"> +{row.additionalCount}</span>}
             </p>
-            <p className="muted small wn-episode-name">{row.nextEpisode.name}</p>
-            {isPremiere && <span className="premiere-tag">PREMIERE</span>}
+            <p className="wn-episode-name">{row.nextEpisode.name}</p>
+            {isPremiere && <span className="premiere-tag">Premiere</span>}
           </>
         ) : (
           <p className="muted small">
@@ -90,12 +106,16 @@ function EpisodeRow({ row, onOpenShow, onMarkWatched }: { row: Row; onOpenShow: 
         )}
       </div>
       <button
-        className="watch-toggle-circle"
+        className="watch-toggle-circle hit-slop"
         onClick={() => onMarkWatched(row)}
-        aria-label={row.category === "not-started" ? "Start watching" : "Mark watched"}
+        aria-label={
+          row.nextEpisode
+            ? `${row.category === "not-started" ? "Start" : "Mark watched"}: ${row.showName} ${episodeCode}`
+            : `No next episode available for ${row.showName}`
+        }
         disabled={!row.nextEpisode}
       >
-        &#10003;
+        <CheckIcon size={20} />
       </button>
     </div>
   );
@@ -211,7 +231,15 @@ function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
     await markNextEpisodeWatched(row.showId, row.nextEpisode);
   }
 
-  if (!shows || !allEpisodes || !allWatched) return <p className="muted">Loading...</p>;
+  if (!shows || !allEpisodes || !allWatched) {
+    return (
+      <>
+        <h3 className="section-title">Up next</h3>
+        <LoadingAnnouncement label="Loading your shows" />
+        <WatchNextSkeleton />
+      </>
+    );
+  }
 
   // Three MUTUALLY EXCLUSIVE lists (see categorize() above). Watch Next and
   // the stale list sort by most recent PROGRESSION (rewatches don't reorder
@@ -222,24 +250,45 @@ function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
   const notStarted = rows.filter((r) => r.category === "not-started").sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""));
   const activeList = tab === "next" ? watchNext : tab === "stale" ? stale : notStarted;
 
+  const TABS = [
+    { key: "next" as const, label: "Watch next", count: watchNext.length },
+    { key: "stale" as const, label: "Paused a while", count: stale.length },
+    { key: "not-started" as const, label: "Not started", count: notStarted.length },
+  ];
+
   return (
     <>
-      <div className="pill-tabs">
-        <button className={`pill-tab ${tab === "next" ? "active" : ""}`} onClick={() => setTab("next")}>
-          Watch Next{watchNext.length > 0 ? ` (${watchNext.length})` : ""}
-        </button>
-        <button className={`pill-tab ${tab === "stale" ? "active" : ""}`} onClick={() => setTab("stale")}>
-          Haven't Watched For a While{stale.length > 0 ? ` (${stale.length})` : ""}
-        </button>
-        <button
-          className={`pill-tab ${tab === "not-started" ? "active" : ""}`}
-          onClick={() => setTab("not-started")}
-        >
-          Haven't Yet Started{notStarted.length > 0 ? ` (${notStarted.length})` : ""}
-        </button>
+      <h3 className="section-title">
+        Up next
+        {activeList.length > 0 && <span className="section-count">{activeList.length}</span>}
+      </h3>
+
+      {/* role="tablist" was missing entirely before: these read as three
+          unrelated buttons to a screen reader rather than as one control
+          with a current selection. */}
+      <div className="pill-tabs" role="tablist" aria-label="Show categories">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={tab === t.key}
+            className={`pill-tab ${tab === t.key ? "active" : ""}`}
+            onClick={() => setTab(t.key)}
+          >
+            {t.label}
+            {t.count > 0 && <span className="pill-tab-count"> {t.count}</span>}
+          </button>
+        ))}
       </div>
 
-      {syncing && <p className="muted small">Syncing episode data from TMDB...</p>}
+      {syncing && (
+        <>
+          <p className="muted small" role="status">
+            Syncing episode data from TMDB...
+          </p>
+          {activeList.length === 0 && <WatchNextSkeleton count={2} />}
+        </>
+      )}
 
       {!syncing && syncErrors.length > 0 && (
         <details className="status-error" style={{ marginBottom: 10 }}>
@@ -253,13 +302,23 @@ function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
       )}
 
       {activeList.length === 0 && !syncing && (
-        <p className="muted">
-          {tab === "next"
-            ? "Nothing queued up. If you're sure some shows should be here, check Diagnostics in Settings, or re-import using the newer TV Time export format."
-            : tab === "stale"
-              ? "Nothing here, everything you've started has been watched recently."
-              : "Nothing here, every show in your library has been started."}
-        </p>
+        <EmptyState
+          icon={tab === "next" ? CheckCircleIcon : StackIcon}
+          title={
+            tab === "next"
+              ? "Nothing queued up"
+              : tab === "stale"
+                ? "Nothing paused"
+                : "Everything's been started"
+          }
+          body={
+            tab === "next"
+              ? "You're caught up on everything you're partway through. If you expected shows here, check Diagnostics in Settings, or re-import using the newer TV Time export format."
+              : tab === "stale"
+                ? "Everything you've started has been watched recently."
+                : "Every show in your library is already underway."
+          }
+        />
       )}
 
       <div className="watch-next-list">
@@ -357,7 +416,13 @@ function ComingUp({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
               }}
             >
               {row.posterPath ? (
-                <img src={`${TMDB_IMAGE_BASE}${row.posterPath}`} alt="" className="up-row-poster" />
+                <img
+                  src={`${TMDB_IMAGE_BASE}${row.posterPath}`}
+                  alt=""
+                  className="up-row-poster"
+                  loading="lazy"
+                  decoding="async"
+                />
               ) : (
                 <div className="poster-placeholder up-row-poster" />
               )}
@@ -390,7 +455,13 @@ function ComingUp({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
               }}
             >
               {m.posterPath ? (
-                <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt="" className="up-row-poster" />
+                <img
+                  src={`${TMDB_IMAGE_BASE}${m.posterPath}`}
+                  alt=""
+                  className="up-row-poster"
+                  loading="lazy"
+                  decoding="async"
+                />
               ) : (
                 <div className="poster-placeholder up-row-poster" />
               )}
@@ -456,7 +527,14 @@ function MoviesHome({ onViewAll }: { onViewAll: () => void }) {
     return () => observer.disconnect();
   }, [railRendered]);
 
-  if (!sorted) return <p className="muted">Loading...</p>;
+  if (!sorted) {
+    return (
+      <>
+        <h3 className="section-title">Movies to watch</h3>
+        <MovieRailSkeleton />
+      </>
+    );
+  }
 
   async function markWatched(tmdbId: number) {
     await db.movies.update(tmdbId, { watched: true, watchedAt: new Date().toISOString() });
@@ -473,10 +551,18 @@ function MoviesHome({ onViewAll }: { onViewAll: () => void }) {
 
   return (
     <>
-      <h3 className="section-title">Movies to Watch</h3>
+      <h3 className="section-title">
+        Movies to watch
+        {sorted.length > 0 && <span className="section-count">{sorted.length}</span>}
+      </h3>
 
       {sorted.length === 0 ? (
-        <p className="muted">Nothing on your movie watchlist right now.</p>
+        <EmptyState
+          icon={MoviesIcon}
+          title="Watchlist is empty"
+          body="Films you mark as want-to-watch show up here, newest first."
+          action={{ label: "Browse your movies", onClick: onViewAll }}
+        />
       ) : (
         <div className="mtw-rail" ref={railRef}>
           {visible.map((m) => (
@@ -486,6 +572,8 @@ function MoviesHome({ onViewAll }: { onViewAll: () => void }) {
                   className="mtw-poster"
                   src={`${TMDB_IMAGE_BASE}${m.posterPath}`}
                   alt={m.title}
+                  loading="lazy"
+                  decoding="async"
                   onClick={() => setOpenDetails(m.tmdbId)}
                 />
               ) : (

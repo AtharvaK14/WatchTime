@@ -4,6 +4,7 @@ import { TMDB_IMAGE_BASE } from "../tmdb";
 import { getOmdbEpisodeRating, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbEpisodeRating } from "../omdb";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useBackHandler } from "../lib/backHandler";
+import { CloseIcon } from "./icons";
 
 interface Props {
   show: { name: string; imdbId?: string | null };
@@ -75,7 +76,7 @@ export default function EpisodeDetailsPanel({
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal episode-detail-modal" onClick={(e) => e.stopPropagation()}>
         <button className="close-x episode-detail-close" onClick={onClose} aria-label="Close">
-          &times;
+          <CloseIcon size={18} />
         </button>
 
         {/* 1 + 2: landscape thumbnail with the S/E number overlaid bottom-left */}

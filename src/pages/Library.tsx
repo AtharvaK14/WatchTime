@@ -8,6 +8,9 @@ import DetailsPanel from "../components/DetailsPanel";
 import FilterSheet from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
+import EmptyState from "../components/EmptyState";
+import { ShowGridSkeleton, LoadingAnnouncement } from "../components/Skeleton";
+import { ShowsIcon, SearchIcon } from "../components/icons";
 import { useIsMobile } from "../lib/useIsMobile";
 
 type SortKey = "name" | "mostWatched" | "recentlyWatched" | "recentlyAdded";
@@ -107,7 +110,18 @@ export default function Library() {
     return sorted;
   }, [shows, query, sortKey, filterKey, genreFilter, watchedCounts, statusByShow]);
 
-  if (!shows) return <p className="muted">Loading...</p>;
+  // The poster wall is skeletoned rather than replaced by a "Loading..."
+  // line, so the page keeps its shape while Dexie resolves and nothing
+  // shifts under the user when the real posters arrive.
+  if (!shows) {
+    return (
+      <div className="panel">
+        <h2>Shows</h2>
+        <LoadingAnnouncement label="Loading your shows" />
+        <ShowGridSkeleton />
+      </div>
+    );
+  }
 
   const duration = toDurationParts(stats.totalMinutes);
 
@@ -144,7 +158,11 @@ export default function Library() {
       )}
 
       {shows.length === 0 ? (
-        <p className="muted">No shows yet. Import your TV Time export, or search TMDB from Add.</p>
+        <EmptyState
+          icon={ShowsIcon}
+          title="No shows yet"
+          body="Import a TV Time export from Settings to bring your history across, or search TMDB from the Discover tab to add shows one at a time."
+        />
       ) : (
         <>
           <div className="field-row filters-row">
@@ -186,44 +204,78 @@ export default function Library() {
             </FilterSheet>
           </div>
 
-          {visible.length === 0 && <p className="muted">No shows match that search/filter.</p>}
+          {visible.length === 0 && (
+            <EmptyState
+              icon={SearchIcon}
+              title="No shows match"
+              body="Nothing in your library fits that search and filter combination. Try a shorter search term, or reset the filters."
+              action={{
+                label: "Clear search and filters",
+                onClick: () => {
+                  setQuery("");
+                  setFilterKey("all");
+                  setGenreFilter(null);
+                },
+              }}
+            />
+          )}
 
           <div className="show-grid">
-            {visible.map((show) => (
-              <div
-                key={show.tmdbId}
-                className="show-card"
-                role="button"
-                tabIndex={0}
-                onClick={() => setOpenDetails(show.tmdbId)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setOpenDetails(show.tmdbId);
-                  }
-                }}
-              >
-                {show.posterPath ? (
-                  <img src={`${TMDB_IMAGE_BASE}${show.posterPath}`} alt={show.name} />
-                ) : (
-                  <div className="poster-placeholder" />
-                )}
-                {show.numberOfEpisodes ? (
-                  <div className="poster-progress">
-                    <span
-                      style={{
-                        width: `${Math.min(100, ((watchedCounts?.get(show.tmdbId) ?? 0) / show.numberOfEpisodes) * 100)}%`,
-                      }}
-                    />
+            {visible.map((show) => {
+              const watched = watchedCounts?.get(show.tmdbId) ?? 0;
+              const progress = show.numberOfEpisodes
+                ? Math.min(100, (watched / show.numberOfEpisodes) * 100)
+                : null;
+              return (
+                <div
+                  key={show.tmdbId}
+                  className="show-card"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setOpenDetails(show.tmdbId)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setOpenDetails(show.tmdbId);
+                    }
+                  }}
+                >
+                  {/* .show-card-media is the clipping layer. Keeping overflow
+                      here rather than on .show-card means the rounded poster
+                      corners can never crop a badge or a widened touch
+                      target sitting on the card itself. */}
+                  <div className="show-card-media">
+                    {show.posterPath ? (
+                      <img
+                        src={`${TMDB_IMAGE_BASE}${show.posterPath}`}
+                        alt={show.name}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                    ) : (
+                      <div className="poster-placeholder" />
+                    )}
+                    {show.isArchived && <span className="show-card-flag">Stopped</span>}
+                    <div className="show-card-body">
+                      <p className="show-name">{show.name}</p>
+                      <p className="show-card-meta">{watched} watched</p>
+                    </div>
+                    {progress !== null && (
+                      <div
+                        className="poster-progress"
+                        role="progressbar"
+                        aria-valuenow={Math.round(progress)}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={`${show.name} progress`}
+                      >
+                        <span style={{ width: `${progress}%` }} />
+                      </div>
+                    )}
                   </div>
-                ) : null}
-                <div className="show-card-body">
-                  <p className="show-name">{show.name}</p>
-                  <p className="muted small">{watchedCounts?.get(show.tmdbId) ?? 0} episodes watched</p>
-                  {show.isArchived && <p className="muted small">Stopped</p>}
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

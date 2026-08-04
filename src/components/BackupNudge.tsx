@@ -1,4 +1,5 @@
 import { getLastBackupAt, type NudgeReason } from "../lib/persistence";
+import { CloseIcon } from "./icons";
 
 /**
  * Non-blocking, dismissible banner shown when the library is at risk:
@@ -32,11 +33,11 @@ export default function BackupNudge({
           Back up now
         </button>
         <button
-          className="backup-nudge-dismiss"
+          className="backup-nudge-dismiss hit-slop"
           onClick={onDismiss}
           aria-label="Dismiss backup reminder (it will come back in a week)"
         >
-          ✕
+          <CloseIcon size={18} />
         </button>
       </span>
     </div>

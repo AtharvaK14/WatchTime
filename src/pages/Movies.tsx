@@ -7,6 +7,9 @@ import DetailsPanel from "../components/DetailsPanel";
 import FilterSheet from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
+import EmptyState from "../components/EmptyState";
+import { ShowGridSkeleton, LoadingAnnouncement } from "../components/Skeleton";
+import { MoviesIcon, SearchIcon, CheckIcon } from "../components/icons";
 import { useIsMobile } from "../lib/useIsMobile";
 
 type SortKey = "title" | "releaseYear" | "recentlyWatched" | "recentlyAdded" | "rating";
@@ -100,7 +103,15 @@ export default function Movies({
     return sorted;
   }, [movies, query, sortKey, filterKey, genreFilter]);
 
-  if (!movies) return <p className="muted">Loading...</p>;
+  if (!movies) {
+    return (
+      <div className="panel">
+        <h2>Movies</h2>
+        <LoadingAnnouncement label="Loading your movies" />
+        <ShowGridSkeleton />
+      </div>
+    );
+  }
 
   async function toggleWatched(tmdbId: number, currentlyWatched: boolean) {
     await db.movies.update(tmdbId, {
@@ -137,7 +148,11 @@ export default function Movies({
       )}
 
       {movies.length === 0 ? (
-        <p className="muted">No movies yet. Import your TV Time export, or add one below.</p>
+        <EmptyState
+          icon={MoviesIcon}
+          title="No movies yet"
+          body="Import a TV Time export from Settings, or search TMDB from the Discover tab to add your first film."
+        />
       ) : (
         <>
           <div className="field-row filters-row">
@@ -179,7 +194,21 @@ export default function Movies({
             </FilterSheet>
           </div>
 
-          {visible.length === 0 && <p className="muted">No movies match that search/filter.</p>}
+          {visible.length === 0 && (
+            <EmptyState
+              icon={SearchIcon}
+              title="No movies match"
+              body="Nothing in your library fits that search and filter combination. Try a shorter search term, or reset the filters."
+              action={{
+                label: "Clear search and filters",
+                onClick: () => {
+                  setQuery("");
+                  setFilterKey("all");
+                  setGenreFilter(null);
+                },
+              }}
+            />
+          )}
 
           <div className="show-grid">
             {visible.map((m) => (
@@ -196,26 +225,37 @@ export default function Movies({
                   }
                 }}
               >
-                {m.posterPath ? (
-                  <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.title} />
-                ) : (
-                  <div className="poster-placeholder" />
-                )}
+                <div className="show-card-media">
+                  {m.posterPath ? (
+                    <img
+                      src={`${TMDB_IMAGE_BASE}${m.posterPath}`}
+                      alt={m.title}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className="poster-placeholder" />
+                  )}
+                  <div className="show-card-body">
+                    <p className="show-name">
+                      {m.title} {m.releaseYear ? `(${m.releaseYear})` : ""}
+                    </p>
+                  </div>
+                </div>
+                {/* Outside .show-card-media on purpose: .hit-slop widens the
+                    tap target past the badge's painted 30px, and the media
+                    wrapper's overflow:hidden would clip that. */}
                 <button
-                  className={`watched-badge ${m.watched ? "on" : ""}`}
+                  className={`watched-badge hit-slop ${m.watched ? "on" : ""}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleWatched(m.tmdbId, m.watched);
                   }}
-                  aria-label={m.watched ? "Mark unwatched" : "Mark watched"}
+                  aria-label={m.watched ? `Mark ${m.title} unwatched` : `Mark ${m.title} watched`}
+                  aria-pressed={m.watched}
                 >
-                  &#10003;
+                  <CheckIcon size={16} />
                 </button>
-                <div className="show-card-body">
-                  <p className="show-name">
-                    {m.title} {m.releaseYear ? `(${m.releaseYear})` : ""}
-                  </p>
-                </div>
               </div>
             ))}
           </div>
