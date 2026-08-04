@@ -54,11 +54,14 @@ export function DiscoverIcon({ size = 20, className }: IconProps) {
   );
 }
 
+// A true cog. The previous version was a circle with radial spokes, which
+// reads as a sun or a brightness control rather than settings; the teeth are
+// what make the shape unambiguous at nav size.
 export function SettingsIcon({ size = 20, className }: IconProps) {
   return (
     <svg {...baseProps(size)} className={className}>
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
-      <path d="M12 3v2.5M12 18.5V21M4.2 7.5l2.2 1.3M17.6 15.2l2.2 1.3M4.2 16.5l2.2-1.3M17.6 8.8l2.2-1.3M3 12h2.5M18.5 12H21" />
     </svg>
   );
 }
@@ -112,6 +115,17 @@ export function StackIcon({ size = 20, className }: IconProps) {
       <path d="M12 3.5l8 4.2-8 4.2-8-4.2z" />
       <path d="M4 12l8 4.2 8-4.2" />
       <path d="M4 16.2l8 4.2 8-4.2" />
+    </svg>
+  );
+}
+// For You: a sparkle, the common shorthand for "personalised / picked for
+// you". Deliberately not a heart (that reads as favourites/likes, which this
+// app has no concept of) and not a star (too close to ratings).
+export function ForYouIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <path d="M12 3l1.9 4.6L18.5 9.5l-4.6 1.9L12 16l-1.9-4.6L5.5 9.5l4.6-1.9L12 3z" />
+      <path d="M18 15.5l.8 1.9 1.9.8-1.9.8-.8 1.9-.8-1.9-1.9-.8 1.9-.8.8-1.9z" />
     </svg>
   );
 }

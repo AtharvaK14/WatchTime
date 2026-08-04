@@ -61,12 +61,19 @@ export async function verifyApiKey(key: string): Promise<boolean> {
 
 // ---- Search ---------------------------------------------------------------
 
+// overview is returned by /search and /discover alike, but was not declared
+// here until mood discovery needed it: it is the text that gets embedded to
+// rank a candidate, and it is the only tone-bearing field these endpoints
+// return. Optional because TMDB gives an empty string (not null) for titles
+// with no summary, and older callers never asked for it.
 export interface TvSearchResult {
   id: number;
   name: string;
   first_air_date: string | null;
   poster_path: string | null;
   popularity: number;
+  overview?: string | null;
+  genre_ids?: number[];
 }
 
 export interface MovieSearchResult {
@@ -75,6 +82,8 @@ export interface MovieSearchResult {
   release_date: string | null;
   poster_path: string | null;
   popularity: number;
+  overview?: string | null;
+  genre_ids?: number[];
 }
 
 export async function searchTvShow(query: string): Promise<TvSearchResult[]> {
@@ -103,6 +112,7 @@ export interface TvShowDetails {
   overview: string | null;
   number_of_seasons: number;
   episode_run_time: number[]; // TMDB's array of common episode runtimes in minutes, often just one value, sometimes empty
+  original_language?: string | null;
   genres: { id: number; name: string }[];
   seasons: { season_number: number; episode_count: number; name: string }[];
   external_ids?: { imdb_id: string | null };
@@ -138,6 +148,7 @@ export interface MovieDetails {
   backdrop_path: string | null;
   overview: string | null;
   runtime: number | null; // minutes
+  original_language?: string | null;
   genres: { id: number; name: string }[];
   external_ids?: { imdb_id: string | null };
 }
@@ -205,6 +216,122 @@ export async function discoverMovies(filters: DiscoverFilters): Promise<MovieSea
   if (filters.minRating) params["vote_average.gte"] = String(filters.minRating);
   const data = await tmdbGet<{ results: MovieSearchResult[] }>("/discover/movie", params);
   return data.results;
+}
+
+// ---- Keyword + discovery retrieval (mood discovery) -------------------------
+//
+// TMDB has no semantic search, so mood discovery cannot ask it for "slow burn
+// and unsettling" directly. Instead the query is turned into filters TMDB does
+// understand (keywords, genres, runtime), a candidate pool is fetched, and the
+// on-device model re-ranks that pool. See lib/moodSearch/discover.ts.
+
+export interface TmdbKeyword {
+  id: number;
+  name: string;
+}
+
+/**
+ * Resolves a phrase to TMDB keyword IDs.
+ *
+ * Keywords are the reason this retrieval path can express things genres
+ * cannot: TMDB tags titles with entries like "found footage" and "time loop",
+ * where the genre list only offers Horror. Returns an empty array rather than
+ * throwing, because keyword resolution is an optional precision boost and a
+ * miss must degrade to genre-only retrieval, not fail the search.
+ */
+export async function searchKeywords(query: string): Promise<TmdbKeyword[]> {
+  try {
+    const data = await tmdbGet<{ results: TmdbKeyword[] }>("/search/keyword", { query });
+    return Array.isArray(data.results) ? data.results : [];
+  } catch {
+    return [];
+  }
+}
+
+export interface DiscoverQuery {
+  /** OR-ed together. TMDB treats a pipe-separated list as "any of". */
+  genreIds?: number[];
+  keywordIds?: number[];
+  /** Excludes titles carrying any of these genres. */
+  withoutGenreIds?: number[];
+  /** Movies: total runtime. TV: per-episode runtime. */
+  maxRuntimeMinutes?: number | null;
+  minRuntimeMinutes?: number | null;
+  /** Suppresses titles with too few votes to have a meaningful summary. */
+  minVoteCount?: number;
+  /** Upper bound on votes. Used by "hidden gems" to exclude blockbusters. */
+  maxVoteCount?: number;
+  minRating?: number;
+  /** ISO 639-1, e.g. "ja". OR-ed. */
+  originalLanguages?: string[];
+  /** ISO date. Maps to primary_release_date / first_air_date per media type. */
+  releasedAfter?: string;
+  releasedBefore?: string;
+  sortBy?: "popularity.desc" | "vote_average.desc" | "primary_release_date.asc" | "first_air_date.asc";
+  page?: number;
+}
+
+/**
+ * TV and movie discover take the same filters under different date parameter
+ * names, which is the one place the two endpoints genuinely diverge, so the
+ * media type is passed in rather than duplicating the whole builder.
+ */
+function toDiscoverParams(q: DiscoverQuery, media: "movie" | "tv"): Record<string, string> {
+  const params: Record<string, string> = {
+    sort_by: q.sortBy ?? "popularity.desc",
+    include_adult: "false",
+    page: String(q.page ?? 1),
+  };
+  // Pipe is OR, comma is AND. OR is correct here: a query matching several
+  // tags should widen the pool, not demand a title carry every one of them,
+  // which in practice returns nothing.
+  if (q.genreIds?.length) params.with_genres = q.genreIds.join("|");
+  if (q.keywordIds?.length) params.with_keywords = q.keywordIds.join("|");
+  if (q.withoutGenreIds?.length) params.without_genres = q.withoutGenreIds.join(",");
+  if (q.maxRuntimeMinutes != null) params["with_runtime.lte"] = String(q.maxRuntimeMinutes);
+  if (q.minRuntimeMinutes != null) params["with_runtime.gte"] = String(q.minRuntimeMinutes);
+  if (q.minVoteCount) params["vote_count.gte"] = String(q.minVoteCount);
+  if (q.maxVoteCount) params["vote_count.lte"] = String(q.maxVoteCount);
+  if (q.minRating) params["vote_average.gte"] = String(q.minRating);
+  if (q.originalLanguages?.length) params.with_original_language = q.originalLanguages.join("|");
+
+  const dateField = media === "movie" ? "primary_release_date" : "first_air_date";
+  if (q.releasedAfter) params[`${dateField}.gte`] = q.releasedAfter;
+  if (q.releasedBefore) params[`${dateField}.lte`] = q.releasedBefore;
+  return params;
+}
+
+export async function discoverMoviesBy(q: DiscoverQuery): Promise<MovieSearchResult[]> {
+  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/discover/movie", toDiscoverParams(q, "movie"));
+  return data.results ?? [];
+}
+
+export async function discoverTvBy(q: DiscoverQuery): Promise<TvSearchResult[]> {
+  const data = await tmdbGet<{ results: TvSearchResult[] }>("/discover/tv", toDiscoverParams(q, "tv"));
+  return data.results ?? [];
+}
+
+// ---- Taste recommendations ---------------------------------------------------
+//
+// /recommendations carries something the on-device model fundamentally cannot
+// produce: co-watching signal from TMDB's user base. An embedding only ever
+// sees a plot summary, so it has no way to know that people who finished one
+// show tend to like another whose synopsis reads nothing like it. That is why
+// recommendations are RETRIEVED here rather than computed locally, and the
+// local model is used to personalise and filter what comes back.
+//
+// Note this is deliberately /recommendations and not /similar: TMDB's
+// "similar" is built from genres and keywords (which the discover path
+// already covers), while "recommendations" is behavioural.
+
+export async function getTvRecommendations(tmdbId: number): Promise<TvSearchResult[]> {
+  const data = await tmdbGet<{ results: TvSearchResult[] }>(`/tv/${tmdbId}/recommendations`);
+  return data.results ?? [];
+}
+
+export async function getMovieRecommendations(tmdbId: number): Promise<MovieSearchResult[]> {
+  const data = await tmdbGet<{ results: MovieSearchResult[] }>(`/movie/${tmdbId}/recommendations`);
+  return data.results ?? [];
 }
 
 // ---- Exact ID-based lookup, verified against TMDB's own community docs -----
