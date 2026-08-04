@@ -7,11 +7,27 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Poin
 // underlying screen visible, keeps the drag handle reachable, and avoids
 // starting a drag-down right under the system notification/quick-settings
 // pull zone.
-const SHEET_VISIBLE_FRACTION = 0.75;
+const SHEET_VISIBLE_FRACTION = 0.85;
 
-// How much of the viewport is visible in the sheet's default (collapsed,
-// not dragged) state. A judgment call, not a spec.
+// How much of the viewport is visible in the COLLAPSED state — the peek you
+// get by dragging the sheet down one notch. Judgment call, not a spec.
 const COLLAPSED_VISIBLE_FRACTION = 0.55;
+
+// The sheet now opens EXPANDED rather than collapsed. Opening at ~55% put
+// the seasons list, ratings and description below the fold on every single
+// title, so the first interaction after opening was always a scroll or a
+// drag. Opening at 85% shows all of that immediately while still leaving a
+// strip of the page behind visible, which is what keeps it reading as a
+// sheet over the app rather than a new screen. Collapsed is still there as
+// the first drag-down stop.
+const OPENS_EXPANDED = true;
+
+// Entrance: the sheet mounts fully off-screen and is released to its resting
+// position on the next frame, so the browser has a start value to animate
+// FROM. Without the two-frame wait the initial and final transforms land in
+// the same style recalculation and no transition runs at all.
+const ENTER_TRANSITION =
+  "transform 380ms cubic-bezier(0.32, 0.72, 0, 1), opacity 240ms ease-out";
 
 const SNAP_TRANSITION = "transform 320ms cubic-bezier(0.32, 0.72, 0, 1)";
 // Must match the transition duration above: after triggering a dismiss we
@@ -82,7 +98,7 @@ const collapsedFor = (height: number) => Math.max(0, height - window.innerHeight
  * normal scrolling/clicking elsewhere in the panel is unaffected.
  */
 export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(OPENS_EXPANDED);
   const [sheetHeight, setSheetHeight] = useState(() => window.innerHeight * SHEET_VISIBLE_FRACTION);
   const [collapsedOffset, setCollapsedOffset] = useState(() => collapsedFor(window.innerHeight * SHEET_VISIBLE_FRACTION));
   // Fully off-screen = translated down by the sheet's own height, so its top
@@ -90,6 +106,9 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
   const [dismissOffset, setDismissOffset] = useState(() => window.innerHeight * SHEET_VISIBLE_FRACTION);
   const [liveTranslateY, setLiveTranslateY] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // True only for the first two frames after mount, while the sheet is parked
+  // off-screen waiting to be released into its slide-up.
+  const [entering, setEntering] = useState(true);
   const dragState = useRef<DragState | null>(null);
   const dismissTimeoutRef = useRef<number | null>(null);
   const onDismissRef = useRef(onDismiss);
@@ -105,6 +124,22 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
     computeOffsets();
     window.addEventListener("resize", computeOffsets);
     return () => window.removeEventListener("resize", computeOffsets);
+  }, []);
+
+  // Release the entrance on the second animation frame. One frame is not
+  // reliably enough: React can commit the initial style and the follow-up in
+  // the same paint, in which case there is no start value to animate from and
+  // the sheet simply appears. Two frames guarantees the off-screen transform
+  // has been rendered before the resting value replaces it.
+  useEffect(() => {
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setEntering(false));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
   }, []);
 
   useEffect(() => {
@@ -192,7 +227,11 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
     }
   }, [liveTranslateY, collapsedOffset, dismissOffset]);
 
-  const currentTranslateY = liveTranslateY !== null ? liveTranslateY : expanded ? 0 : collapsedOffset;
+  const restingTranslateY = liveTranslateY !== null ? liveTranslateY : expanded ? 0 : collapsedOffset;
+  // While entering, the sheet is pinned fully off-screen; the moment
+  // `entering` flips it animates to its resting position under
+  // ENTER_TRANSITION, which is what produces the slide-up.
+  const currentTranslateY = entering ? dismissOffset : restingTranslateY;
 
   return {
     expanded,
@@ -201,7 +240,12 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
     sheetStyle: {
       height: `${sheetHeight}px`,
       transform: `translateY(${currentTranslateY}px)`,
-      transition: isDragging ? "none" : SNAP_TRANSITION,
+      opacity: entering ? 0 : 1,
+      transition: isDragging ? "none" : entering ? "none" : ENTER_TRANSITION,
+      // The drag path swaps back to the shorter snap curve once the entrance
+      // is over, so dragging stays responsive rather than inheriting the
+      // longer, softer entrance timing.
+      ...(liveTranslateY !== null && !isDragging ? { transition: SNAP_TRANSITION } : null),
     },
     handleProps: {
       onPointerDown,

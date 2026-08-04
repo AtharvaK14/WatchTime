@@ -14,11 +14,23 @@ import UniversalSearch, { type SearchResults } from "../components/UniversalSear
 import { ShowGridSkeleton } from "../components/Skeleton";
 import EmptyState from "../components/EmptyState";
 import { SearchIcon } from "../components/icons";
+import { useFullRows } from "../lib/useFullRows";
+
+/**
+ * Upper bound on how many titles each Discover grid requests.
+ *
+ * The grids trim this down to a whole number of rows at the width they
+ * actually render at (see useFullRows), so this only caps how much is
+ * available to fill those rows — it is not the number displayed. Twelve keeps
+ * three full rows on a phone and two on a typical desktop.
+ */
+const DISCOVER_ROW_COUNT = 12;
 
 function ShowRow({ items, onOpen }: { items: TvSearchResult[]; onOpen: (id: number) => void }) {
+  const [gridRef, visible] = useFullRows(items.length);
   return (
-    <div className="show-grid">
-      {items.map((r) => (
+    <div className="show-grid" ref={gridRef}>
+      {items.slice(0, visible).map((r) => (
         <button key={r.id} className="show-card" onClick={() => onOpen(r.id)}>
           {/* .show-card-media is what clips the poster corners and carries
               the inset hairline and press state; without it these cards
@@ -41,9 +53,10 @@ function ShowRow({ items, onOpen }: { items: TvSearchResult[]; onOpen: (id: numb
 }
 
 function MovieRow({ items, onOpen }: { items: MovieSearchResult[]; onOpen: (id: number) => void }) {
+  const [gridRef, visible] = useFullRows(items.length);
   return (
-    <div className="show-grid">
-      {items.map((r) => (
+    <div className="show-grid" ref={gridRef}>
+      {items.slice(0, visible).map((r) => (
         <button key={r.id} className="show-card" onClick={() => onOpen(r.id)}>
           <div className="show-card-media">
             {r.poster_path ? (
@@ -209,29 +222,39 @@ export default function AddTitle() {
             {discoverError && <p className="status-error">Couldn't load suggestions: {discoverError}</p>}
 
             {/* Personalised recommendations now live on their own For You
-                tab; this page is search plus the same-for-everyone rails. */}
+                tab; this page is search plus the same-for-everyone rails.
+
+                Trending covers two separate grids, so each gets its own
+                label — unlabelled they read as one list that inexplicably
+                switches from shows to films partway down. */}
             <h3 className="section-title">Trending this week</h3>
+
+            <p className="discover-subhead">TV shows</p>
             {!popularShows ? (
-              <ShowGridSkeleton count={5} />
+              <ShowGridSkeleton count={DISCOVER_ROW_COUNT} />
             ) : (
-              <ShowRow items={popularShows.slice(0, 10)} onOpen={(id) => setOpenDetails({ kind: "show", tmdbId: id })} />
+              <ShowRow
+                items={popularShows.slice(0, DISCOVER_ROW_COUNT)}
+                onOpen={(id) => setOpenDetails({ kind: "show", tmdbId: id })}
+              />
             )}
 
+            <p className="discover-subhead">Movies</p>
             {!popularMovies ? (
-              <ShowGridSkeleton count={5} />
+              <ShowGridSkeleton count={DISCOVER_ROW_COUNT} />
             ) : (
               <MovieRow
-                items={popularMovies.slice(0, 10)}
+                items={popularMovies.slice(0, DISCOVER_ROW_COUNT)}
                 onOpen={(id) => setOpenDetails({ kind: "movie", tmdbId: id })}
               />
             )}
 
             <h3 className="section-title">Upcoming movies</h3>
             {!upcomingMovies ? (
-              <ShowGridSkeleton count={5} />
+              <ShowGridSkeleton count={DISCOVER_ROW_COUNT} />
             ) : (
               <MovieRow
-                items={upcomingMovies.slice(0, 10)}
+                items={upcomingMovies.slice(0, DISCOVER_ROW_COUNT)}
                 onOpen={(id) => setOpenDetails({ kind: "movie", tmdbId: id })}
               />
             )}
@@ -242,7 +265,7 @@ export default function AddTitle() {
               same curation, an approximation built from TMDB's own release-type data.
             </p>
             {!atHomeMovies ? (
-              <ShowGridSkeleton count={5} />
+              <ShowGridSkeleton count={DISCOVER_ROW_COUNT} />
             ) : atHomeMovies.length === 0 ? (
               <p className="muted small">Nothing found in the last 45 days.</p>
             ) : (

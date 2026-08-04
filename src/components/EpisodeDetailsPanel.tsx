@@ -75,7 +75,7 @@ export default function EpisodeDetailsPanel({
   return (
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal episode-detail-modal" onClick={(e) => e.stopPropagation()}>
-        <button className="close-x episode-detail-close" onClick={onClose} aria-label="Close">
+        <button className="close-x episode-detail-close hit-slop" onClick={onClose} aria-label="Close">
           <CloseIcon size={18} />
         </button>
 

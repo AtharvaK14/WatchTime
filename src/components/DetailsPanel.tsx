@@ -12,6 +12,7 @@ import { useBackHandler } from "../lib/backHandler";
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
 import { CheckIcon, CloseIcon } from "./icons";
 import { DetailsSkeleton, LoadingAnnouncement } from "./Skeleton";
+import { useScrollAtEnd } from "../lib/useScrollAtEnd";
 
 interface Props {
   kind: "show" | "movie";
@@ -61,6 +62,9 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   useLockBodyScroll();
   const { sheetStyle, handleProps } = useDraggableSheet(onClose);
   const isMobile = useIsMobile();
+  // Drives the sheet's bottom fade: it should stop suggesting "more below"
+  // once the scroll area has actually reached the bottom.
+  const [scrollAreaRef, atEnd] = useScrollAtEnd();
   // Android back closes this panel instead of the app. A stacked episode
   // panel registers its own handler on top, so back closes that first.
   useBackHandler(true, onClose);
@@ -635,7 +639,9 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
     return (
       <div className="modal-backdrop" onClick={onClose}>
         <div
-          className={`details-sheet ${showsSeasonBrowser ? "details-modal-wide" : ""}`}
+          className={`details-sheet ${showsSeasonBrowser ? "details-modal-wide" : ""} ${
+            atEnd ? "is-at-end" : ""
+          }`}
           style={sheetStyle}
           onClick={(e) => e.stopPropagation()}
         >
@@ -643,11 +649,11 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
             <div className="sheet-drag-handle-bar" />
           </div>
 
-          <button className="close-x hero-close-x" onClick={onClose} aria-label="Close">
+          <button className="close-x hero-close-x hit-slop" onClick={onClose} aria-label="Close">
             <CloseIcon size={18} />
           </button>
 
-          <div className="sheet-scroll-area">
+          <div className="sheet-scroll-area" ref={scrollAreaRef}>
             {error && (
               <div className="sheet-message" role="alert">
                 <p className="status-error">{error}</p>
@@ -760,7 +766,7 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
                 )
               )}
               <div className="details-hero-scrim" />
-              <button className="desktop-hero-close-x" onClick={onClose} aria-label="Close">
+              <button className="desktop-hero-close-x hit-slop" onClick={onClose} aria-label="Close">
                 <CloseIcon size={18} />
               </button>
             </div>

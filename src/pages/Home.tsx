@@ -23,13 +23,34 @@ import {
 } from "../lib/moodSearch/search";
 import { buildWatchNextRows, byAddedAt, byRecency, type WatchNextRow as Row } from "../lib/watchNext";
 
+// Beats in the mark-watched sequence. CONFIRM_MS matches the circle's
+// fill/pulse in CSS; LEAVE_MS matches .wn-item's collapse. Keep them in sync
+// with --dur-slow if that changes — they are timing, not easing, so they live
+// here rather than being read back out of the stylesheet.
+const CONFIRM_MS = 340;
+const LEAVE_MS = 300;
+
+/**
+ * Sleeps, unless the user has asked for reduced motion — in which case every
+ * beat collapses to zero and the write happens immediately. The CSS has its
+ * own reduced-motion block; this keeps the JS timing honest alongside it, so
+ * the sequence does not sit there waiting for animations that never play.
+ */
+function wait(ms: number): Promise<void> {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return Promise.resolve();
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function EpisodeRow({
   row,
+  confirming,
   onOpenShow,
   onOpenEpisode,
   onMarkWatched,
 }: {
   row: Row;
+  /** True between the tap and the row advancing: fills the circle green. */
+  confirming: boolean;
   onOpenShow: (id: number) => void;
   onOpenEpisode: (row: Row) => void;
   onMarkWatched: (row: Row) => void;
@@ -62,7 +83,12 @@ function EpisodeRow({
           {row.showName} &rsaquo;
         </button>
         {row.nextEpisode ? (
-          <>
+          // Keyed on the episode so React remounts this block when the row
+          // advances, replaying .wn-episode-swap's entrance. Marking one
+          // episode watched usually does not remove the row — it moves it on
+          // to the next episode — so without this the text would simply
+          // change underneath the finger with no indication anything moved.
+          <div className="wn-episode-swap" key={row.nextEpisode.key}>
             {/* The episode block opens the same episode panel the season
                 browser uses. A real button, not a click handler on a <p>, so
                 it is keyboard reachable and announced as a control. */}
@@ -75,7 +101,7 @@ function EpisodeRow({
               <span className="sr-only">Episode details</span>
             </button>
             {isPremiere && <span className="premiere-tag">Premiere</span>}
-          </>
+          </div>
         ) : (
           <p className="muted small">
             {row.category === "not-started"
@@ -85,14 +111,16 @@ function EpisodeRow({
         )}
       </div>
       <button
-        className="watch-toggle-circle hit-slop"
+        className={`watch-toggle-circle hit-slop ${confirming ? "is-confirming" : ""}`}
         onClick={() => onMarkWatched(row)}
         aria-label={
           row.nextEpisode
             ? `${row.category === "not-started" ? "Start" : "Mark watched"}: ${row.showName} ${episodeCode}`
             : `No next episode available for ${row.showName}`
         }
-        disabled={!row.nextEpisode}
+        // Blocks a second tap landing while the first is still animating,
+        // which would otherwise mark two episodes from one visible row.
+        disabled={!row.nextEpisode || confirming}
       >
         <CheckIcon size={20} />
       </button>
@@ -128,6 +156,11 @@ function ShowsHome({
   // so ticking the episode updates the open panel in place rather than
   // showing a stale snapshot.
   const [openEpisode, setOpenEpisode] = useState<{ showId: number; episode: Episode } | null>(null);
+  // Show ids currently mid-animation in the mark-watched sequence. Separate
+  // states because a row can be confirming without ever leaving (the common
+  // case, where the show still has episodes left).
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const [leavingId, setLeavingId] = useState<number | null>(null);
 
   // Network side effect: make sure TMDB episode lists are cached for every
   // followed show. Writes to db.episodes, which allEpisodes above reacts to,
@@ -181,12 +214,40 @@ function ShowsHome({
   const openEpisodeShow = openEpisode ? shows?.find((sh) => sh.tmdbId === openEpisode.showId) : undefined;
   const openEpisodeWatch = openEpisode ? allWatched?.find((w) => w.key === openEpisode.episode.key) : undefined;
 
+  /**
+   * Marks the next UNSEEN episode watched (starts a not-started show, or
+   * advances an in-progress one). Never a rewatch: Watch Next only ever
+   * points at unseen episodes, so this always creates a fresh record.
+   *
+   * The write is deliberately deferred behind two short animation beats:
+   *
+   *   1. CONFIRM — the circle fills green and pulses, so the tap is
+   *      acknowledged before anything moves.
+   *   2. LEAVE — only when this was the show's LAST unwatched episode, so
+   *      the row is about to disappear. Collapsing its height first means
+   *      the rows below glide up during the collapse, and by the time the
+   *      record lands and the live query drops the row it is already at zero
+   *      height — no jump. When more episodes remain the row stays put and
+   *      the episode block cross-fades instead (see .wn-episode-swap).
+   *
+   * The write itself is never skipped: if the component unmounts mid-sequence
+   * the timers are cleared but the awaited write still runs to completion.
+   */
   async function markWatched(row: Row) {
-    if (!row.nextEpisode) return;
-    // Marks the next UNSEEN episode watched (starts a not-started show, or
-    // advances an in-progress one). Never a rewatch: Watch Next only ever
-    // points at unseen episodes now, so this always creates a fresh record.
+    if (!row.nextEpisode || confirmingId !== null) return;
+
+    const isLastEpisode = row.additionalCount === 0;
+    setConfirmingId(row.showId);
+    await wait(CONFIRM_MS);
+
+    if (isLastEpisode) {
+      setLeavingId(row.showId);
+      await wait(LEAVE_MS);
+    }
+
     await markNextEpisodeWatched(row.showId, row.nextEpisode);
+    setConfirmingId(null);
+    setLeavingId(null);
   }
 
   if (!shows || !allEpisodes || !allWatched) {
@@ -289,13 +350,18 @@ function ShowsHome({
 
       <div className="watch-next-list">
         {activeList.map((row) => (
-          <EpisodeRow
-            key={row.showId}
-            row={row}
-            onOpenShow={onOpenShow}
-            onOpenEpisode={(r) => r.nextEpisode && setOpenEpisode({ showId: r.showId, episode: r.nextEpisode })}
-            onMarkWatched={markWatched}
-          />
+          // .wn-item is the collapse wrapper; the row keeps its own padding
+          // and border inside it so nothing about the card changes as it
+          // closes, only its height.
+          <div key={row.showId} className={`wn-item ${leavingId === row.showId ? "is-leaving" : ""}`}>
+            <EpisodeRow
+              row={row}
+              confirming={confirmingId === row.showId}
+              onOpenShow={onOpenShow}
+              onOpenEpisode={(r) => r.nextEpisode && setOpenEpisode({ showId: r.showId, episode: r.nextEpisode })}
+              onMarkWatched={markWatched}
+            />
+          </div>
         ))}
       </div>
 
@@ -585,7 +651,20 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
               <p className="show-name mtw-name" title={m.title} onClick={() => setOpenDetails(m.tmdbId)}>
                 {m.title}
               </p>
-              <button onClick={() => markWatched(m.tmdbId)}>Mark watched</button>
+              {/* "Watched", not "Mark watched": at 124px of card width the
+                  longer label renders ~109px wide, which fills the row and
+                  makes the bottom-right anchoring invisible. The short label
+                  leaves real space beside it so the button reads as anchored.
+                  aria-label keeps the full action clear to screen readers.
+                  .hit-slop restores the 44px target without changing the
+                  painted size. */}
+              <button
+                className="hit-slop"
+                onClick={() => markWatched(m.tmdbId)}
+                aria-label={`Mark ${m.title} watched`}
+              >
+                Watched
+              </button>
             </div>
           ))}
           {hasMore && (
