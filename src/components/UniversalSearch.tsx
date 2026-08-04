@@ -10,6 +10,7 @@ import { looksDescriptive } from "../lib/moodSearch/constraints";
 import { discoverByMood, type DiscoveryItem } from "../lib/moodSearch/discover";
 import type { IndexProgress } from "../lib/moodSearch/titleIndex";
 import { CloseIcon } from "./icons";
+import { useIsMobile } from "../lib/useIsMobile";
 
 /**
  * One search box replaces what used to be three (title search, mood
@@ -32,6 +33,17 @@ import { CloseIcon } from "./icons";
 
 const SUGGESTION_LIMIT = 8;
 const DEBOUNCE_MS = 300;
+
+// Two placeholders, not one truncated one.
+//
+// The full sentence is ~55 characters and the field is ~250px on a 375px
+// screen, so on a phone it was cut off mid-word — which taught the user
+// nothing and looked like a bug. Shortening it on small screens keeps the
+// hint fully readable; the long form still explains the mood capability
+// where there is room for it. The aria-label carries the full explanation in
+// both cases, so nothing is lost to assistive tech.
+const PLACEHOLDER_WIDE = "Search titles, or describe what you're in the mood for";
+const PLACEHOLDER_NARROW = "Search or describe a mood";
 
 interface Suggestion {
   kind: "show" | "movie";
@@ -84,6 +96,7 @@ export default function UniversalSearch({
   onResults: (results: SearchResults | null) => void;
   onClear: () => void;
 }) {
+  const isMobile = useIsMobile();
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [open, setOpen] = useState(false);
@@ -232,7 +245,7 @@ export default function UniversalSearch({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={onKeyDown}
             onFocus={() => suggestions.length > 0 && setOpen(true)}
-            placeholder="Search titles, or describe what you're in the mood for"
+            placeholder={isMobile ? PLACEHOLDER_NARROW : PLACEHOLDER_WIDE}
             aria-label="Search shows and movies, or describe a mood"
             role="combobox"
             aria-expanded={open}

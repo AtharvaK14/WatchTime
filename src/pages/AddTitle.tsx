@@ -12,8 +12,7 @@ import {
 import DetailsPanel from "../components/DetailsPanel";
 import UniversalSearch, { type SearchResults } from "../components/UniversalSearch";
 import { ShowGridSkeleton } from "../components/Skeleton";
-import EmptyState from "../components/EmptyState";
-import { SearchIcon } from "../components/icons";
+import SearchResultsGrid from "../components/SearchResultsGrid";
 import { useFullRows } from "../lib/useFullRows";
 
 /**
@@ -75,95 +74,6 @@ function MovieRow({ items, onOpen }: { items: MovieSearchResult[]; onOpen: (id: 
   );
 }
 
-/** Search results: exact title matches, plus mood matches when the query described one. */
-function Results({
-  results,
-  onOpen,
-}: {
-  results: SearchResults;
-  onOpen: (kind: "show" | "movie", tmdbId: number) => void;
-}) {
-  const nothing = results.titles.length === 0 && results.mood.length === 0;
-  return (
-    <>
-      {results.titles.length > 0 && (
-        <>
-          <h3 className="section-title">Titles</h3>
-          <div className="show-grid">
-            {results.titles.map((t) => (
-              <button
-                key={`${t.kind}:${t.tmdbId}`}
-                className="show-card"
-                onClick={() => onOpen(t.kind, t.tmdbId)}
-              >
-                <div className="show-card-media">
-                  {t.posterPath ? (
-                    <img src={`${TMDB_IMAGE_BASE}${t.posterPath}`} alt={t.name} loading="lazy" decoding="async" />
-                  ) : (
-                    <div className="poster-placeholder" />
-                  )}
-                  <div className="show-card-body">
-                    <p className="show-name">{t.name}</p>
-                    <p className="show-card-meta">
-                      {t.kind === "show" ? "TV" : "Film"}
-                      {t.year ? ` · ${t.year}` : ""}
-                    </p>
-                  </div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-
-      {results.moodAttempted && (
-        <>
-          <h3 className="section-title">Matching your description</h3>
-          {results.moodMessage && <p className="muted small">{results.moodMessage}</p>}
-          {results.mood.length === 0 && !results.moodMessage && (
-            <p className="muted small">Still looking...</p>
-          )}
-          {results.mood.length > 0 && (
-            <div className="show-grid">
-              {results.mood.map((m) => (
-                <button
-                  key={`${m.kind}:${m.tmdbId}`}
-                  className="show-card"
-                  onClick={() => onOpen(m.kind, m.tmdbId)}
-                >
-                  <div className="show-card-media">
-                    {m.posterPath ? (
-                      <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.name} loading="lazy" decoding="async" />
-                    ) : (
-                      <div className="poster-placeholder" />
-                    )}
-                    <div className="show-card-body">
-                      <p className="show-name">{m.name}</p>
-                      <p className="show-card-meta">
-                        {m.kind === "show" ? "TV" : "Film"}
-                        {m.year ? ` · ${m.year}` : ""}
-                      </p>
-                      {m.inLibrary && <span className="rail-badge">In your library</span>}
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {nothing && !results.moodAttempted && (
-        <EmptyState
-          icon={SearchIcon}
-          title="No results"
-          body={`Nothing on TMDB matched "${results.query}". Try fewer words, or describe what you're in the mood for instead of naming a title.`}
-        />
-      )}
-    </>
-  );
-}
-
 export default function AddTitle() {
   const [results, setResults] = useState<SearchResults | null>(null);
   const [openDetails, setOpenDetails] = useState<{ kind: "show" | "movie"; tmdbId: number } | null>(null);
@@ -215,7 +125,7 @@ export default function AddTitle() {
       {!hasApiKey() && <p className="status-error">Add your TMDB API key on the Settings page to search or browse.</p>}
 
       {searching ? (
-        <Results results={results} onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })} />
+        <SearchResultsGrid results={results} onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })} />
       ) : (
         hasApiKey() && (
           <div className="discover-sections">
@@ -270,7 +180,7 @@ export default function AddTitle() {
               <p className="muted small">Nothing found in the last 45 days.</p>
             ) : (
               <MovieRow
-                items={atHomeMovies.slice(0, 10)}
+                items={atHomeMovies.slice(0, DISCOVER_ROW_COUNT)}
                 onOpen={(id) => setOpenDetails({ kind: "movie", tmdbId: id })}
               />
             )}

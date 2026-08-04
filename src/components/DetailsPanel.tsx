@@ -7,7 +7,7 @@ import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount } from "../lib/
 import { ensureEpisodesWatched, recordEpisodeRewatch, recordMovieRewatch } from "../lib/watchEvents";
 import { useDraggableSheet } from "../lib/useDraggableSheet";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
-import { useIsMobile } from "../lib/useIsMobile";
+import { usePrefersBottomSheet } from "../lib/useIsMobile";
 import { useBackHandler } from "../lib/backHandler";
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
 import { CheckIcon, CloseIcon } from "./icons";
@@ -61,7 +61,9 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   // JSX on the mobile render path below, it's inert otherwise.
   useLockBodyScroll();
   const { sheetStyle, handleProps } = useDraggableSheet(onClose);
-  const isMobile = useIsMobile();
+  // Sheet vs centred dialog. Portrait-aware, not the 640px phone breakpoint —
+  // see usePrefersBottomSheet for why.
+  const isMobile = usePrefersBottomSheet();
   // Drives the sheet's bottom fade: it should stop suggesting "more below"
   // once the scroll area has actually reached the bottom.
   const [scrollAreaRef, atEnd] = useScrollAtEnd();

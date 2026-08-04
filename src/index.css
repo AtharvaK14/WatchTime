@@ -352,9 +352,16 @@ button:disabled {
   font-weight: 500;
 }
 
+/* inline-flex + a real min-height rather than .hit-slop: these sit inside
+   flex rows next to other controls (the season header, For You's "Why
+   these?"), where an overlaid slop rectangle would reach across its
+   neighbours. Centring the label means the extra height does not shift it. */
 .link-button {
   color: var(--accent);
   font-size: var(--text-sm);
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--tap);
 }
 
 .skip {
@@ -1085,7 +1092,8 @@ summary:focus-visible,
    already-ticked checkbox, so the control looked like a status rather than
    an action. Grey outline = "not yet"; the green only ever appears as the
    result of a tap. */
-.watch-toggle-circle {
+.watch-toggle-circle,
+.mtw-mark {
   position: relative;
   width: 40px;
   height: 40px;
@@ -1104,7 +1112,8 @@ summary:focus-visible,
 /* The green fill, grown from the centre on confirm. A separate layer rather
    than a background-color transition so it can scale outward from nothing,
    which is what makes the tap read as "filling up" instead of "recolouring". */
-.watch-toggle-circle::before {
+.watch-toggle-circle::before,
+.mtw-mark::before {
   content: "";
   position: absolute;
   inset: -1.5px; /* covers the border box, so the fill reaches the outer edge */
@@ -1118,13 +1127,15 @@ summary:focus-visible,
 }
 
 /* The tick has to ride above the fill layer. */
-.watch-toggle-circle svg {
+.watch-toggle-circle svg,
+.mtw-mark svg {
   position: relative;
   z-index: 1;
   transition: transform var(--dur-base) var(--ease-out);
 }
 
-.watch-toggle-circle:hover:not(:disabled) {
+.watch-toggle-circle:hover:not(:disabled),
+.mtw-mark:hover:not(:disabled) {
   background: transparent;
   border-color: var(--success);
   color: var(--success);
@@ -1133,18 +1144,21 @@ summary:focus-visible,
 /* Confirmed: fill snaps in, the whole control gives one overshoot pulse, and
    the tick flips to the dark-on-green pairing. Held for the length of the
    pulse before the row itself starts leaving — see .wn-item below. */
-.watch-toggle-circle.is-confirming {
+.watch-toggle-circle.is-confirming,
+.mtw-mark.is-confirming {
   border-color: var(--success);
   color: var(--bg);
   animation: watch-confirm-pop var(--dur-slow) var(--ease-out);
 }
 
-.watch-toggle-circle.is-confirming::before {
+.watch-toggle-circle.is-confirming::before,
+.mtw-mark.is-confirming::before {
   transform: scale(1);
   opacity: 1;
 }
 
-.watch-toggle-circle.is-confirming svg {
+.watch-toggle-circle.is-confirming svg,
+.mtw-mark.is-confirming svg {
   transform: scale(1.1);
 }
 
@@ -1258,12 +1272,66 @@ summary:focus-visible,
   transform: scale(0.97);
 }
 
+/* Wrapper for the poster and its corner control. */
+.mtw-poster-wrap {
+  position: relative;
+  display: block;
+  line-height: 0;
+}
+
+/* The mark-watched control, moved onto the poster's top-right corner and
+   reduced to the same circle the Watch Next rows use. It was a full-width
+   text button under the title, which took a whole row of card height and
+   gave the rail two competing visual languages for one action.
+
+   Sits outside the poster's rounded corners on purpose (no overflow clip on
+   .mtw-poster-wrap) so .hit-slop can widen the target past the artwork. */
+.mtw-mark {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: 32px;
+  height: 32px;
+  align-self: auto;
+  /* Frosted, because unlike the Watch Next circle this one sits over
+     artwork of unknown brightness and a bare outline can vanish on it. */
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  border-color: rgba(255, 255, 255, 0.4);
+  color: var(--text);
+  z-index: 2;
+}
+
+/* Horizontal sibling of .wn-item: the rail is a row, so a leaving card
+   closes its WIDTH rather than its height and the cards after it slide
+   left into the space. */
+.mtw-item {
+  display: grid;
+  /* minmax(0, ...), not a bare fr: .mtw-card has an explicit width: 124px, so
+     a plain `0fr` track still floors at its min-content size and never
+     actually closes. The explicit zero minimum is what lets it reach 0.
+     overflow:hidden then clips the fixed-width card as the track shrinks
+     under it — the mark button's 48px hit area fits exactly inside the
+     card's bounds, so nothing interactive is clipped by this. */
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+  transition:
+    grid-template-columns var(--dur-slow) var(--ease-out),
+    opacity var(--dur-base) var(--ease-out),
+    margin-right var(--dur-slow) var(--ease-out);
+}
+
+.mtw-item.is-leaving {
+  grid-template-columns: minmax(0, 0fr);
+  opacity: 0;
+  margin-right: calc(-1 * var(--space-4)); /* cancels .mtw-rail's gap */
+}
+
 /* Two lines, wrapping naturally, with the space for both always reserved.
    Previously this was a single ellipsised line, which meant a long title was
-   cut off AND still crowded the full-width button beside it. Clamping at two
-   lines with a reserved min-height lets titles read properly while keeping
-   every card in the rail exactly the same height, so the buttons all sit on
-   one line regardless of how long any individual title is. */
+   cut off AND still crowded the button beside it. Clamping at two lines with
+   a reserved min-height lets titles read properly while keeping every card in
+   the rail exactly the same height. */
 .mtw-name {
   font-size: var(--text-sm);
   font-weight: 500;
@@ -1278,21 +1346,8 @@ summary:focus-visible,
   min-height: 2.6em;
 }
 
-/* Anchored to the bottom-right of the card rather than stretched across it:
-   margin-top:auto pins it to the bottom whatever the title did above,
-   align-self:flex-end pins it right. Drawn small on purpose — the full 44px
-   target is restored by .hit-slop on the element, which grows the hit area
-   upward into the inert gap above the button without changing the layout. */
-.mtw-card button {
-  margin-top: auto;
-  align-self: flex-end;
-  width: auto;
-  font-size: var(--text-xs);
-  font-weight: 600;
-  padding: 0 var(--space-3);
-  min-height: 30px;
-  border-radius: var(--radius-sm);
-}
+/* The title is now the last element in the card, so nothing needs pinning to
+   the bottom — the corner control took the button's place. */
 
 .mtw-view-all-tile {
   width: 100%;
@@ -1565,6 +1620,27 @@ summary:focus-visible,
   font-variant-numeric: tabular-nums;
 }
 
+/* "From library" on a search result. Quiet on purpose: it annotates a result
+   the user asked for, it does not promote it. Top-left, where .show-card-flag
+   already puts status text, so the two never need to coexist on one card —
+   a search result is never also an archived-show tile. */
+.library-badge {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 2;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(4px);
+  border: 1px solid var(--accent-line);
+  color: var(--accent);
+  border-radius: var(--radius-xs);
+  padding: 2px 6px;
+}
+
 /* Status flag for archived / stopped shows. A word, not just a colour. */
 .show-card-flag {
   position: absolute;
@@ -1673,12 +1749,23 @@ summary:focus-visible,
   gap: var(--space-3);
 }
 
+/* Values differ wildly in shape — "2mo 14d 6h" wraps to two lines while
+   "1,284" never does — so stacking the label directly under the value left
+   every card's label at a different height and the grid read as ragged.
+   The card is a column with the label pushed to the bottom by margin-top:auto
+   instead, which pins every label to the same bottom-left corner no matter
+   how tall its value rendered. min-height keeps short cards from collapsing
+   below their neighbours. */
 .stat-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
   text-align: left;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 112px;
 }
 
 .stat-card .stat-value {
@@ -1695,7 +1782,8 @@ summary:focus-visible,
   font-weight: 600;
   letter-spacing: 0.05em;
   text-transform: uppercase;
-  margin-top: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-3);
 }
 
 .stat-value {
@@ -2265,10 +2353,13 @@ summary:focus-visible,
   border-radius: var(--radius-lg) var(--radius-lg) 0 0;
 }
 
+/* 20px, matching .modal's own padding, so the button's right edge sits on the
+   same vertical line as the title and body text below it. It was 16px, which
+   read as a 4px misalignment against every other edge in the dialog. */
 .desktop-hero-close-x {
   position: absolute;
-  top: var(--space-4);
-  right: var(--space-4);
+  top: var(--space-5);
+  right: var(--space-5);
   z-index: 2;
   width: 36px;
   height: 36px;
@@ -3004,6 +3095,16 @@ details[open] > summary::after {
   flex: 1;
   min-width: 0;
   padding-right: 44px;
+}
+
+/* The 44px above reserves room for the inline clear button — but that button
+   is only rendered once there is a query, which is precisely when the
+   placeholder is NOT showing. Handing the space back while the field is empty
+   gives the placeholder the full width it needs on a 375px screen, where it
+   was otherwise clipped by ~10px against padding held for a control that was
+   not there. */
+.search-field input[type="text"]:placeholder-shown {
+  padding-right: var(--space-3);
 }
 
 .search-clear {

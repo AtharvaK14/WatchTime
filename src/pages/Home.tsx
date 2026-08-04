@@ -9,18 +9,8 @@ import { useIsMobile } from "../lib/useIsMobile";
 import DetailsPanel from "../components/DetailsPanel";
 import EmptyState from "../components/EmptyState";
 import { WatchNextSkeleton, MovieRailSkeleton, LoadingAnnouncement } from "../components/Skeleton";
-import { CheckCircleIcon, StackIcon, MoviesIcon, CheckIcon, SearchIcon } from "../components/icons";
+import { CheckCircleIcon, StackIcon, MoviesIcon, CheckIcon } from "../components/icons";
 import EpisodeDetailsPanel from "../components/EpisodeDetailsPanel";
-import MoodSearch from "../components/MoodSearch";
-import { useMoodSearch } from "../lib/moodSearch/useMoodSearch";
-import {
-  matchesMoodFilter,
-  movieToMoodCandidate,
-  rankByMoodFilter,
-  showToMoodCandidate,
-  type MoodCandidate,
-  type MoodFilter,
-} from "../lib/moodSearch/search";
 import { buildWatchNextRows, byAddedAt, byRecency, type WatchNextRow as Row } from "../lib/watchNext";
 
 // Beats in the mark-watched sequence. CONFIRM_MS matches the circle's
@@ -128,17 +118,7 @@ function EpisodeRow({
   );
 }
 
-function ShowsHome({
-  onOpenShow,
-  filter,
-  onClearFilter,
-}: {
-  onOpenShow: (tmdbId: number) => void;
-  filter: MoodFilter | null;
-  // Lets the "no matches" empty state offer the action that resolves it,
-  // rather than telling the user to go and find the control themselves.
-  onClearFilter?: () => void;
-}) {
+function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
   const shows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(), []);
   // Deliberately simple, single-table, whole-table live queries. Each one is
   // independently and unambiguously reactive to writes on its own table.
@@ -205,8 +185,8 @@ function ShowsHome({
     () =>
       !shows || !allEpisodes || !allWatched
         ? []
-        : buildWatchNextRows(shows, allEpisodes, allWatched, getStaleDaysThreshold(), filter),
-    [shows, allEpisodes, allWatched, filter]
+        : buildWatchNextRows(shows, allEpisodes, allWatched, getStaleDaysThreshold(), null),
+    [shows, allEpisodes, allWatched]
   );
 
   // Live lookups for the open episode panel. Both read from the same live
@@ -319,16 +299,8 @@ function ShowsHome({
         </details>
       )}
 
-      {activeList.length === 0 && !syncing && filter && (
-        <EmptyState
-          icon={SearchIcon}
-          title="No matches in this list"
-          body="Nothing you're partway through fits that search. The other tabs may still have results."
-          action={onClearFilter ? { label: "Clear search", onClick: onClearFilter } : undefined}
-        />
-      )}
 
-      {activeList.length === 0 && !syncing && !filter && (
+      {activeList.length === 0 && !syncing && (
         <EmptyState
           icon={tab === "next" ? CheckCircleIcon : StackIcon}
           title={
@@ -541,9 +513,13 @@ const MTW_GAP = 14;
 // of up to 5 movies, with the view-all tile as the 6th card.
 const MTW_MOBILE_MAX = 5;
 
-function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: MoodFilter | null }) {
+function MoviesHome({ onViewAll }: { onViewAll: () => void }) {
   const wantToWatch = useLiveQuery(() => db.movies.filter((m) => !m.watched && m.wantsToWatch).toArray(), []);
   const [openDetails, setOpenDetails] = useState<number | null>(null);
+  // Mirrors the Watch Next rows: which card is mid-confirm, and which is
+  // closing out of the rail.
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+  const [leavingId, setLeavingId] = useState<number | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const [fitCount, setFitCount] = useState(5); // sensible default before the first real measurement
@@ -551,21 +527,10 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
   // Most recently added first, the same comparator as the Movies page's
   // "Recently added" sort: movies from before addedAt existed have it
   // undefined and deliberately sort as oldest.
-  //
-  // With a mood filter active the order changes to match strength instead,
-  // since "how well does this fit what I asked for" is the only ordering
-  // that makes sense once the user has stated what they want.
-  const sorted = useMemo(() => {
-    if (!wantToWatch) return undefined;
-    if (filter) {
-      const candidates = wantToWatch.map((m) => ({
-        movie: m,
-        ...movieToMoodCandidate(m),
-      }));
-      return rankByMoodFilter(candidates, filter).map((c) => c.movie);
-    }
-    return [...wantToWatch].sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""));
-  }, [wantToWatch, filter]);
+  const sorted = useMemo(
+    () => (wantToWatch ? [...wantToWatch].sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? "")) : undefined),
+    [wantToWatch]
+  );
 
   // Real dynamic fit: measure the rail's actual rendered width (which
   // itself depends on the app shell, the side rail, and the viewport, not
@@ -602,8 +567,21 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
     );
   }
 
+  /**
+   * Same two-beat sequence as the Watch Next rows: the circle fills green,
+   * then the card closes its width so the rail slides left into the gap, and
+   * only then is the record written — by which point the card is already at
+   * zero width, so the live query removing it causes no jump.
+   */
   async function markWatched(tmdbId: number) {
+    if (confirmingId !== null) return;
+    setConfirmingId(tmdbId);
+    await wait(CONFIRM_MS);
+    setLeavingId(tmdbId);
+    await wait(LEAVE_MS);
     await db.movies.update(tmdbId, { watched: true, watchedAt: new Date().toISOString() });
+    setConfirmingId(null);
+    setLeavingId(null);
   }
 
   const hasMore = sorted.length > (isMobile ? MTW_MOBILE_MAX : fitCount);
@@ -632,48 +610,48 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
       ) : (
         <div className="mtw-rail" ref={railRef}>
           {visible.map((m) => (
-            <div key={m.tmdbId} className="mtw-card">
-              {m.posterPath ? (
-                <img
-                  className="mtw-poster"
-                  src={`${TMDB_IMAGE_BASE}${m.posterPath}`}
-                  alt={m.title}
-                  loading="lazy"
-                  decoding="async"
-                  onClick={() => setOpenDetails(m.tmdbId)}
-                />
-              ) : (
-                <div className="poster-placeholder mtw-poster" onClick={() => setOpenDetails(m.tmdbId)} />
-              )}
-              {/* Single-line ellipsis title (see .mtw-name), so the button
-                  below sits at the same height on every card; the full
-                  title is still available as a hover tooltip. */}
-              <p className="show-name mtw-name" title={m.title} onClick={() => setOpenDetails(m.tmdbId)}>
-                {m.title}
-              </p>
-              {/* "Watched", not "Mark watched": at 124px of card width the
-                  longer label renders ~109px wide, which fills the row and
-                  makes the bottom-right anchoring invisible. The short label
-                  leaves real space beside it so the button reads as anchored.
-                  aria-label keeps the full action clear to screen readers.
-                  .hit-slop restores the 44px target without changing the
-                  painted size. */}
-              <button
-                className="hit-slop"
-                onClick={() => markWatched(m.tmdbId)}
-                aria-label={`Mark ${m.title} watched`}
-              >
-                Watched
-              </button>
+            <div key={m.tmdbId} className={`mtw-item ${leavingId === m.tmdbId ? "is-leaving" : ""}`}>
+              <div className="mtw-card">
+                <div className="mtw-poster-wrap">
+                  {m.posterPath ? (
+                    <img
+                      className="mtw-poster"
+                      src={`${TMDB_IMAGE_BASE}${m.posterPath}`}
+                      alt={m.title}
+                      loading="lazy"
+                      decoding="async"
+                      onClick={() => setOpenDetails(m.tmdbId)}
+                    />
+                  ) : (
+                    <div className="poster-placeholder mtw-poster" onClick={() => setOpenDetails(m.tmdbId)} />
+                  )}
+                  {/* The same circle the Watch Next rows use, on the poster's
+                      corner: one action, one visual language, and it costs no
+                      card height the way the old full-width button did. */}
+                  <button
+                    className={`mtw-mark hit-slop ${confirmingId === m.tmdbId ? "is-confirming" : ""}`}
+                    onClick={() => markWatched(m.tmdbId)}
+                    aria-label={`Mark ${m.title} watched`}
+                    disabled={confirmingId === m.tmdbId}
+                  >
+                    <CheckIcon size={16} />
+                  </button>
+                </div>
+                <p className="show-name mtw-name" title={m.title} onClick={() => setOpenDetails(m.tmdbId)}>
+                  {m.title}
+                </p>
+              </div>
             </div>
           ))}
           {hasMore && (
-            <div className="mtw-card">
-              <button type="button" className="mtw-view-all-tile" onClick={onViewAll} aria-label="View all movies to watch">
-                <span className="mtw-view-all-count">+{sorted.length - visible.length}</span>
-                <span>View all</span>
-                <span aria-hidden="true">&rsaquo;</span>
-              </button>
+            <div className="mtw-item">
+              <div className="mtw-card">
+                <button type="button" className="mtw-view-all-tile" onClick={onViewAll} aria-label="View all movies to watch">
+                  <span className="mtw-view-all-count">+{sorted.length - visible.length}</span>
+                  <span>View all</span>
+                  <span aria-hidden="true">&rsaquo;</span>
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -683,57 +661,25 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
   );
 }
 
+/**
+ * Home is now purely a tracking surface: what you are partway through, what
+ * is on the movie watchlist, and what is coming up.
+ *
+ * The mood search box that used to sit at the top has moved to For You. It
+ * only ever filtered titles already in the library, which made it a library
+ * filter wearing a search box's clothes — typing anything the user did not
+ * already own returned nothing. Search belongs where discovery happens, and
+ * Home is not that place.
+ */
 export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void }) {
   const [openShow, setOpenShow] = useState<number | null>(null);
-  const mood = useMoodSearch();
-
-  // Mood search spans both lists on this page, so the candidate set is
-  // assembled here rather than inside either child. Shows are restricted to
-  // the followed/unarchived set that ShowsHome itself renders, so the model
-  // never ranks titles that could not appear in the results anyway.
-  const searchableShows = useLiveQuery(
-    () => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(),
-    []
-  );
-  const searchableMovies = useLiveQuery(
-    () => db.movies.filter((m) => !m.watched && m.wantsToWatch).toArray(),
-    []
-  );
-
-  const candidates = useMemo<MoodCandidate[]>(
-    () => [
-      ...(searchableShows ?? []).map(showToMoodCandidate),
-      ...(searchableMovies ?? []).map(movieToMoodCandidate),
-    ],
-    [searchableShows, searchableMovies]
-  );
-
-  // Counted the same way the two lists below filter, so the summary line
-  // never claims a number the user cannot see.
-  const resultCount = useMemo(
-    () => (mood.filter ? candidates.filter((c) => matchesMoodFilter(c, mood.filter!)).length : 0),
-    [candidates, mood.filter]
-  );
 
   return (
     <div className="panel">
-      <MoodSearch
-        setup={mood.setup}
-        filter={mood.filter}
-        searching={mood.searching}
-        dismissed={mood.dismissed}
-        resultCount={resultCount}
-        onSearch={(q) => mood.run(q, candidates)}
-        onClear={mood.clear}
-        onCancelSetup={mood.cancelSetup}
-      />
+      <ShowsHome onOpenShow={setOpenShow} />
 
-      <ShowsHome onOpenShow={setOpenShow} filter={mood.filter} onClearFilter={mood.clear} />
+      <MoviesHome onViewAll={onViewAllMovies} />
 
-      <MoviesHome onViewAll={onViewAllMovies} filter={mood.filter} />
-
-      {/* Coming up is calendar data, not recommendations, so a mood filter
-          deliberately does not apply to it. */}
       <ComingUp onOpenShow={setOpenShow} />
 
       {openShow !== null && <DetailsPanel kind="show" tmdbId={openShow} onClose={() => setOpenShow(null)} />}
