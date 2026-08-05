@@ -107,7 +107,7 @@ export default function Movies({
   if (!movies) {
     return (
       <div className="panel">
-        <h2>Movies</h2>
+        <h2 className="sr-only">Movies</h2>
         <LoadingAnnouncement label="Loading your movies" />
         <ShowGridSkeleton />
       </div>
@@ -125,7 +125,11 @@ export default function Movies({
 
   return (
     <div className="panel">
-      <h2>Movies</h2>
+      {/* Visually hidden: the bottom nav already says where you are,
+          so the printed title was only costing vertical space. The
+          heading itself stays for assistive tech, which has no nav
+          highlight to read. */}
+      <h2 className="sr-only">Movies</h2>
 
       <div className="stats-grid">
         <div className="stat-card">

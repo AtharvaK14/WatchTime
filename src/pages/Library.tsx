@@ -119,7 +119,7 @@ export default function Library() {
   if (!shows) {
     return (
       <div className="panel">
-        <h2>Shows</h2>
+        <h2 className="sr-only">Shows</h2>
         <LoadingAnnouncement label="Loading your shows" />
         <ShowGridSkeleton />
       </div>
@@ -130,7 +130,11 @@ export default function Library() {
 
   return (
     <div className="panel">
-      <h2>Shows</h2>
+      {/* Visually hidden: the bottom nav already says where you are,
+          so the printed title was only costing vertical space. The
+          heading itself stays for assistive tech, which has no nav
+          highlight to read. */}
+      <h2 className="sr-only">Shows</h2>
 
       <div className="stats-grid">
         <div className="stat-card">

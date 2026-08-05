@@ -190,6 +190,7 @@ function App() {
                 key={t}
                 className={`bottom-nav-item ${tab === t ? "active" : ""}`}
                 onClick={() => setTab(t)}
+                aria-current={tab === t ? "page" : undefined}
               >
                 <Icon size={22} />
                 <span>{TAB_LABELS[t]}</span>

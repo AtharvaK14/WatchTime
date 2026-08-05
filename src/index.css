@@ -325,11 +325,26 @@ button {
     transform var(--dur-fast) var(--ease-out);
 }
 
-button:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  background: var(--surface-overlay);
+/* Hover is gated on a device that actually has a pointer.
+   Touchscreens emulate :hover by leaving it applied to the last thing tapped
+   until something else is tapped. That is why a selected Home filter sat
+   greyed out after the tap and only corrected itself when the user touched
+   elsewhere: this rule is (0,2,1) and beat `.pill-tab.active` at (0,2,0), so
+   the stuck hover background won over the active one. Restricting hover to
+   pointer devices removes the stuck state at the source rather than fighting
+   it with specificity on every active variant in the file.
+
+   :not(.active) is the belt to that braces — with a real mouse, hovering a
+   selected control should not repaint it as unselected either. */
+@media (hover: hover) and (pointer: fine) {
+  button:hover:not(:disabled):not(.active) {
+    border-color: var(--border-strong);
+    background: var(--surface-overlay);
+  }
 }
 
+/* :active is the genuine press state and stays ungated — it is the only
+   touch feedback these controls have. */
 button:active:not(:disabled) {
   transform: scale(0.97);
   background: var(--surface-overlay);
@@ -992,8 +1007,10 @@ summary:focus-visible,
     border-width var(--dur-slow) var(--ease-out);
 }
 
-.watch-next-row:hover {
-  border-color: var(--border-strong);
+@media (hover: hover) and (pointer: fine) {
+  .watch-next-row:hover {
+    border-color: var(--border-strong);
+  }
 }
 
 .watch-next-row img,
@@ -1046,10 +1063,12 @@ summary:focus-visible,
   white-space: nowrap;
 }
 
-.show-pill:hover:not(:disabled) {
-  background: none;
-  border-color: transparent;
-  color: var(--text);
+@media (hover: hover) and (pointer: fine) {
+  .show-pill:hover:not(:disabled) {
+    background: none;
+    border-color: transparent;
+    color: var(--text);
+  }
 }
 
 .wn-episode-line {
@@ -1134,11 +1153,13 @@ summary:focus-visible,
   transition: transform var(--dur-base) var(--ease-out);
 }
 
-.watch-toggle-circle:hover:not(:disabled),
-.mtw-mark:hover:not(:disabled) {
-  background: transparent;
-  border-color: var(--success);
-  color: var(--success);
+@media (hover: hover) and (pointer: fine) {
+  .watch-toggle-circle:hover:not(:disabled),
+  .mtw-mark:hover:not(:disabled) {
+    background: transparent;
+    border-color: var(--success);
+    color: var(--success);
+  }
 }
 
 /* Confirmed: fill snaps in, the whole control gives one overshoot pulse, and
@@ -1374,11 +1395,13 @@ summary:focus-visible,
   min-height: 0;
 }
 
-.mtw-view-all-tile:hover:not(:disabled) {
-  border-color: var(--accent-line);
-  border-style: dashed;
-  background: var(--accent-tint);
-  color: var(--accent);
+@media (hover: hover) and (pointer: fine) {
+  .mtw-view-all-tile:hover:not(:disabled) {
+    border-color: var(--accent-line);
+    border-style: dashed;
+    background: var(--accent-tint);
+    color: var(--accent);
+  }
 }
 
 .mtw-view-all-count {
@@ -1442,8 +1465,10 @@ summary:focus-visible,
   border-bottom: none;
 }
 
-.up-row:hover {
-  background: var(--surface);
+@media (hover: hover) and (pointer: fine) {
+  .up-row:hover {
+    background: var(--surface);
+  }
 }
 
 .up-row:active {
@@ -2277,8 +2302,10 @@ summary:focus-visible,
   transition: background-color var(--dur-fast) var(--ease-out);
 }
 
-.episode-row:hover {
-  background: var(--surface-raised);
+@media (hover: hover) and (pointer: fine) {
+  .episode-row:hover {
+    background: var(--surface-raised);
+  }
 }
 
 /* Watched episodes are marked by a left rule as well as a wash, so the
@@ -2324,8 +2351,10 @@ summary:focus-visible,
   cursor: pointer;
 }
 
-.ep-name:hover {
-  color: var(--accent);
+@media (hover: hover) and (pointer: fine) {
+  .ep-name:hover {
+    color: var(--accent);
+  }
 }
 
 .watch-toggle {
@@ -2347,9 +2376,11 @@ summary:focus-visible,
   color: var(--success);
 }
 
-.watch-toggle.on:hover:not(:disabled) {
-  background: var(--success);
-  color: var(--bg);
+@media (hover: hover) and (pointer: fine) {
+  .watch-toggle.on:hover:not(:disabled) {
+    background: var(--success);
+    color: var(--bg);
+  }
 }
 
 .rewatch-badge {
@@ -2706,6 +2737,12 @@ summary:focus-visible,
   }
 }
 
+/* Structurally identical to .details-sheet: a flex column that clips its own
+   overflow, with the grab handle and the apply button pinned and only the
+   body scrolling. That shape is what the drag needs — the sheet is moved by
+   `transform`, so it cannot itself be the scroll container, or the browser
+   fights the gesture. Height is CSS-owned and content-sized, capped the same
+   way; useDraggableSheet only observes the result. */
 .filter-sheet {
   position: fixed;
   left: 0;
@@ -2717,28 +2754,46 @@ summary:focus-visible,
   border: 1px solid var(--border);
   border-bottom: none;
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  padding: 0 var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom));
-  max-height: 80vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: auto;
+  max-height: 85dvh;
+  will-change: transform;
   box-shadow: var(--shadow-sheet);
   z-index: var(--z-sheet);
 }
 
+@supports not (height: 1dvh) {
+  .filter-sheet {
+    max-height: 85vh;
+  }
+}
+
 .filter-sheet-handle {
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
   padding: var(--space-3) 0 var(--space-2);
-  position: sticky;
-  top: 0;
-  background: var(--surface);
-  z-index: 1;
+  cursor: grab;
+  /* Stops the browser claiming the gesture for native scrolling before the
+     pointer handlers see it — same reason as .sheet-drag-handle. */
+  touch-action: none;
+}
+
+.filter-sheet-handle:active {
+  cursor: grabbing;
 }
 
 .filter-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  padding: 0 var(--space-5);
 }
 
 /* Deliberately a 3-part descendant selector (specificity 0,2,1) so it beats
@@ -2775,9 +2830,25 @@ summary:focus-visible,
   border-color: var(--text);
 }
 
+/* 38px is fine for the inline desktop treatment, where these are pointer
+   targets. Inside the sheet they are the primary touch controls, so they get
+   a full target on BOTH axes: a short label like "All" comes to 43.5px wide
+   from its text plus padding alone, so height on its own was not enough.
+   Scoped here so the inline variant is unaffected. */
+.filter-sheet-body .segmented button,
+.filter-sheet-body .opt {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+/* Pinned below the scrolling body rather than sitting at the end of it, so a
+   long filter list never scrolls the primary action out of reach. The
+   safe-area inset lives here because this is now the sheet's bottom-most
+   content — the sheet itself still extends behind the gesture bar. */
 .filter-sheet-apply {
-  width: 100%;
-  margin-top: var(--space-4);
+  flex-shrink: 0;
+  width: auto;
+  margin: var(--space-4) var(--space-5) calc(var(--space-5) + env(safe-area-inset-bottom));
   background: var(--text);
   color: var(--bg);
   border: none;
@@ -2785,9 +2856,11 @@ summary:focus-visible,
   font-size: var(--text-base);
 }
 
-.filter-sheet-apply:hover:not(:disabled) {
-  background: #fff;
-  border-color: transparent;
+@media (hover: hover) and (pointer: fine) {
+  .filter-sheet-apply:hover:not(:disabled) {
+    background: #fff;
+    border-color: transparent;
+  }
 }
 
 
@@ -3504,9 +3577,11 @@ details[open] > summary::after {
   position: relative;
 }
 
-.rail-card:hover:not(:disabled) {
-  background: none;
-  border-color: transparent;
+@media (hover: hover) and (pointer: fine) {
+  .rail-card:hover:not(:disabled) {
+    background: none;
+    border-color: transparent;
+  }
 }
 
 /* Anchors the poster overlays. Markers live here rather than under the title
@@ -3539,10 +3614,12 @@ details[open] > summary::after {
   transform: scale(0.97);
 }
 
-.rail-card:hover .rail-poster {
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
-    var(--shadow-md);
+@media (hover: hover) and (pointer: fine) {
+  .rail-card:hover .rail-poster {
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+      var(--shadow-md);
+  }
 }
 
 .rail-card:focus-visible {
@@ -3689,8 +3766,10 @@ details[open] > summary::after {
   transform: none;
 }
 
-.wn-episode-button:hover .wn-episode-name {
-  color: var(--text);
+@media (hover: hover) and (pointer: fine) {
+  .wn-episode-button:hover .wn-episode-name {
+    color: var(--text);
+  }
 }
 
 .wn-episode-button .wn-episode-line,

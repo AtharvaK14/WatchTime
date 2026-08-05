@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { useCompactFilters } from "../lib/useIsMobile";
+import { useDraggableSheet } from "../lib/useDraggableSheet";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useBackHandler } from "../lib/backHandler";
 
@@ -57,6 +58,10 @@ function FilterSheetOverlay({
 }) {
   useLockBodyScroll();
   useBackHandler(true, onClose); // Android back closes the filter sheet
+  // Exactly the hook the details panel uses, so both sheets share one
+  // implementation of the slide-up, the easing, the fade, the drag tracking
+  // and the dismiss threshold. Anything tuned there applies to both.
+  const { sheetStyle, handleProps, sheetRef } = useDraggableSheet(onClose);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -73,8 +78,15 @@ function FilterSheetOverlay({
     // resolved against the padding box and sat 20px off the bottom — the same
     // gap that had to be fixed on the details sheet.
     <div className="modal-backdrop sheet-backdrop" onClick={onClose}>
-      <div className="filter-sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="filter-sheet-handle">
+      <div
+        ref={sheetRef}
+        className="filter-sheet"
+        style={sheetStyle}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* handleProps only on the grab bar, never the whole sheet, so
+            scrolling and tapping the controls below are unaffected. */}
+        <div className="filter-sheet-handle" {...handleProps}>
           <div className="sheet-drag-handle-bar" />
         </div>
         <div className="filter-sheet-body">{children}</div>
