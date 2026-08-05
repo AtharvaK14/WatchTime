@@ -148,7 +148,17 @@
   --space-10: 40px;
   --space-12: 48px;
 
-  /* Radius */
+  /* Radius.
+     The ladder is by ROLE, not by size preference, and the roles are:
+       xs  small badges and chips
+       sm  thumbnails, inline pills, skeleton text
+       md  controls (buttons, inputs, selects) and media/artwork
+       lg  content panels and cards
+       xl  bottom sheets
+     Four advisory/content panels used to sit in md alongside the controls,
+     which read as sloppiness rather than intent — most visibly on
+     Diagnostics, where .diagnostic-report at 10px sat directly beside
+     .progress-block and .result-block at 14px. */
   --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -844,7 +854,7 @@ summary:focus-visible,
   background: var(--surface-raised);
   border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
   margin-bottom: var(--space-5);
   font-size: var(--text-sm);
@@ -1516,7 +1526,7 @@ summary:focus-visible,
 .catch-up-offer {
   background: var(--surface-raised);
   border: 1px solid var(--accent-line);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   padding: var(--space-3) var(--space-4);
   margin-bottom: var(--space-4);
   display: flex;
@@ -3009,7 +3019,9 @@ details[open] > summary::after {
 .diagnostic-report {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  /* lg, matching .progress-block / .result-block, which sit directly beside
+     this on the same screens. */
+  border-radius: var(--radius-lg);
   padding: var(--space-4);
   font-family: var(--font-mono);
   font-size: var(--text-xs);
