@@ -1,11 +1,29 @@
 const TMDB_BASE = "https://api.themoviedb.org/3";
 export const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w342";
-// w780 is TMDB's documented "Medium" backdrop size (their sizes are
-// w300/w780/w1280/original for backdrops specifically, a different size
-// ladder than posters), verified against TMDB's own image-path reference
-// rather than assumed. Appropriate width for a ~190px-tall hero banner
-// without shipping a full 1280w/original image for that.
-export const TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w780";
+
+// TMDB publishes a DIFFERENT size ladder per image type. Using one base for
+// everything is what made the episode thumbnail soft: w342 is a poster width
+// and is not in the still ladder at all.
+//
+//   posters:   w92 w154 w185 w342 w500 w780 original
+//   backdrops: w300 w780 w1280 original
+//   stills:    w92 w185 w300 original
+//
+// w1280 for the details hero: it spans the full sheet (up to 640 CSS px), so
+// on a 3x phone it needs ~1920 real pixels. w780 was being upscaled ~2.5x.
+export const TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w1280";
+
+// Episode stills. w300 is the largest fixed still size TMDB offers, which is
+// ample for the 76x43 thumbnails in the season list...
+export const TMDB_STILL_BASE = "https://image.tmdb.org/t/p/w300";
+
+// ...but nowhere near enough for the episode panel's hero, which renders 16:9
+// across the full panel width (up to 480 CSS px, so ~1440 real pixels on a 3x
+// screen). Since w300 is the ceiling of the fixed ladder, the only way to get
+// a sharp hero is `original`. These are single images fetched on demand, one
+// at a time, not a grid — so the extra weight buys real clarity on exactly the
+// image the user is looking at.
+export const TMDB_STILL_HERO_BASE = "https://image.tmdb.org/t/p/original";
 
 // Exported so Settings and the backup/restore code reference the same
 // storage key instead of re-typing the literal.

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Episode } from "../db";
-import { TMDB_IMAGE_BASE } from "../tmdb";
+import { TMDB_STILL_HERO_BASE } from "../tmdb";
 import { getOmdbEpisodeRating, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbEpisodeRating } from "../omdb";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useBackHandler } from "../lib/backHandler";
@@ -87,7 +87,16 @@ export default function EpisodeDetailsPanel({
         {/* 1 + 2: landscape thumbnail with the S/E number overlaid bottom-left */}
         <div className="episode-hero">
           {episode.stillPath ? (
-            <img src={`${TMDB_IMAGE_BASE}${episode.stillPath}`} alt={episode.name} className="episode-hero-img" />
+            <img
+              // TMDB_STILL_HERO_BASE, not TMDB_IMAGE_BASE: this renders 16:9
+              // across the full panel, and the shared base is a 342px POSTER
+              // width that was being upscaled several times over. See the
+              // size-ladder note in tmdb.ts.
+              src={`${TMDB_STILL_HERO_BASE}${episode.stillPath}`}
+              alt={episode.name}
+              className="episode-hero-img"
+              decoding="async"
+            />
           ) : (
             <div className="poster-placeholder episode-hero-img" />
           )}

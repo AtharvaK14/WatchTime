@@ -42,6 +42,14 @@ export interface Show {
   // Filled by the same backfill pass as overview, since it arrives in the
   // same details response and costs no extra request.
   originalLanguage?: string | null;
+  // ISO timestamp of the last time this show's episode lists were pulled from
+  // TMDB. Drives the re-sync for shows that are still airing: without it the
+  // cache had no notion of age, so "we have some episodes for this season"
+  // was treated as "this season is done", and a weekly show never picked up
+  // new episodes — nor the titles and stills that TMDB fills in only after an
+  // episode actually airs. Undefined for shows cached before this existed,
+  // which correctly reads as "never synced" and triggers one refresh.
+  episodesSyncedAt?: string;
 }
 
 export interface Episode {
@@ -346,6 +354,22 @@ class TrackerDB extends Dexie {
     // v12: no index, nothing cleared, filled lazily by the existing overview
     // backfill (which already fetches the details response these come in).
     this.version(13).stores({
+      shows: "tmdbId, name, isFollowed, lastWatchedAt, tvdbId",
+      episodes: "key, showId, [showId+seasonNumber]",
+      watchedEpisodes: "key, showId, watchedAt",
+      movies: "tmdbId, title, watched, wantsToWatch",
+      titleMatches: "rawTitle, kind",
+      settings: "key",
+      omdbCache: "cacheKey, kind",
+      titleEmbeddings: "cacheKey, kind",
+    });
+    // v14: added Show.episodesSyncedAt so the episode cache can tell stale
+    // from complete for a still-airing show. Additive and unindexed, so no
+    // migration work is needed and nothing is cleared — existing rows read as
+    // "never synced", which is exactly the behaviour we want on first run
+    // after the upgrade. Bumped anyway for a consistent audit trail, matching
+    // v4 and v12/v13.
+    this.version(14).stores({
       shows: "tmdbId, name, isFollowed, lastWatchedAt, tvdbId",
       episodes: "key, showId, [showId+seasonNumber]",
       watchedEpisodes: "key, showId, watchedAt",

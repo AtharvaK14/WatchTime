@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
 import { db, type Episode, type Movie } from "../db";
-import { getTvShowDetails, getMovieDetails, TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE } from "../tmdb";
+import {
+  getTvShowDetails,
+  getMovieDetails,
+  TMDB_IMAGE_BASE,
+  TMDB_BACKDROP_BASE,
+  TMDB_STILL_BASE,
+} from "../tmdb";
 import { getOmdbRatings, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbRatings } from "../omdb";
 import { averageRuntime } from "../lib/runtime";
-import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount } from "../lib/episodeSync";
+import { getSeasonSummaries, ensureSeasonCached, totalEpisodeCount } from "../lib/episodeSync";
 import { ensureEpisodesWatched, recordEpisodeRewatch, recordMovieRewatch } from "../lib/watchEvents";
 import { useDraggableSheet } from "../lib/useDraggableSheet";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
@@ -81,6 +87,9 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const [seasonNumbers, setSeasonNumbers] = useState<number[] | null>(null);
+  // TMDB's episode_count per season, handed to ensureSeasonCached so it can
+  // tell a complete cached season from one that has since gained episodes.
+  const [seasonCounts, setSeasonCounts] = useState<Map<number, number>>(new Map());
   const [expandedSeason, setExpandedSeason] = useState<number | null>(null);
   const [loadingSeason, setLoadingSeason] = useState<number | null>(null);
   const [episodesInDb, setEpisodesInDb] = useState<Episode[]>([]);
@@ -124,8 +133,11 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
           });
           const existing = await db.shows.get(tmdbId);
           setInLibrary(!!existing);
-          const nums = await getSeasonNumbers(tmdbId);
-          if (!cancelled) setSeasonNumbers(nums);
+          const summaries = await getSeasonSummaries(tmdbId);
+          if (!cancelled) {
+            setSeasonNumbers(summaries.map((x) => x.seasonNumber));
+            setSeasonCounts(new Map(summaries.map((x) => [x.seasonNumber, x.episodeCount])));
+          }
           if (existing) {
             await refreshWatchedAndEpisodes();
           }
@@ -194,12 +206,23 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
       return;
     }
     setExpandedSeason(seasonNumber);
-    if (!episodesInDb.some((e) => e.seasonNumber === seasonNumber)) {
-      setLoadingSeason(seasonNumber);
-      await ensureSeasonCached(tmdbId, seasonNumber);
-      await refreshWatchedAndEpisodes();
-      setLoadingSeason(null);
-    }
+
+    // Always ask, rather than only when nothing is cached locally.
+    //
+    // The old `if (no episodes for this season)` guard made the season cache
+    // permanently self-confirming: having anything cached meant never asking
+    // again, so a season that had gained episodes — or whose placeholder
+    // entries had since been filled in with real titles and stills — could
+    // never be corrected by opening it. ensureSeasonCached now owns that
+    // decision and returns immediately when the cache is genuinely complete
+    // and fresh, so this stays cheap.
+    const cachedForSeason = episodesInDb.filter((e) => e.seasonNumber === seasonNumber).length;
+    // Only show the spinner when there is nothing to display yet; a
+    // background top-up should not blank out a list the user is reading.
+    if (cachedForSeason === 0) setLoadingSeason(seasonNumber);
+    await ensureSeasonCached(tmdbId, seasonNumber, seasonCounts.get(seasonNumber));
+    await refreshWatchedAndEpisodes();
+    setLoadingSeason(null);
   }
 
   const [catchUpOffer, setCatchUpOffer] = useState<{ episodesInSeason: Episode[]; earlierSeasonNumbers: number[] } | null>(
@@ -280,7 +303,7 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   async function acceptCatchUp() {
     if (!catchUpOffer) return;
     for (const seasonNumber of catchUpOffer.earlierSeasonNumbers) {
-      await ensureSeasonCached(tmdbId, seasonNumber);
+      await ensureSeasonCached(tmdbId, seasonNumber, seasonCounts.get(seasonNumber));
     }
     const freshEpisodes =
       catchUpOffer.earlierSeasonNumbers.length > 0
@@ -571,7 +594,8 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
                     <li key={ep.key} className={`episode-row ${watchedKeys.has(ep.key) ? "watched" : ""}`}>
                       {ep.stillPath ? (
                         <img
-                          src={`${TMDB_IMAGE_BASE}${ep.stillPath}`}
+                          // Still ladder, not the poster base — see tmdb.ts.
+                          src={`${TMDB_STILL_BASE}${ep.stillPath}`}
                           alt=""
                           aria-hidden="true"
                           className="episode-thumb"

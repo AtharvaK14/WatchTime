@@ -61,45 +61,151 @@ async function toEpisodeRecords(
 }
 
 /**
- * Makes sure every season's episode list for a show is cached locally.
- * Skips seasons we already have, so repeated calls are cheap. Used by Home,
- * which needs to know the "next unwatched episode" across every followed
+ * How long a still-airing show's episode data stays trusted before its
+ * newest season is pulled again.
+ *
+ * Twelve hours is a deliberate compromise. Episodes air at most daily, so
+ * anything shorter buys nothing; anything much longer and a show watched the
+ * morning after broadcast still shows a placeholder. Bounded cost: one extra
+ * TMDB request per RETURNING show per twelve hours, and only for its latest
+ * season, not the whole back catalogue.
+ */
+const AIRING_REFRESH_HOURS = 12;
+
+/**
+ * TMDB statuses that mean "more episodes are expected". Anything else —
+ * "Ended", "Canceled" — has a fixed episode list, so once cached it is
+ * genuinely complete and never needs re-pulling.
+ */
+const STILL_AIRING = new Set(["Returning Series", "In Production", "Planned", "Pilot"]);
+
+function isStale(syncedAt: string | undefined, hours: number): boolean {
+  if (!syncedAt) return true; // never synced, or cached before this field existed
+  const age = Date.now() - new Date(syncedAt).getTime();
+  return !Number.isFinite(age) || age > hours * 3600_000;
+}
+
+/**
+ * Makes sure every season's episode list for a show is cached locally. Used
+ * by Home, which needs the "next unwatched episode" across every followed
  * show without the user having opened each show page first.
+ *
+ * A season is (re)fetched when any of these hold:
+ *
+ *   1. Nothing is cached for it yet.
+ *   2. TMDB now lists more episodes than we hold. This is free to check —
+ *      episode_count comes back in the show details response we already
+ *      fetched — and catches a season that gained episodes after we cached it.
+ *   3. The show is still airing and our data has gone stale, in which case
+ *      the LATEST season is re-pulled. This is the case count alone cannot
+ *      catch: TMDB publishes upcoming episodes as placeholders and fills in
+ *      the real title, overview and still only once they air, so the count
+ *      never changes but the contents do. Without this, a weekly show sat
+ *      permanently on "Episode 5" with no artwork.
+ *
+ * Re-fetching is safe: records are keyed by show/season/episode and written
+ * with bulkPut, so they update in place. Watched state lives in a separate
+ * table and is never touched by any of this.
  */
 export async function ensureEpisodesCached(tmdbId: number): Promise<number[]> {
   const details = await getTvShowDetails(tmdbId);
   const seasonNumbers = details.seasons.map((s) => s.season_number).filter((n) => n > 0);
 
   const existing = await db.episodes.where("showId").equals(tmdbId).toArray();
-  const haveSeasons = new Set(existing.map((e) => e.seasonNumber));
-  const missing = seasonNumbers.filter((s) => !haveSeasons.has(s));
+  const cachedCount = new Map<number, number>();
+  for (const e of existing) cachedCount.set(e.seasonNumber, (cachedCount.get(e.seasonNumber) ?? 0) + 1);
 
-  for (const seasonNumber of missing) {
+  const expectedCount = new Map(
+    details.seasons.filter((s) => s.season_number > 0).map((s) => [s.season_number, s.episode_count])
+  );
+
+  const show = await db.shows.get(tmdbId);
+  const airing = STILL_AIRING.has(details.status);
+  const stale = airing && isStale(show?.episodesSyncedAt, AIRING_REFRESH_HOURS);
+  const latestSeason = seasonNumbers.length ? Math.max(...seasonNumbers) : null;
+
+  const toFetch = seasonNumbers.filter((s) => {
+    const have = cachedCount.get(s) ?? 0;
+    if (have === 0) return true;
+    if (have < (expectedCount.get(s) ?? 0)) return true;
+    return stale && s === latestSeason;
+  });
+
+  for (const seasonNumber of toFetch) {
     const season = await getSeasonDetails(tmdbId, seasonNumber);
     const records = await toEpisodeRecords(tmdbId, seasonNumber, season.episodes);
     await db.episodes.bulkPut(records);
   }
 
+  // Stamped even when nothing needed fetching, so a returning show is not
+  // re-checked on every single Home visit — the point of the timestamp is to
+  // bound how often we ask, not to record that we found something.
+  if (show && airing) {
+    await db.shows.update(tmdbId, { episodesSyncedAt: new Date().toISOString() });
+  }
+
   return seasonNumbers;
 }
 
-/**
- * Fetches just the season list (numbers only, cheap) without pulling every
- * season's full episode list. Used by ShowDetail's accordion, which fetches
- * a season's episodes only when the user actually expands it.
- */
-export async function getSeasonNumbers(tmdbId: number): Promise<number[]> {
-  const details = await getTvShowDetails(tmdbId);
-  return details.seasons.map((s) => s.season_number).filter((n) => n > 0);
+export interface SeasonSummary {
+  seasonNumber: number;
+  /** TMDB's episode_count for this season, including not-yet-aired entries. */
+  episodeCount: number;
 }
 
-/** Fetches and caches one season's episodes, only if not already cached. */
-export async function ensureSeasonCached(tmdbId: number, seasonNumber: number): Promise<void> {
+/**
+ * Fetches just the season list (one request, no per-season episode lists).
+ * Used by the details panel's accordion, which pulls a season's episodes only
+ * when the user actually expands it.
+ *
+ * Returns episodeCount alongside the number so the caller can tell
+ * ensureSeasonCached what TMDB believes the season holds — that comparison is
+ * what catches a season that has gained episodes since it was cached, and it
+ * costs nothing extra because the count arrives in this same response.
+ */
+export async function getSeasonSummaries(tmdbId: number): Promise<SeasonSummary[]> {
+  const details = await getTvShowDetails(tmdbId);
+  return details.seasons
+    .filter((s) => s.season_number > 0)
+    .map((s) => ({ seasonNumber: s.season_number, episodeCount: s.episode_count }));
+}
+
+/**
+ * Fetches and caches one season's episodes, for the details panel's
+ * accordion. Re-fetches on the same terms as ensureEpisodesCached: having
+ * SOME episodes cached is not proof the season is complete or current.
+ *
+ * `expectedCount` is the season's episode_count from TMDB, which the caller
+ * already holds from the show details response. Passing it lets a season that
+ * has gained episodes be spotted without a request; omitting it just falls
+ * back to the staleness rule.
+ */
+export async function ensureSeasonCached(
+  tmdbId: number,
+  seasonNumber: number,
+  expectedCount?: number
+): Promise<void> {
   const existing = await db.episodes.where("[showId+seasonNumber]").equals([tmdbId, seasonNumber]).count();
-  if (existing > 0) return;
+
+  if (existing > 0) {
+    if (expectedCount === undefined || existing >= expectedCount) {
+      // Complete as far as the count goes. Still re-pull if this is an airing
+      // show whose data has aged out, since placeholders for upcoming
+      // episodes get their real title and still filled in later.
+      const show = await db.shows.get(tmdbId);
+      if (!show || !STILL_AIRING.has(show.status) || !isStale(show.episodesSyncedAt, AIRING_REFRESH_HOURS)) {
+        return;
+      }
+    }
+  }
+
   const season = await getSeasonDetails(tmdbId, seasonNumber);
   const records = await toEpisodeRecords(tmdbId, seasonNumber, season.episodes);
   await db.episodes.bulkPut(records);
+  const show = await db.shows.get(tmdbId);
+  if (show && STILL_AIRING.has(show.status)) {
+    await db.shows.update(tmdbId, { episodesSyncedAt: new Date().toISOString() });
+  }
 }
 
 /**
