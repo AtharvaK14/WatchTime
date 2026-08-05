@@ -73,24 +73,27 @@ function watchNextVerdict(
   } else {
     const decided = categorize(next, watched.length, progressedAt, threshold);
     category = decided ? CATEGORY_LABEL[decided] : null;
-    // Which of the two rules placed it there, so the report gives the real
-    // reason rather than only ever quoting the threshold.
-    const airedAfterLastWatch =
-      !!next.airDate && !!progressedAt && next.airDate > progressedAt.slice(0, 10);
-    if (airedAfterLastWatch) {
-      lines.push(
-        `CATEGORY: "${category}" — next unseen episode aired ${next.airDate}, AFTER the last progression ` +
-          `(${progressedAt}). They were caught up and this is new content, so the ${threshold}-day staleness ` +
-          `threshold deliberately does not apply.`
-      );
-    } else {
-      lines.push(
-        `CATEGORY: "${category}" — started, next unseen episode exists and was already available at the last ` +
-          `progression; ${progressionDs === null ? "never (counts as 0 days)" : `${progressionDs} days ago`} ` +
-          `vs ${threshold}-day threshold (configurable in Settings). ` +
-          `(Last activity was ${activityDs ?? "?"} days ago — deliberately NOT used, so rewatches don't move the show.)`
-      );
-    }
+    // Restate the single comparison categorize() makes, including which of the
+    // two dates won, so a surprising verdict can be traced to a real value.
+    const progressedDay = progressedAt?.slice(0, 10) ?? null;
+    const waitingSince =
+      [progressedDay, next.airDate].filter((d): d is string => !!d).sort().pop() ?? null;
+    const waitingDs = daysSince(waitingSince);
+    const drivenBy =
+      waitingSince === null
+        ? "neither date known"
+        : waitingSince === next.airDate && waitingSince !== progressedDay
+          ? `the episode's air date (${next.airDate})`
+          : `the last progression (${progressedAt})`;
+    lines.push(
+      `CATEGORY: "${category}" — the next unseen episode has been waiting ` +
+        `${waitingDs === null ? "an unknown time (counts as 0 days)" : `${waitingDs} days`}, measured from ` +
+        `${drivenBy}, the later of that air date and the last progression. ` +
+        `vs ${threshold}-day threshold (configurable in Settings). ` +
+        `(Last activity was ${activityDs ?? "?"} days ago — deliberately NOT used, so rewatches don't move the show. ` +
+        `Note that new episodes airing behind a backlog do not help: "next" is the FIRST unseen episode, so the ` +
+        `front of the queue keeps its old air date.)`
+    );
   }
   return { lines, category };
 }
