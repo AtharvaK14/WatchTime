@@ -4,23 +4,35 @@ import { db, episodeKey, type Episode, type Show, type WatchedEpisode } from "..
 import { ensureEpisodesCached, findNextUnwatched } from "../lib/episodeSync";
 import { daysSince, getStaleDaysThreshold } from "../lib/showStatus";
 import { lastProgressionAt } from "../lib/watchEvents";
+import { categorize, type Category } from "../lib/watchNext";
 
-export type HomeCategory = "Watch Next" | "Haven't Watched For a While" | "Haven't Yet Started" | null;
+// The labels Home actually renders on its tabs, so a report never names a tab
+// that does not exist. These used to read "Watch Next" / "Haven't Watched For
+// a While" / "Haven't Yet Started", which the tabs stopped saying.
+export type HomeCategory = "Watch next" | "Paused a while" | "Not started" | null;
+
+const CATEGORY_LABEL: Record<Category, Exclude<HomeCategory, null>> = {
+  "watch-next": "Watch next",
+  stale: "Paused a while",
+  "not-started": "Not started",
+};
 
 /**
- * Replicates Home.tsx's categorize() EXACTLY, so the verdict printed here is
- * the truth about which of the three mutually-exclusive sections a show
- * lands in (or none). If Home's logic changes, this must change with it —
- * that coupling is the entire point of the tool.
+ * CALLS the real categorize() from lib/watchNext rather than reimplementing
+ * it, so the verdict printed here cannot disagree with the list Home builds.
+ * This was a hand-kept copy with a comment saying the two must be changed
+ * together — precisely the arrangement that drifts silently. Everything below
+ * is presentation; the decision is not made here.
  *
- * - Haven't Yet Started: zero watch activity ever.
+ * - Not started: zero watch activity ever.
  * - (else, has activity) no next unseen episode -> null (caught up /
  *   finished; rewatches never resurface it).
- * - (else) next unseen episode exists -> Watch Next if last PROGRESSION is
- *   within the threshold, otherwise Haven't Watched For a While. The split
- *   uses progression (max watchedAt = last time an unseen episode was
- *   first-watched), NOT last activity, so a rewatch can't drag a stalled
- *   show back into Watch Next.
+ * - (else) next unseen episode exists -> Watch next when that episode aired
+ *   after the last progression (new content on a show you were caught up on),
+ *   or when the last progression is within the threshold; otherwise Paused a
+ *   while. The split uses progression (max watchedAt = last time an unseen
+ *   episode was first-watched), NOT last activity, so a rewatch can't drag a
+ *   stalled show back into Watch next.
  */
 function watchNextVerdict(
   show: Show,
@@ -51,21 +63,34 @@ function watchNextVerdict(
   if (!clauseFollowed) {
     lines.push("EXCLUDED from all sections: not followed, or archived.");
   } else if (watched.length === 0) {
-    category = "Haven't Yet Started";
-    lines.push('CATEGORY: "Haven\'t Yet Started" — in the library, zero watch activity ever.');
+    category = "Not started";
+    lines.push('CATEGORY: "Not started" — in the library, zero watch activity ever.');
   } else if (next === null) {
     lines.push(
       "CATEGORY: none — every released episode is watched (caught up / finished), or nothing is cached yet. " +
         "Rewatching an old episode updates history/time/recency but never resurfaces the show here."
     );
   } else {
-    const days = progressionDs ?? 0;
-    category = days < threshold ? "Watch Next" : "Haven't Watched For a While";
-    lines.push(
-      `CATEGORY: "${category}" — started, next unseen episode exists; last progression ` +
-        `${progressionDs === null ? "never (counts as 0 days)" : `${progressionDs} days ago`} vs ${threshold}-day threshold (configurable in Settings). ` +
-        `(Last activity was ${activityDs ?? "?"} days ago — deliberately NOT used, so rewatches don't move the show.)`
-    );
+    const decided = categorize(next, watched.length, progressedAt, threshold);
+    category = decided ? CATEGORY_LABEL[decided] : null;
+    // Which of the two rules placed it there, so the report gives the real
+    // reason rather than only ever quoting the threshold.
+    const airedAfterLastWatch =
+      !!next.airDate && !!progressedAt && next.airDate > progressedAt.slice(0, 10);
+    if (airedAfterLastWatch) {
+      lines.push(
+        `CATEGORY: "${category}" — next unseen episode aired ${next.airDate}, AFTER the last progression ` +
+          `(${progressedAt}). They were caught up and this is new content, so the ${threshold}-day staleness ` +
+          `threshold deliberately does not apply.`
+      );
+    } else {
+      lines.push(
+        `CATEGORY: "${category}" — started, next unseen episode exists and was already available at the last ` +
+          `progression; ${progressionDs === null ? "never (counts as 0 days)" : `${progressionDs} days ago`} ` +
+          `vs ${threshold}-day threshold (configurable in Settings). ` +
+          `(Last activity was ${activityDs ?? "?"} days ago — deliberately NOT used, so rewatches don't move the show.)`
+      );
+    }
   }
   return { lines, category };
 }
@@ -201,9 +226,9 @@ export default function Diagnostics() {
       const eps = episodesByShow.get(s.tmdbId) ?? [];
       const w = watchedByShow.get(s.tmdbId) ?? [];
       const { category } = watchNextVerdict(s, eps, w);
-      if (category === "Watch Next") inWatchNext++;
-      else if (category === "Haven't Watched For a While") inStale++;
-      else if (category === "Haven't Yet Started") inNotStarted++;
+      if (category === "Watch next") inWatchNext++;
+      else if (category === "Paused a while") inStale++;
+      else if (category === "Not started") inNotStarted++;
       else excludedFinished.push(s.name);
     }
 
@@ -211,9 +236,9 @@ export default function Diagnostics() {
     lines.push(`Followed & not archived: ${followed.length} of ${shows.length} shows`);
     lines.push(`tvTimeStatus distribution: ${[...statusCounts.entries()].map(([k, v]) => `${k}=${v}`).join(", ")}`);
     lines.push("");
-    lines.push(`"Watch Next" (started, next unseen episode, active within ${getStaleDaysThreshold()} days): ${inWatchNext}`);
-    lines.push(`"Haven't Watched For a While" (started, next unseen episode, stopped for a while): ${inStale}`);
-    lines.push(`"Haven't Yet Started" (in library, never watched an episode): ${inNotStarted}`);
+    lines.push(`"Watch next" (next unseen episode that either aired since the last watch, or last progressed within ${getStaleDaysThreshold()} days): ${inWatchNext}`);
+    lines.push(`"Paused a while" (next unseen episode was already available at the last watch, and that was longer ago than the threshold): ${inStale}`);
+    lines.push(`"Not started" (in library, never watched an episode): ${inNotStarted}`);
     lines.push(`Not shown, finished/caught up (all released episodes watched; rewatches don't resurface): ${excludedFinished.length}`);
     if (excludedFinished.length > 0) lines.push(`  ${excludedFinished.slice(0, 15).join(", ")}${excludedFinished.length > 15 ? ", ..." : ""}`);
     lines.push("");

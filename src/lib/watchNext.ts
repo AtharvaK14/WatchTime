@@ -41,10 +41,12 @@ export interface WatchNextRow {
  *   but never begun. Its own section so a long watchlist doesn't crowd out
  *   shows you're actually mid-way through.
  * - "watch-next": at least one episode watched AND a next UNSEEN released
- *   episode exists AND the last PROGRESSION is within the threshold. In
- *   progress and active.
- * - "stale": same as watch-next but the last progression is older than the
- *   threshold. Started, then genuinely dropped for a while.
+ *   episode exists AND either that episode aired after the last progression
+ *   (new content on a show you were caught up on) or the last progression is
+ *   within the threshold. In progress and active.
+ * - "stale": same as watch-next but the next episode was already available
+ *   when they last watched, and that was longer ago than the threshold.
+ *   Started, then genuinely dropped for a while.
  * - null (not shown): watched at least one episode but no next unseen
  *   episode remains, i.e. caught up / finished. Rewatching an old episode
  *   updates history/time/recency but must NEVER resurface the show here:
@@ -71,6 +73,31 @@ export function categorize(
 ): Category | null {
   if (watchedCount === 0) return "not-started";
   if (next === null) return null; // caught up / finished; rewatches don't bring it back
+
+  // Is the next episode NEW, or is the viewer behind on something that was
+  // already out?
+  //
+  // Age of the last watch alone cannot tell these apart, and reading it as
+  // "stale" was wrong for the more common case. Finish Ted Lasso season 3,
+  // come back when season 4 premieres a year later, and the last progression
+  // is a year old — so the show reappeared under "Paused a while" instead of
+  // "Watch next", which is where someone would actually look for a brand new
+  // episode of a show they are up to date on.
+  //
+  // The distinguishing fact is whether the episode existed yet when they last
+  // watched. If it aired AFTER, they were caught up and this is genuinely new
+  // content: Watch next, however long the gap. If it aired BEFORE and is
+  // still unwatched, they really are behind, and the threshold decides whether
+  // that counts as active or dropped.
+  //
+  // Compared date-only because airDate is a plain YYYY-MM-DD while
+  // lastProgressedAt is a full ISO timestamp; without the slice, an episode
+  // that aired the same day would compare as earlier purely because the
+  // shorter string is a prefix of the longer one.
+  if (next.airDate && lastProgressedAt && next.airDate > lastProgressedAt.slice(0, 10)) {
+    return "watch-next";
+  }
+
   return (daysSince(lastProgressedAt) ?? 0) < threshold ? "watch-next" : "stale";
 }
 
