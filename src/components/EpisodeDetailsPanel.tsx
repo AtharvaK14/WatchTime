@@ -73,7 +73,12 @@ export default function EpisodeDetailsPanel({
   const seasonEp = `S${String(episode.seasonNumber).padStart(2, "0")}E${String(episode.episodeNumber).padStart(2, "0")}`;
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    // .is-stacked because this panel is usually opened from INSIDE the show
+    // details sheet and is rendered as a sibling of it, within that sheet's
+    // backdrop. Without it the sheet's own z-index wins and this panel opens
+    // behind the thing that launched it. Harmless when opened standalone from
+    // a Watch Next row, where nothing else is competing.
+    <div className="modal-backdrop is-stacked" onClick={onClose}>
       <div className="modal episode-detail-modal" onClick={(e) => e.stopPropagation()}>
         <button className="close-x episode-detail-close hit-slop" onClick={onClose} aria-label="Close">
           <CloseIcon size={18} />

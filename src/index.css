@@ -177,6 +177,14 @@
   --z-rail: 6;
   --z-modal: 10;
   --z-sheet: 12;
+  /* A modal opened FROM another modal — currently only the episode panel,
+     which is reached from inside the details sheet.
+     It must clear --z-sheet, not just --z-modal. The episode panel is
+     rendered as a sibling of .details-sheet inside the details backdrop, and
+     that backdrop establishes a stacking context (positioned, z-index 10), so
+     the two are compared against each other inside it: the sheet's 12 beat
+     the nested backdrop's 10 and painted straight over the episode panel. */
+  --z-sheet-stacked: 20;
   --z-wizard: 30;
 
   /* Minimum comfortable touch target (Material's 48dp; Apple asks 44pt). */
@@ -1845,6 +1853,13 @@ summary:focus-visible,
   z-index: var(--z-modal);
   padding: var(--space-5);
   animation: backdrop-in var(--dur-base) var(--ease-out);
+}
+
+/* Applied by a modal that is opened from inside another one, so it stacks
+   above the panel that launched it instead of behind it. See
+   --z-sheet-stacked for why --z-modal is not enough. */
+.modal-backdrop.is-stacked {
+  z-index: var(--z-sheet-stacked);
 }
 
 @keyframes backdrop-in {
