@@ -53,6 +53,20 @@ export default function EpisodeDetailsPanel({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
+  // Deps are the PRIMITIVE fields, never the `show` object.
+  //
+  // This was `[show, ...]`, and both call sites build the prop inline as
+  // `show={{ name: ..., imdbId: ... }}` — a fresh object on every render. So
+  // the dep changed identity every single render, and since the effect calls
+  // setRating, it re-rendered the parent, which rebuilt the literal, which
+  // re-triggered the effect: an unbounded loop that re-issued the OMDb
+  // request each time. That is the flicker, and the placeholder restarting
+  // over and over.
+  //
+  // Comparing the fields instead makes the effect run once per actual episode,
+  // regardless of how callers construct the prop.
+  const showName = show.name;
+  const showImdbId = show.imdbId;
   useEffect(() => {
     let cancelled = false;
     async function load() {
@@ -61,14 +75,18 @@ export default function EpisodeDetailsPanel({
         return;
       }
       setRating("loading");
-      const r = await getOmdbEpisodeRating({ title: show.name, imdbId: show.imdbId }, episode.seasonNumber, episode.episodeNumber);
+      const r = await getOmdbEpisodeRating(
+        { title: showName, imdbId: showImdbId },
+        episode.seasonNumber,
+        episode.episodeNumber
+      );
       if (!cancelled) setRating(r);
     }
     load();
     return () => {
       cancelled = true;
     };
-  }, [show, episode.seasonNumber, episode.episodeNumber]);
+  }, [showName, showImdbId, episode.seasonNumber, episode.episodeNumber]);
 
   const seasonEp = `S${String(episode.seasonNumber).padStart(2, "0")}E${String(episode.episodeNumber).padStart(2, "0")}`;
 

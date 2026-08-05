@@ -142,6 +142,28 @@ function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [leavingId, setLeavingId] = useState<number | null>(null);
 
+  // Which shows the sync should cover, as a STABLE string.
+  //
+  // This is the effect's dependency instead of the `shows` array itself, and
+  // that distinction is load-bearing. `shows` comes from a live query on
+  // db.shows, so it gets a new array identity whenever ANY field on ANY show
+  // row changes — including fields the sync itself writes. With the array as
+  // the dependency, ensureEpisodesCached writing Show.episodesSyncedAt
+  // re-emitted the query, re-ran this effect, wrote again, and so on: a
+  // self-sustaining loop that was measured hitting TMDB ~150 times a second
+  // with the app sitting idle. Keying on the set of ids means the sync re-runs
+  // when shows are added or removed — which is what it actually cares about —
+  // and not when a row is merely updated.
+  const followedIdsKey = useMemo(
+    () => (shows ? shows.map((s) => s.tmdbId).sort((a, b) => a - b).join(",") : null),
+    [shows]
+  );
+  // Names for the failure messages, read at the time of the failure rather
+  // than captured in the effect's closure, so the effect needs no dependency
+  // on the array itself.
+  const showsRef = useRef(shows);
+  showsRef.current = shows;
+
   // Network side effect: make sure TMDB episode lists are cached for every
   // followed show. Writes to db.episodes, which allEpisodes above reacts to,
   // so newly-synced seasons flow into the computation below automatically
@@ -156,18 +178,20 @@ function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
   // unsynced from one bad show. Failures are now collected and surfaced
   // instead of aborting the whole batch.
   useEffect(() => {
-    if (!shows) return;
+    if (followedIdsKey === null) return;
+    const ids = followedIdsKey ? followedIdsKey.split(",").map(Number) : [];
     let cancelled = false;
     async function sync() {
       setSyncing(true);
       setSyncErrors([]);
       const failures: string[] = [];
-      for (const show of shows!) {
+      for (const tmdbId of ids) {
         if (cancelled) return;
         try {
-          await ensureEpisodesCached(show.tmdbId);
+          await ensureEpisodesCached(tmdbId);
         } catch (e) {
-          failures.push(`${show.name}: ${e instanceof Error ? e.message : String(e)}`);
+          const name = showsRef.current?.find((s) => s.tmdbId === tmdbId)?.name ?? `Show ${tmdbId}`;
+          failures.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
       if (!cancelled) {
@@ -179,7 +203,7 @@ function ShowsHome({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
     return () => {
       cancelled = true;
     };
-  }, [shows]);
+  }, [followedIdsKey]);
 
   const rows = useMemo<Row[]>(
     () =>

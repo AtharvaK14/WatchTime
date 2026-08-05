@@ -137,10 +137,14 @@ export async function ensureEpisodesCached(tmdbId: number): Promise<number[]> {
     await db.episodes.bulkPut(records);
   }
 
-  // Stamped even when nothing needed fetching, so a returning show is not
-  // re-checked on every single Home visit — the point of the timestamp is to
-  // bound how often we ask, not to record that we found something.
-  if (show && airing) {
+  // Stamped only when the staleness path actually ran, never on every pass.
+  //
+  // Writing on every call meant a DB write per followed show per Home visit,
+  // and db.shows is live-queried by Home — so each write re-emitted the query
+  // and the sync effect re-fired. Restricting the write to the case it exists
+  // for (we just refreshed, so do not refresh again for 12h) keeps an idle
+  // Home completely write-free.
+  if (show && stale) {
     await db.shows.update(tmdbId, { episodesSyncedAt: new Date().toISOString() });
   }
 
@@ -202,8 +206,11 @@ export async function ensureSeasonCached(
   const season = await getSeasonDetails(tmdbId, seasonNumber);
   const records = await toEpisodeRecords(tmdbId, seasonNumber, season.episodes);
   await db.episodes.bulkPut(records);
+  // Only for an airing show whose data had aged out — the same restriction as
+  // ensureEpisodesCached, and for the same reason: db.shows is live-queried,
+  // so a write here is not free.
   const show = await db.shows.get(tmdbId);
-  if (show && STILL_AIRING.has(show.status)) {
+  if (show && STILL_AIRING.has(show.status) && isStale(show.episodesSyncedAt, AIRING_REFRESH_HOURS)) {
     await db.shows.update(tmdbId, { episodesSyncedAt: new Date().toISOString() });
   }
 }
