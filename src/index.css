@@ -2634,11 +2634,33 @@ summary:focus-visible,
 }
 
 .filter-sheet-trigger {
-  display: none; /* only rendered on mobile by the component, but keep this
-                    as a defensive default in case that changes */
+  display: none; /* only rendered in compact mode by the component, but keep
+                    this as a defensive default in case that changes */
 }
 
-@media (max-width: 640px) {
+/* The filters row is a single line at every width, full stop.
+   nowrap overrides .field-row's wrap. It matters even in compact mode, where
+   the row holds only the search field and the Filters trigger: on a wrap
+   container, flex assigns items to lines using their HYPOTHETICAL size before
+   any shrinking happens, so the field's content-based basis pushed the
+   trigger onto a second line at 360px even though it had room to shrink. */
+.filters-row {
+  flex-wrap: nowrap;
+}
+
+/* Compact filters.
+   1100px, not the 640px phone breakpoint. The inline control set — search
+   field, four-option segmented control, genre select, sort select — needs
+   ~680px of row for the controls alone, so anywhere between 641px and ~990px
+   it wrapped onto a second line: tablets, split-screen, and any part-width
+   laptop window. The threshold sits at 1100 rather than at the exact fitting
+   width because merely fitting is not enough — at 1001px the search field was
+   squeezed to 187px and clipped its own placeholder. 1100 leaves it ~280px,
+   which is the narrowest that still reads. Below it the controls collapse
+   into the "Filters" trigger and its sheet. Keep this number in step with
+   COMPACT_FILTERS_QUERY in lib/useIsMobile.ts — the two decide the same
+   thing, one for layout and one for which markup renders. */
+@media (max-width: 1100px) {
   .filter-sheet-trigger {
     display: inline-flex;
     align-items: center;
@@ -2654,17 +2676,33 @@ summary:focus-visible,
     flex-shrink: 0;
   }
 
+  /* basis 0, not auto: the field then claims only the space left over after
+     the trigger, rather than starting from its content width and relying on
+     shrink to claw it back. */
   .filters-row input[type="text"] {
-    flex: 1 1 auto; /* shares the row with the Filters trigger instead of
-                       forcing its own full-width row */
+    flex: 1 1 0;
     min-width: 0;
   }
 
   .filters-row select {
-    flex: 1 1 0; /* the selects then share the next row evenly */
+    flex: 1 1 0;
     min-width: 0;
     font-size: var(--text-sm);
     padding: var(--space-2) var(--space-2);
+  }
+}
+
+/* Above the compact breakpoint the controls sit inline, and the search field
+   absorbs whatever width is left over after them. */
+@media (min-width: 1101px) {
+  .filters-row input[type="text"] {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .filters-row .segmented,
+  .filters-row .compact-select {
+    flex: 0 0 auto;
   }
 }
 

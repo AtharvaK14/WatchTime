@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { useIsMobile } from "../lib/useIsMobile";
+import { useCompactFilters } from "../lib/useIsMobile";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useBackHandler } from "../lib/backHandler";
 
@@ -11,19 +11,23 @@ interface Props {
 }
 
 /**
- * Wraps the filter <select> controls shared by Library.tsx and Movies.tsx.
- * Desktop: transparent passthrough, renders children exactly where they
- * were before, no behavior change at all.
- * Mobile: replaces the old pattern of three <select> elements shrunk to
- * share one row (a real usability problem: small touch targets, hard to
- * scan) with a single "Filters" trigger that opens a bottom sheet
- * containing the same, unmodified select elements, now full-width and
- * easy to tap.
+ * Wraps the filter controls shared by Library.tsx and Movies.tsx.
+ *
+ * Wide: transparent passthrough, renders children inline exactly where they
+ * were, no behaviour change at all.
+ * Compact: replaces them with a single "Filters" trigger that opens a bottom
+ * sheet containing the same, unmodified controls, now full-width and easy to
+ * tap.
+ *
+ * The switch is on available WIDTH rather than device class — see
+ * useCompactFilters. Inline, the controls need ~920px of row, so on anything
+ * narrower they used to wrap onto a second line beneath the search field
+ * instead of sharing it.
  */
 export default function FilterSheet({ resultCount, open, onOpenChange, children }: Props) {
-  const isMobile = useIsMobile();
+  const compact = useCompactFilters();
 
-  if (!isMobile) {
+  if (!compact) {
     return <>{children}</>;
   }
 
@@ -63,7 +67,12 @@ function FilterSheetOverlay({
   }, [onClose]);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    // .sheet-backdrop drops the backdrop's 20px padding. backdrop-filter makes
+    // that element the containing block for its position:fixed descendants on
+    // engines that implement it, so with the padding the sheet's `bottom: 0`
+    // resolved against the padding box and sat 20px off the bottom — the same
+    // gap that had to be fixed on the details sheet.
+    <div className="modal-backdrop sheet-backdrop" onClick={onClose}>
       <div className="filter-sheet" onClick={(e) => e.stopPropagation()}>
         <div className="filter-sheet-handle">
           <div className="sheet-drag-handle-bar" />

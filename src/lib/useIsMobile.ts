@@ -37,6 +37,30 @@ export function usePrefersBottomSheet(): boolean {
   return useMediaQuery(BOTTOM_SHEET_QUERY);
 }
 
+// Whether the Shows/Movies filter controls should collapse behind the
+// "Filters" trigger instead of sitting inline next to the search field.
+//
+// Not the 640px phone breakpoint: this is a question about available WIDTH,
+// not about device class. Laid out inline, the search field plus the
+// segmented status control plus the genre and sort selects need roughly
+// 920px of row. Between 641px and ~990px they therefore wrapped onto a
+// second line — on tablets, in split-screen, and in any part-width desktop
+// window.
+//
+// The threshold sits above the exact fitting width on purpose: at 1001px
+// everything fit, but only by squeezing the search field to 187px, narrow
+// enough to clip its own placeholder. Collapsing into the sheet below 1100px
+// keeps the row on one line everywhere AND keeps the field readable wherever
+// it does stay inline.
+//
+// Must stay in step with the matching @media rule in index.css (search for
+// "Compact filters").
+const COMPACT_FILTERS_QUERY = "(max-width: 1100px)";
+
+export function useCompactFilters(): boolean {
+  return useMediaQuery(COMPACT_FILTERS_QUERY);
+}
+
 function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(() => window.matchMedia(query).matches);
 
