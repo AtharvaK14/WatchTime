@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Compact Watch Next row, used when the widget is too narrow or too short
+<!-- Compact Up Next row, used when the widget is too narrow or too short
      for the full one. It drops the poster and the episode title - the two
      pieces that stop reading usefully first - and keeps what identifies the
      episode: the show name and the season/episode number. Reducing what is

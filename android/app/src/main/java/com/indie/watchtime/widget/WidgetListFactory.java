@@ -167,10 +167,12 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
      * offering a watch action it would make no sense to take.
      */
     private Intent openIntent(JSONObject row) {
+        // A fill-in intent: only the extras matter. The component, flags and
+        // task handling all come from the provider's PendingIntent template.
         Intent intent = new Intent();
-        intent.putExtra(WidgetActionReceiver.EXTRA_SHOW_ID, row.optInt("showId"));
-        intent.putExtra(WidgetActionReceiver.EXTRA_EPISODE_KEY, row.optString("episodeKey"));
-        intent.putExtra(WidgetActionReceiver.EXTRA_READONLY, kind == WidgetKind.COMING_UP);
+        intent.putExtra(EpisodePanelActivity.EXTRA_SHOW_ID, row.optInt("showId"));
+        intent.putExtra(EpisodePanelActivity.EXTRA_EPISODE_KEY, row.optString("episodeKey"));
+        intent.putExtra(EpisodePanelActivity.EXTRA_READONLY, kind == WidgetKind.COMING_UP);
         return intent;
     }
 

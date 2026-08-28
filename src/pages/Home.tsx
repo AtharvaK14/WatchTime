@@ -287,7 +287,7 @@ function ComingUp() {
 
   return (
     <>
-      <h3 className="section-title">Coming up</h3>
+      <h3 className="section-title">Coming Up</h3>
       <div className="coming-up-cols">
         <div className="coming-up-col">
           <p className="muted small coming-up-col-label">Upcoming episodes</p>

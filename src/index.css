@@ -1015,12 +1015,39 @@ details[open] > summary::after { transform: rotate(90deg); }
    page. See pages/Home.tsx.
    ============================================================ */
 
+/* Section headings owned their own scale step, but only just: at 1.05rem/700
+   they sat 0.05rem above .wn-episode-line (1rem/700 mono) directly beneath
+   them, so an episode number actually read LOUDER than the heading above it.
+   Size alone could not carry the hierarchy while the page is full of bold
+   text at nearly the same size.
+
+   So the separation is now carried by three things at once — a real jump in
+   scale and weight, the hairline rule, and an accent marker no other element
+   on the page uses. The marker is what makes a heading unmistakable at a
+   glance rather than something you resolve by comparing font sizes. */
 .section-title {
-  margin: 34px 0 14px;
-  font-size: 1.05rem;
-  font-weight: 700;
-  padding-top: 20px;
+  position: relative;
+  margin: 40px 0 16px;
+  padding-top: 22px;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   border-top: 1px solid var(--border);
+}
+/* The bar sits in the page gutter (negative offset) rather than indenting the
+   heading. Indenting would have pushed every title out of alignment with the
+   cards and rows below it, trading one visual problem for another. -11px
+   clears the app-shell's padding on both breakpoints (32px desktop, 16px
+   mobile) with room to spare, so it can never touch the screen edge. */
+.section-title::before {
+  content: "";
+  position: absolute;
+  left: -11px;
+  top: 22px;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
 }
 /* The first section on the page opens straight under the header, so it gets
    no rule above it. This selector is why "Up Next" must exist as a real
@@ -1028,6 +1055,22 @@ details[open] > summary::after { transform: rotate(90deg); }
    first-of-type and silently lost its divider AND its top margin, which is
    what made the sections read as one continuous run. */
 .section-title:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
+.section-title:first-of-type::before { top: 0; }
+
+/* Phones: a touch smaller so a long title ("Movies to Watch") stays on one
+   line, and a tighter gutter offset to match the narrower 16px page padding.
+   The scale step over the surrounding text is preserved.
+
+   This block MUST stay after the base rule above. A media query adds no
+   specificity, so when it lived further up the file the plain .section-title
+   rule below simply overrode it and phones kept the desktop size. */
+@media (max-width: 640px) {
+  .section-title {
+    font-size: 1.2rem;
+    margin-top: 34px;
+  }
+  .section-title::before { left: -9px; }
+}
 
 /* Desktop/wide viewports: Continue Watching cards wrap onto new rows as
    needed, matching the mobile card design, but each card keeps a

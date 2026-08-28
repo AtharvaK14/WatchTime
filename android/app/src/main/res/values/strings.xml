@@ -6,15 +6,22 @@
     <string name="custom_url_scheme">com.indie.watchtime</string>
 
     <!-- Widgets -->
-    <string name="widget_watch_next_label">WatchTime: Watch Next</string>
-    <string name="widget_watch_next_description">The episodes waiting in your Up Next list. Tap one for its details, or tick it watched.</string>
+    <string name="widget_up_next_label">WatchTime: Up Next</string>
+    <string name="widget_up_next_description">The episodes waiting in your Up Next list. Tap one to open its details and mark it watched.</string>
     <string name="widget_coming_up_label">WatchTime: Coming Up</string>
     <string name="widget_coming_up_description">Upcoming episodes for the shows you follow, with their air dates.</string>
-    <string name="widget_watch_next_title">Watch Next</string>
+    <string name="widget_up_next_title">Up Next</string>
     <string name="widget_coming_up_title">Coming Up</string>
-    <string name="widget_empty_watch_next">Nothing queued up. Open WatchTime to add shows.</string>
+    <string name="widget_empty_up_next">Nothing queued up. Open WatchTime to add shows.</string>
     <string name="widget_empty_coming_up">No confirmed air dates yet.</string>
     <string name="widget_needs_app">Open WatchTime once to fill this in.</string>
-    <string name="widget_mark_watched">Mark watched</string>
-    <string name="widget_open_app">Open WatchTime</string>
+
+    <!-- Widget configuration -->
+    <string name="widget_config_title">Widget appearance</string>
+    <string name="widget_config_opacity_label">Background opacity</string>
+    <string name="widget_config_hint">Shown over your own wallpaper. Only the background fades — episode text, artwork and separators always stay fully opaque.</string>
+    <string name="widget_config_opacity_value">%1$d%%</string>
+    <string name="widget_config_cancel">Cancel</string>
+    <string name="widget_config_save">Add widget</string>
+    <string name="widget_config_save_existing">Save</string>
 </resources>

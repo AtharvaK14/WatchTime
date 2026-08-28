@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- The app's .watch-next-row card: var(surface) fill, var(border) hairline, 10dp radius. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
-    <solid android:color="@color/widget_surface" />
-    <stroke android:width="1dp" android:color="@color/widget_border" />
-    <corners android:radius="10dp" />
-</shape>

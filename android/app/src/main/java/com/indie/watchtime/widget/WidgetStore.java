@@ -67,6 +67,48 @@ public final class WidgetStore {
         return rows == null ? new JSONArray() : rows;
     }
 
+    // ---- Appearance ------------------------------------------------------
+    //
+    // Background opacity is per widget INSTANCE, keyed by appWidgetId: someone
+    // may want a solid Up Next widget on one screen and a barely-there Coming
+    // Up widget over a photo wallpaper on another.
+    //
+    // It is applied only to the widget_bg layer (see widget_container.xml), so
+    // the list, its text, its artwork and its separators are never affected by
+    // it, whatever the user picks.
+
+    /** Percent, 0 (invisible background) to 100 (solid). */
+    public static final int DEFAULT_OPACITY = 95;
+
+    private static String opacityKey(int appWidgetId) {
+        return "opacity_" + appWidgetId;
+    }
+
+    public static int getOpacity(Context context, int appWidgetId) {
+        int stored = prefs(context).getInt(opacityKey(appWidgetId), DEFAULT_OPACITY);
+        return Math.max(0, Math.min(100, stored));
+    }
+
+    public static void setOpacity(Context context, int appWidgetId, int percent) {
+        prefs(context).edit().putInt(opacityKey(appWidgetId), Math.max(0, Math.min(100, percent))).apply();
+    }
+
+    /** Forgets a removed widget's setting so ids recycled by the launcher start clean. */
+    public static void clearOpacity(Context context, int appWidgetId) {
+        prefs(context).edit().remove(opacityKey(appWidgetId)).apply();
+    }
+
+    /**
+     * 0-100 percent as the 0..1 fraction View.setAlpha takes.
+     *
+     * setAlpha is used rather than ImageView.setImageAlpha because RemoteViews
+     * can only invoke methods the framework marks @RemotableViewMethod, and
+     * View.setAlpha is the long-established one for exactly this job.
+     */
+    public static float opacityToAlpha(int percent) {
+        return Math.max(0, Math.min(100, percent)) / 100f;
+    }
+
     // ---- Deep links -------------------------------------------------------
     //
     // Stored rather than delivered as an event because a widget tap can cold-

@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Shared shell for both widgets.
 
+     The background is a separate ImageView LAYER rather than a background on
+     the root. That is what makes the opacity setting safe: setImageAlpha is
+     applied to this one view, so the user can fade the container to nothing
+     while the header, the list and the separators above it stay fully opaque.
+     Setting alpha on the root instead would fade the content with it, which is
+     exactly the outcome the setting must not produce.
+
      Layout rules that keep resizing safe:
      - The header is a fixed-height row that the list never overlaps; at short
        heights the provider hides it outright rather than letting it eat the
@@ -14,60 +21,79 @@
      - Rows are separated by the ListView's own faded divider rather than by a
        card outline per row. Letting the list draw it keeps the separators
        aligned at every width and means no spacing has to be maintained
-       separately in each row layout. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+       separately in each row layout.
+
+     Every view type here is on the RemoteViews allowlist (FrameLayout,
+     LinearLayout, ImageView, TextView, ListView). A plain <View> is NOT, and
+     using one anywhere in a widget or preview layout makes the launcher fail
+     to inflate it. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
     android:layout_width="match_parent"
-    android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:background="@drawable/widget_background"
-    android:padding="10dp">
+    android:layout_height="match_parent">
+
+    <ImageView
+        android:id="@+id/widget_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:src="@drawable/widget_background"
+        android:importantForAccessibility="no"
+        android:contentDescription="@null" />
 
     <LinearLayout
-        android:id="@+id/widget_header"
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical"
-        android:paddingBottom="8dp">
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:padding="10dp">
 
-        <TextView
-            android:id="@+id/widget_title"
-            android:layout_width="0dp"
+        <LinearLayout
+            android:id="@+id/widget_header"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:paddingBottom="8dp">
+
+            <TextView
+                android:id="@+id/widget_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:textColor="@color/widget_text"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/widget_count"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:textColor="@color/widget_muted"
+                android:textSize="12sp"
+                android:maxLines="1" />
+        </LinearLayout>
+
+        <ListView
+            android:id="@+id/widget_list"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
             android:layout_weight="1"
-            android:textColor="@color/widget_text"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:maxLines="1"
-            android:ellipsize="end" />
+            android:divider="@color/widget_divider"
+            android:dividerHeight="1dp"
+            android:scrollbars="none"
+            android:clipToPadding="false" />
 
         <TextView
-            android:id="@+id/widget_count"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
+            android:id="@+id/widget_empty"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:padding="12dp"
             android:textColor="@color/widget_muted"
-            android:textSize="12sp"
-            android:maxLines="1" />
+            android:textSize="13sp" />
     </LinearLayout>
-
-    <ListView
-        android:id="@+id/widget_list"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:divider="@color/widget_divider"
-        android:dividerHeight="1dp"
-        android:scrollbars="none"
-        android:clipToPadding="false" />
-
-    <TextView
-        android:id="@+id/widget_empty"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:gravity="center"
-        android:padding="12dp"
-        android:textColor="@color/widget_muted"
-        android:textSize="13sp" />
-</LinearLayout>
+</FrameLayout>

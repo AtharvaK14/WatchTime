@@ -5,7 +5,12 @@
      is still legible rather than to the smallest the framework permits, so a
      user cannot drag the widget into a state the layout cannot serve.
      resizeMode is horizontal|vertical: both axes adapt (see
-     WatchNextWidgetProvider.onAppWidgetOptionsChanged). -->
+     BaseWidgetProvider.onAppWidgetOptionsChanged).
+
+     configure runs the appearance screen (the background opacity slider) when
+     the widget is added; widgetFeatures="reconfigurable" also lets the user
+     reopen it later from the widget's own long-press menu, so the setting is
+     not a one-shot choice made at add time. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
     android:initialLayout="@layout/widget_container"
     android:minWidth="180dp"
@@ -20,4 +25,6 @@
     android:widgetCategory="home_screen"
     android:description="@string/widget_coming_up_description"
     android:previewLayout="@layout/widget_preview_coming_up"
-    android:updatePeriodMillis="1800000" />
+    android:updatePeriodMillis="1800000"
+    android:configure="com.indie.watchtime.widget.WidgetConfigActivity"
+    android:widgetFeatures="reconfigurable" />

@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- The app's .watch-toggle-circle: a solid var(text) disc with the page
-     background as its glyph colour. -->
-<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
-    <solid android:color="@color/widget_text" />
-</shape>

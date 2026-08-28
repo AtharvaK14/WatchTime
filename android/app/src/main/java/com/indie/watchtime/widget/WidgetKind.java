@@ -13,7 +13,12 @@ import com.indie.watchtime.R;
  * and factory serve both without either becoming a special case.
  */
 enum WidgetKind {
-    WATCH_NEXT("watchNext", R.string.widget_watch_next_title, R.string.widget_empty_watch_next,
+    // The enum constant and the "watchNext" snapshot key are internal names and
+    // deliberately unchanged: the key is the JSON field snapshot.ts writes, and
+    // a launcher stores a placed widget by its provider ComponentName, so
+    // renaming the provider classes would break every widget already on a home
+    // screen. Everything the user actually reads says "Up Next".
+    WATCH_NEXT("watchNext", R.string.widget_up_next_title, R.string.widget_empty_up_next,
             R.layout.widget_row_watch_next, R.layout.widget_row_watch_next_compact),
     COMING_UP("comingUp", R.string.widget_coming_up_title, R.string.widget_empty_coming_up,
             R.layout.widget_row_coming_up, R.layout.widget_row_coming_up_compact);

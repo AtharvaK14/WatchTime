@@ -37,4 +37,24 @@
         <item name="android:windowContentOverlay">@null</item>
         <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
     </style>
+
+    <!-- The widget appearance screen.
+
+         Translucent WITH windowShowWallpaper, so the system composites the
+         user's real wallpaper behind this window and the preview can be judged
+         against it. This is the only way an app can do that: since Android 13,
+         WallpaperManager.getDrawable() throws SecurityException for anything
+         targeting 33+, so reading the wallpaper and drawing it is not an
+         option. The window must stay translucent with a transparent background
+         for the flag to have any effect - the screen's own panels supply the
+         opaque areas (see activity_widget_config.xml). -->
+    <style name="WidgetConfigTheme" parent="Theme.AppCompat.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="colorAccent">@color/widget_accent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowShowWallpaper">true</item>
+        <item name="android:textColorPrimary">@color/widget_text</item>
+    </style>
 </resources>

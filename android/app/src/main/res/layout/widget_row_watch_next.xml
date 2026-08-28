@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Full Watch Next row: the app's .watch-next-row, at widget scale.
+<!-- Full Up Next row: the app's .watch-next-row, at widget scale.
      Poster, show pill, "S01 | E04 +N" mono line, episode name, tick button.
 
      The middle column is the only flexible one (weight=1); the poster and the

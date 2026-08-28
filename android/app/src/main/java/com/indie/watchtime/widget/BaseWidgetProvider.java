@@ -90,11 +90,30 @@ abstract class BaseWidgetProvider extends AppWidgetProvider {
         // so an empty list says something useful instead of showing a void.
         views.setEmptyView(R.id.widget_list, R.id.widget_empty);
 
+        // Background opacity for THIS widget instance, applied to the backdrop
+        // layer alone. Everything drawn above it stays fully opaque.
+        views.setFloat(R.id.widget_bg, "setAlpha",
+                WidgetStore.opacityToAlpha(WidgetStore.getOpacity(context, appWidgetId)));
+
         // One template for every row; each row supplies only its fill-in extras.
-        Intent templateIntent = new Intent(context, WidgetActionReceiver.class);
-        templateIntent.setAction(WidgetActionReceiver.ACTION_ROW_CLICK);
+        //
+        // getActivity, NOT getBroadcast. A row tap launches the episode overlay
+        // directly from the launcher's own tap, which is the platform's
+        // supported way for a widget to present UI. The previous version went
+        // through a BroadcastReceiver that then called startActivity, an extra
+        // hop that relied on the temporary background-activity-start allowance
+        // a PendingIntent grants its target - fragile, and unnecessary.
+        Intent templateIntent = new Intent(context, EpisodePanelActivity.class);
+        // FLAG_ACTIVITY_NEW_TASK is required from a non-activity context, and
+        // CLEAR_TASK makes a second row tap replace the overlay rather than
+        // stack on it. Both are safe ONLY because EpisodePanelActivity declares
+        // its own taskAffinity: without that it shares the app's affinity, and
+        // NEW_TASK would find, front, and stack on the APP's task - which is
+        // precisely how the main app ended up visible behind the panel.
+        templateIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         templateIntent.setData(Uri.parse("watchtime://widget/" + kind.name() + "/" + appWidgetId));
-        PendingIntent template = PendingIntent.getBroadcast(context, appWidgetId, templateIntent,
+        PendingIntent template = PendingIntent.getActivity(context, appWidgetId, templateIntent,
+                // MUTABLE so each row's fill-in extras can be merged in.
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
         views.setPendingIntentTemplate(R.id.widget_list, template);
 
@@ -132,6 +151,14 @@ abstract class BaseWidgetProvider extends AppWidgetProvider {
         // The chrome above is redrawn by the broadcast; the list contents are
         // owned by the adapter and need their own invalidation.
         manager.notifyAppWidgetViewDataChanged(ids, R.id.widget_list);
+    }
+
+    @Override
+    public void onDeleted(Context context, int[] appWidgetIds) {
+        super.onDeleted(context, appWidgetIds);
+        for (int appWidgetId : appWidgetIds) {
+            WidgetStore.clearOpacity(context, appWidgetId);
+        }
     }
 
     /** True when the user has at least one widget of either family on a home screen. */
