@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- targetCellWidth/Height are the Android 12+ sizing units the launcher
+     actually places by; minWidth/minHeight remain for older launchers. The
+     min resize bounds are set to the smallest size at which the compact row
+     is still legible rather than to the smallest the framework permits, so a
+     user cannot drag the widget into a state the layout cannot serve.
+     resizeMode is horizontal|vertical: both axes adapt (see
+     WatchNextWidgetProvider.onAppWidgetOptionsChanged). -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_container"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="3"
+    android:minResizeWidth="140dp"
+    android:minResizeHeight="80dp"
+    android:maxResizeWidth="500dp"
+    android:maxResizeHeight="580dp"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_watch_next_description"
+    android:previewLayout="@layout/widget_container"
+    android:updatePeriodMillis="1800000" />

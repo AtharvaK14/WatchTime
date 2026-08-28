@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Episode } from "../db";
 import { TMDB_IMAGE_BASE } from "../tmdb";
-import { ensureEpisodesCached, findNextUpcoming } from "../lib/episodeSync";
+import { ensureEpisodesCached } from "../lib/episodeSync";
+import {
+  buildReleasingThisMonth,
+  buildUpcomingEpisodeRows,
+  formatUpcomingDate,
+  type UpcomingEpisodeRow,
+} from "../lib/comingUp";
 import { getStaleDaysThreshold } from "../lib/showStatus";
 import { markNextEpisodeWatched, recordEpisodeRewatch } from "../lib/watchEvents";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -245,24 +251,6 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
   );
 }
 
-function formatUpcomingDate(iso: string | null): string {
-  if (!iso) return "";
-  const date = new Date(`${iso}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((date.getTime() - today.getTime()) / 86400000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Tomorrow";
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-interface UpcomingEpisodeRow {
-  showId: number;
-  showName: string;
-  posterPath: string | null;
-  episode: Episode;
-}
-
 /**
  * Upcoming episodes (confirmed future air_date, across followed shows) and
  * movies releasing this calendar month (from Movie.releaseDate, backfilled
@@ -277,34 +265,12 @@ function ComingUp({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
   const movies = useLiveQuery(() => db.movies.toArray(), []);
   const [openMovie, setOpenMovie] = useState<number | null>(null);
 
-  const upcomingEpisodes = useMemo<UpcomingEpisodeRow[]>(() => {
-    if (!shows || !allEpisodes) return [];
-    const episodesByShow = new Map<number, Episode[]>();
-    for (const ep of allEpisodes) {
-      const list = episodesByShow.get(ep.showId);
-      if (list) list.push(ep);
-      else episodesByShow.set(ep.showId, [ep]);
-    }
-    const rows: UpcomingEpisodeRow[] = [];
-    for (const show of shows) {
-      const next = findNextUpcoming(episodesByShow.get(show.tmdbId) ?? []);
-      if (next) rows.push({ showId: show.tmdbId, showName: show.name, posterPath: show.posterPath, episode: next });
-    }
-    rows.sort((a, b) => (a.episode.airDate as string).localeCompare(b.episode.airDate as string));
-    return rows.slice(0, 6);
-  }, [shows, allEpisodes]);
+  const upcomingEpisodes = useMemo<UpcomingEpisodeRow[]>(
+    () => (!shows || !allEpisodes ? [] : buildUpcomingEpisodeRows(shows, allEpisodes)),
+    [shows, allEpisodes]
+  );
 
-  const releasingThisMonth = useMemo(() => {
-    if (!movies) return [];
-    const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-    const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const monthEndExclusive = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, "0")}-01`;
-    return movies
-      .filter((m) => m.releaseDate && m.releaseDate >= monthStart && m.releaseDate < monthEndExclusive)
-      .sort((a, b) => (a.releaseDate as string).localeCompare(b.releaseDate as string))
-      .slice(0, 6);
-  }, [movies]);
+  const releasingThisMonth = useMemo(() => (!movies ? [] : buildReleasingThisMonth(movies)), [movies]);
 
   if (!shows || !allEpisodes || !movies) return null;
   if (upcomingEpisodes.length === 0 && releasingThisMonth.length === 0) return null;

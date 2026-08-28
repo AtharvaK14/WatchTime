@@ -20,6 +20,51 @@
             </intent-filter>
         </activity>
 
+        <!-- Home-screen widgets. Both providers are exported because the
+             launcher, a different app, has to be able to instantiate them;
+             that is how every app widget works and the receiver exposes no
+             data of its own. -->
+        <receiver
+            android:name=".widget.WatchNextWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_watch_next_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_watch_next_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.ComingUpWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_coming_up_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_coming_up_info" />
+        </receiver>
+
+        <!-- Row taps. NOT exported: only our own widgets' PendingIntents
+             target it, and nothing outside the app should be able to mark
+             episodes watched. -->
+        <receiver
+            android:name=".widget.WidgetActionReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.indie.watchtime.widget.ROW_CLICK" />
+            </intent-filter>
+        </receiver>
+
+        <!-- BIND_REMOTEVIEWS keeps the system as the only possible binder. -->
+        <service
+            android:name=".widget.WidgetListService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -32,4 +77,11 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Runtime permission on Android 13+ (API 33). Requested only when the
+         user turns notifications on in Settings, never at launch. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Lets a scheduled release notification survive a reboot; without it
+         every pending alarm is silently dropped when the device restarts. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>

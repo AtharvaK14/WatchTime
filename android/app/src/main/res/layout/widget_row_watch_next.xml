@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Full Watch Next row: the app's .watch-next-row, at widget scale.
+     Poster, show pill, "S01 | E04 +N" mono line, episode name, tick button.
+
+     The middle column is the only flexible one (weight=1); the poster and the
+     button are fixed, so narrowing the widget shortens the text and never
+     pushes the button off the edge. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:background="@drawable/widget_card_background"
+    android:padding="8dp"
+    android:layout_marginBottom="6dp">
+
+    <ImageView
+        android:id="@+id/row_poster"
+        android:layout_width="36dp"
+        android:layout_height="54dp"
+        android:scaleType="centerCrop"
+        android:background="@drawable/widget_poster_placeholder"
+        android:contentDescription="@null" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:layout_marginStart="10dp"
+        android:layout_marginEnd="8dp"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/row_show"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/widget_text"
+            android:textSize="12sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/row_episode"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFamily="monospace"
+            android:textColor="@color/widget_text"
+            android:textStyle="bold"
+            android:textSize="13sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <TextView
+            android:id="@+id/row_premiere"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:background="@drawable/widget_premiere_tag"
+            android:paddingStart="6dp"
+            android:paddingEnd="6dp"
+            android:paddingTop="1dp"
+            android:paddingBottom="1dp"
+            android:text="PREMIERE"
+            android:textColor="@color/widget_accent"
+            android:textSize="9sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/row_episode_name"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:textColor="@color/widget_muted"
+            android:textSize="11sp"
+            android:maxLines="1"
+            android:ellipsize="end" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/row_watch_button"
+        android:layout_width="30dp"
+        android:layout_height="30dp"
+        android:gravity="center"
+        android:background="@drawable/widget_watch_button"
+        android:textColor="@color/widget_bg"
+        android:textSize="14sp"
+        android:text="✓"
+        android:contentDescription="@string/widget_mark_watched" />
+</LinearLayout>

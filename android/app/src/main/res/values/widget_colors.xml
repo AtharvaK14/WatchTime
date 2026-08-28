@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's design tokens from src/index.css, restated for the widget so
+     the two are visibly the same product. Each name mirrors the CSS custom
+     property it copies (widget_bg is var(bg), and so on), so a palette change
+     in the app has one obvious place to be reflected here. -->
+<resources>
+    <color name="widget_bg">#F00A0A0B</color>          <!-- var(bg), slightly translucent over the wallpaper -->
+    <color name="widget_surface">#141416</color>        <!-- var(surface) -->
+    <color name="widget_surface_raised">#1D1D20</color> <!-- var(surface-raised) -->
+    <color name="widget_border">#26262A</color>         <!-- var(border) -->
+    <color name="widget_text">#F2F1EF</color>           <!-- var(text) -->
+    <color name="widget_muted">#86858A</color>          <!-- var(muted) -->
+    <color name="widget_accent">#FF4433</color>         <!-- var(accent) -->
+    <color name="widget_accent_dim">#7A2A20</color>     <!-- var(accent-dim) -->
+</resources>

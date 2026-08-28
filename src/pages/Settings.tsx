@@ -24,6 +24,7 @@ import { getStaleDaysThreshold, setStaleDaysThreshold, DEFAULT_STALE_DAYS_THRESH
 import ImportWizard from "./ImportWizard";
 import Diagnostics from "./Diagnostics";
 import About from "../components/About";
+import NotificationSettings from "../components/NotificationSettings";
 
 type KeyStatus = "idle" | "checking" | "valid" | "invalid";
 
@@ -521,6 +522,18 @@ export default function Settings() {
         </summary>
         <div style={{ marginTop: 14 }}>
           <ImportWizard />
+        </div>
+      </details>
+
+      <details>
+        <summary>
+          <span className="settings-row-text">
+            <h3>Notifications</h3>
+            <p className="muted small settings-row-sub">New episodes and releases from your library only</p>
+          </span>
+        </summary>
+        <div style={{ marginTop: 14 }}>
+          <NotificationSettings />
         </div>
       </details>
 
