@@ -1190,7 +1190,11 @@ details[open] > summary::after { transform: rotate(90deg); }
   overflow: hidden;
   gap: 14px;
 }
-.mtw-card { width: 120px; flex-shrink: 0; }
+/* position: relative anchors the .watched-badge overlay. The poster is the
+   card's first child and spans its full width, so the card's top-right corner
+   is the poster's top-right corner and the badge lands in the same place it
+   does on a Movies-page tile. */
+.mtw-card { width: 120px; flex-shrink: 0; position: relative; }
 .mtw-poster {
   width: 100%;
   aspect-ratio: 2/3;
@@ -1202,17 +1206,15 @@ details[open] > summary::after { transform: rotate(90deg); }
 }
 .mtw-name {
   font-size: 0.82rem;
-  margin: 6px 0 6px;
+  margin: 6px 0 0;
   cursor: pointer;
   /* Exactly one line, long titles get an ellipsis (full title in the
-     hover tooltip): keeps every card the same height so the Mark watched
-     button sits at a fixed position regardless of title length. */
+     hover tooltip): keeps every card the same height regardless of title
+     length, so the rail stays on one baseline. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mtw-card button { width: 100%; font-size: 0.78rem; padding: 6px 0; }
-
 .mtw-view-all-tile {
   width: 100%;
   aspect-ratio: 2/3;
@@ -1237,7 +1239,7 @@ details[open] > summary::after { transform: rotate(90deg); }
 @media (max-width: 640px) {
   .mtw-rail {
     overflow-x: auto;
-    padding-bottom: 8px; /* keep the scrollbar off the buttons */
+    padding-bottom: 8px; /* keep the scrollbar clear of the card titles */
     scrollbar-width: thin;
     overscroll-behavior-x: contain; /* don't trigger browser/WebView swipe-nav at the ends */
   }

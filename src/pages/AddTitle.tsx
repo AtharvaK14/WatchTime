@@ -177,7 +177,7 @@ export default function AddTitle() {
 
   return (
     <div className="panel">
-      <h1>Discover</h1>
+      <h1 className="sr-only">Discover</h1>
 
       <UniversalSearch
         onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })}

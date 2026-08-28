@@ -469,13 +469,31 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
               ) : (
                 <div className="poster-placeholder mtw-poster" onClick={() => setOpenDetails(m.tmdbId)} />
               )}
-              {/* Single-line ellipsis title (see .mtw-name), so the button
-                  below sits at the same height on every card; the full
-                  title is still available as a hover tooltip. */}
+              {/* The same overlay control the Movies page uses, rather than a
+                  full-width button under the card: it keeps the rail reading
+                  as a wall of posters and makes one interaction pattern for
+                  "mark this watched" across both screens.
+
+                  stopPropagation is not strictly required here (the badge is a
+                  sibling of the poster, not nested inside its click target) but
+                  it is kept to match Movies exactly, so neither copy can drift
+                  into depending on the other's structure. */}
+              <button
+                className="watched-badge"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  markWatched(m.tmdbId);
+                }}
+                aria-label={`Mark ${m.title} watched`}
+              >
+                &#10003;
+              </button>
+              {/* Single-line ellipsis title (see .mtw-name): keeps every card
+                  the same height however long the title is. Full title stays
+                  available as a hover tooltip. */}
               <p className="show-name mtw-name" title={m.title} onClick={() => setOpenDetails(m.tmdbId)}>
                 {m.title}
               </p>
-              <button onClick={() => markWatched(m.tmdbId)}>Mark watched</button>
             </div>
           ))}
           {hasMore && (

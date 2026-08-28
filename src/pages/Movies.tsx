@@ -114,7 +114,7 @@ export default function Movies({
 
   return (
     <div className="panel">
-      <h1>Movies</h1>
+      <h1 className="sr-only">Movies</h1>
 
       <div className="stats-grid">
         <div className="stat-card">
