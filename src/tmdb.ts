@@ -347,3 +347,55 @@ export async function findByExternalId(
 ): Promise<FindResults> {
   return tmdbGet<FindResults>(`/find/${externalId}`, { external_source: source });
 }
+// ---- Release dates (notifications) -------------------------------------
+//
+// TMDB's movie object carries a single `release_date` (the primary one,
+// usually theatrical). The distinction between "in cinemas" and "available
+// at home" only exists on the separate /release_dates endpoint, which
+// returns per-country lists of typed dates. Type 3 is Theatrical and type 4
+// is Digital, per TMDB's own release-type enumeration.
+export const TMDB_RELEASE_TYPE_THEATRICAL = 3;
+export const TMDB_RELEASE_TYPE_DIGITAL = 4;
+
+interface ReleaseDatesResponse {
+  results: {
+    iso_3166_1: string;
+    release_dates: { type: number; release_date: string }[];
+  }[];
+}
+
+/**
+ * Earliest theatrical and digital release dates for a movie, as YYYY-MM-DD.
+ *
+ * `region` is preferred but deliberately not required to match: if TMDB has
+ * no entry for it, the earliest date of that type from ANY country is used
+ * rather than returning nothing. A missing regional entry is a gap in TMDB's
+ * data, not evidence the release isn't happening, and the same reasoning
+ * already governs isAvailableToWatch() for episodes.
+ */
+export async function getMovieReleaseDates(
+  tmdbId: number,
+  region = "US"
+): Promise<{ theatrical: string | null; digital: string | null }> {
+  const data = await tmdbGet<ReleaseDatesResponse>(`/movie/${tmdbId}/release_dates`);
+
+  function earliest(type: number): string | null {
+    const preferred = data.results.find((r) => r.iso_3166_1 === region);
+    const pools = preferred ? [[preferred], data.results] : [data.results];
+    for (const pool of pools) {
+      const dates = pool
+        .flatMap((r) => r.release_dates)
+        .filter((d) => d.type === type && d.release_date)
+        // TMDB returns full ISO datetimes here; only the calendar day matters.
+        .map((d) => d.release_date.slice(0, 10))
+        .sort();
+      if (dates.length > 0) return dates[0];
+    }
+    return null;
+  }
+
+  return {
+    theatrical: earliest(TMDB_RELEASE_TYPE_THEATRICAL),
+    digital: earliest(TMDB_RELEASE_TYPE_DIGITAL),
+  };
+}

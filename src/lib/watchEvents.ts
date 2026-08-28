@@ -98,13 +98,21 @@ export async function recordEpisodeRewatch(showId: number, eps: Episode[]): Prom
 /**
  * Home's Watch Next checkmark: works for both a first watch and an active
  * rewatch pass, because it operates on whatever row state exists.
+ *
+ * `when` exists for the home-screen widget. A tap on the widget cannot write
+ * to the database from the launcher process, so it is queued natively and
+ * replayed here the next time the app runs - which can be hours later. The
+ * recorded watch must be when the user actually tapped, not when the replay
+ * happened, or the Watch Next ordering (which sorts on exactly this value)
+ * would quietly disagree with what the user did. Defaults to now, so every
+ * in-app caller is unaffected.
  */
 export async function markNextEpisodeWatched(showId: number, ep: {
   seasonNumber: number;
   episodeNumber: number;
-}): Promise<void> {
+}, when?: string): Promise<void> {
   const key = episodeKey(showId, ep.seasonNumber, ep.episodeNumber);
-  const now = new Date().toISOString();
+  const now = when ?? new Date().toISOString();
   const prior = await db.watchedEpisodes.get(key);
   await db.watchedEpisodes.put(
     prior

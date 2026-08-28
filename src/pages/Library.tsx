@@ -116,7 +116,7 @@ export default function Library() {
 
   return (
     <div className="panel">
-      <h2>Shows</h2>
+      <h1>Shows</h1>
 
       <div className="stats-grid">
         <div className="stat-card">

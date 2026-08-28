@@ -2,7 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Episode } from "../db";
 import { TMDB_IMAGE_BASE } from "../tmdb";
-import { ensureEpisodesCached, findNextUpcoming } from "../lib/episodeSync";
+import { ensureEpisodesCached } from "../lib/episodeSync";
+import {
+  buildReleasingThisMonth,
+  buildUpcomingEpisodeRows,
+  formatUpcomingDate,
+  type UpcomingEpisodeRow,
+} from "../lib/comingUp";
 import { getStaleDaysThreshold } from "../lib/showStatus";
 import { markNextEpisodeWatched, recordEpisodeRewatch } from "../lib/watchEvents";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -170,6 +176,12 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
 
   return (
     <>
+      {/* This heading is not decoration. .section-title:first-of-type drops the
+          divider and top margin from whichever heading comes first, so while
+          this section had none, "Movies to Watch" inherited that treatment and
+          the sections ran together with nothing between them. */}
+      <h2 className="section-title">Up Next</h2>
+
       <div className="pill-tabs">
         <button className={`pill-tab ${tab === "next" ? "active" : ""}`} onClick={() => setTab("next")}>
           Watch Next{watchNext.length > 0 ? ` (${watchNext.length})` : ""}
@@ -245,24 +257,6 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
   );
 }
 
-function formatUpcomingDate(iso: string | null): string {
-  if (!iso) return "";
-  const date = new Date(`${iso}T00:00:00`);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((date.getTime() - today.getTime()) / 86400000);
-  if (diffDays === 0) return "Today";
-  if (diffDays === 1) return "Tomorrow";
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-interface UpcomingEpisodeRow {
-  showId: number;
-  showName: string;
-  posterPath: string | null;
-  episode: Episode;
-}
-
 /**
  * Upcoming episodes (confirmed future air_date, across followed shows) and
  * movies releasing this calendar month (from Movie.releaseDate, backfilled
@@ -271,47 +265,29 @@ interface UpcomingEpisodeRow {
  * issuing new network requests, this only reads db.episodes, which
  * ShowsHome's sync effect already keeps populated for every followed show.
  */
-function ComingUp({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
+function ComingUp() {
   const shows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(), []);
   const allEpisodes = useLiveQuery(() => db.episodes.toArray(), []);
   const movies = useLiveQuery(() => db.movies.toArray(), []);
   const [openMovie, setOpenMovie] = useState<number | null>(null);
+  // Tapping an upcoming episode opens THAT episode, matching the Coming Up
+  // widget. It used to open the show's panel, which made the user hunt for the
+  // episode they had just pointed at.
+  const [openEpisode, setOpenEpisode] = useState<UpcomingEpisodeRow | null>(null);
 
-  const upcomingEpisodes = useMemo<UpcomingEpisodeRow[]>(() => {
-    if (!shows || !allEpisodes) return [];
-    const episodesByShow = new Map<number, Episode[]>();
-    for (const ep of allEpisodes) {
-      const list = episodesByShow.get(ep.showId);
-      if (list) list.push(ep);
-      else episodesByShow.set(ep.showId, [ep]);
-    }
-    const rows: UpcomingEpisodeRow[] = [];
-    for (const show of shows) {
-      const next = findNextUpcoming(episodesByShow.get(show.tmdbId) ?? []);
-      if (next) rows.push({ showId: show.tmdbId, showName: show.name, posterPath: show.posterPath, episode: next });
-    }
-    rows.sort((a, b) => (a.episode.airDate as string).localeCompare(b.episode.airDate as string));
-    return rows.slice(0, 6);
-  }, [shows, allEpisodes]);
+  const upcomingEpisodes = useMemo<UpcomingEpisodeRow[]>(
+    () => (!shows || !allEpisodes ? [] : buildUpcomingEpisodeRows(shows, allEpisodes)),
+    [shows, allEpisodes]
+  );
 
-  const releasingThisMonth = useMemo(() => {
-    if (!movies) return [];
-    const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-    const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-    const monthEndExclusive = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, "0")}-01`;
-    return movies
-      .filter((m) => m.releaseDate && m.releaseDate >= monthStart && m.releaseDate < monthEndExclusive)
-      .sort((a, b) => (a.releaseDate as string).localeCompare(b.releaseDate as string))
-      .slice(0, 6);
-  }, [movies]);
+  const releasingThisMonth = useMemo(() => (!movies ? [] : buildReleasingThisMonth(movies)), [movies]);
 
   if (!shows || !allEpisodes || !movies) return null;
   if (upcomingEpisodes.length === 0 && releasingThisMonth.length === 0) return null;
 
   return (
     <>
-      <h3 className="section-title">Coming up</h3>
+      <h2 className="section-title">Coming Up</h2>
       <div className="coming-up-cols">
         <div className="coming-up-col">
           <p className="muted small coming-up-col-label">Upcoming episodes</p>
@@ -322,11 +298,11 @@ function ComingUp({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
               className="up-row"
               role="button"
               tabIndex={0}
-              onClick={() => onOpenShow(row.showId)}
+              onClick={() => setOpenEpisode(row)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  onOpenShow(row.showId);
+                  setOpenEpisode(row);
                 }
               }}
             >
@@ -378,6 +354,24 @@ function ComingUp({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
         </div>
       </div>
       {openMovie !== null && <DetailsPanel kind="movie" tmdbId={openMovie} onClose={() => setOpenMovie(null)} />}
+
+      {/* The app's own episode panel, same as Watch Next opens. canToggleWatched
+          is false because these episodes have not aired: there is nothing to
+          mark, and offering it would be a bug rather than a convenience. */}
+      {openEpisode && (
+        <EpisodeDetailsPanel
+          show={{
+            name: openEpisode.showName,
+            imdbId: shows.find((sh) => sh.tmdbId === openEpisode.showId)?.imdbId,
+          }}
+          episode={openEpisode.episode}
+          watched={false}
+          watchCount={0}
+          canToggleWatched={false}
+          onToggleWatched={() => {}}
+          onClose={() => setOpenEpisode(null)}
+        />
+      )}
     </>
   );
 }
@@ -457,7 +451,7 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
 
   return (
     <>
-      <h3 className="section-title">Movies to Watch</h3>
+      <h2 className="section-title">Movies to Watch</h2>
 
       {sorted.length === 0 ? (
         <p className="muted">Nothing on your movie watchlist right now.</p>
@@ -534,6 +528,12 @@ export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void 
 
   return (
     <div className="panel">
+      {/* Every view needs exactly one h1 or the document outline starts at a
+          sub-level. Home has no visible page title by design (the header
+          carries the mark and the nav shows where you are), so the heading is
+          screen-reader-only rather than redundant on screen. */}
+      <h1 className="sr-only">Home</h1>
+
       <MoodSearch
         setup={mood.setup}
         filter={mood.filter}
@@ -551,7 +551,7 @@ export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void 
 
       {/* Coming up is calendar data, not recommendations, so a mood filter
           deliberately does not apply to it. */}
-      <ComingUp onOpenShow={setOpenShow} />
+      <ComingUp />
 
       {openShow !== null && <DetailsPanel kind="show" tmdbId={openShow} onClose={() => setOpenShow(null)} />}
     </div>

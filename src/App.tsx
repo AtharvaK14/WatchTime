@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, type ComponentType } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { App as CapacitorApp } from "@capacitor/app";
 import { db } from "./db";
 import Home from "./pages/Home";
 import Library from "./pages/Library";
@@ -20,6 +21,9 @@ import {
   type PersistStatus,
 } from "./lib/persistence";
 import { initNative } from "./lib/native";
+import DeepLinkHost from "./components/DeepLinkHost";
+import { initNotificationTapHandling, syncScheduledNotifications } from "./lib/notifications";
+import { useWidgetSync } from "./lib/widget/sync";
 import { useOnline } from "./lib/useOnline";
 import { HomeIcon, ShowsIcon, MoviesIcon, DiscoverIcon, ForYouIcon, SettingsIcon, type IconProps } from "./components/icons";
 import "./index.css";
@@ -69,6 +73,11 @@ function App() {
   const [, forceNudgeRecheck] = useState(0);
   const online = useOnline();
 
+  // Home-screen widgets: pushes a fresh snapshot whenever the library
+  // changes and replays taps queued while the app was closed. Self-gating —
+  // it costs nothing until the user actually places a widget.
+  useWidgetSync();
+
   useEffect(() => {
     initStoragePersistence().then(setPersistStatus);
     const onBackupCompleted = () => forceNudgeRecheck((t) => t + 1);
@@ -91,6 +100,24 @@ function App() {
       }
       return false; // at Home root → allow exit
     });
+  }, []);
+
+  // Notifications. Tap routing is registered unconditionally (it is inert
+  // without the native shell) so a tap that cold-started the app is handled
+  // even before any permission state is read. The scheduler itself no-ops
+  // unless the user has both enabled the feature and granted permission, and
+  // re-runs on resume so the queue tracks the library rather than drifting
+  // from whatever it was when the toggle was first flipped.
+  useEffect(() => {
+    const cleanup = initNotificationTapHandling();
+    syncScheduledNotifications().catch(() => {});
+    const handle = CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive) syncScheduledNotifications().catch(() => {});
+    });
+    return () => {
+      cleanup();
+      handle.then((h) => h.remove()).catch(() => {});
+    };
   }, []);
 
   // Only nudge when there's actually a library to lose.
@@ -117,6 +144,10 @@ function App() {
   return (
     <>
       {showOnboarding && <FirstRunWizard onComplete={() => setShowOnboarding(false)} />}
+
+      {/* Renders the app's existing detail panels when a notification or a
+          widget row is tapped. No UI of its own. */}
+      <DeepLinkHost />
 
       <nav className="side-rail">
         <span className="side-rail-mark" aria-hidden="true"><BrandMark size={22} /></span>

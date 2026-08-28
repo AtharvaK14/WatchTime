@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's design tokens from src/index.css, restated for the widget so
+     the two are visibly the same product. Each name mirrors the CSS custom
+     property it copies (widget_bg is var(bg), and so on), so a palette change
+     in the app has one obvious place to be reflected here. -->
+<resources>
+    <color name="widget_bg">#FF0A0A0B</color>          <!-- var(bg). Opaque: the opacity SETTING supplies alpha, see WidgetStore.getOpacity -->
+    <color name="widget_surface_raised">#1D1D20</color> <!-- var(surface-raised) -->
+    <color name="widget_text">#F2F1EF</color>           <!-- var(text) -->
+    <color name="widget_muted">#86858A</color>          <!-- var(muted) -->
+    <color name="widget_accent">#FF4433</color>         <!-- var(accent) -->
+    <color name="widget_accent_dim">#7A2A20</color>     <!-- var(accent-dim) -->
+    <!-- Faded hairline between episode rows. Deliberately weak: a separator
+         should organise the list, not compete with it. It replaced the card
+         outline that used to box every row. -->
+    <color name="widget_divider">#1FF2F1EF</color>
+</resources>

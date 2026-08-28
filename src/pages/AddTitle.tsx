@@ -65,7 +65,7 @@ function Results({
     <>
       {results.titles.length > 0 && (
         <>
-          <h3 className="section-title">Titles</h3>
+          <h2 className="section-title">Titles</h2>
           <div className="show-grid">
             {results.titles.map((t) => (
               <button
@@ -93,7 +93,7 @@ function Results({
 
       {results.moodAttempted && (
         <>
-          <h3 className="section-title">Matching your description</h3>
+          <h2 className="section-title">Matching your description</h2>
           {results.moodMessage && <p className="muted small">{results.moodMessage}</p>}
           {results.mood.length === 0 && !results.moodMessage && (
             <p className="muted small">Still looking...</p>
@@ -171,7 +171,7 @@ export default function AddTitle() {
 
   return (
     <div className="panel">
-      <h2>Discover</h2>
+      <h1>Discover</h1>
 
       <UniversalSearch
         onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })}
@@ -190,7 +190,7 @@ export default function AddTitle() {
 
             {/* Personalised recommendations now live on their own For You
                 tab; this page is search plus the same-for-everyone rails. */}
-            <h3 className="section-title">Trending this week</h3>
+            <h2 className="section-title">Trending this week</h2>
             {!popularShows ? (
               <p className="muted small">Loading...</p>
             ) : (
@@ -206,7 +206,7 @@ export default function AddTitle() {
               />
             )}
 
-            <h3 className="section-title">Upcoming movies</h3>
+            <h2 className="section-title">Upcoming movies</h2>
             {!upcomingMovies ? (
               <p className="muted small">Loading...</p>
             ) : (
@@ -216,7 +216,7 @@ export default function AddTitle() {
               />
             )}
 
-            <h3 className="section-title">Recently available at home</h3>
+            <h2 className="section-title">Recently available at home</h2>
             <p className="muted small">
               TMDB's closest match to Rotten Tomatoes' "movies at home" list: recent US digital releases. Not the
               same curation, an approximation built from TMDB's own release-type data.

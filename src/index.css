@@ -61,7 +61,12 @@ a { color: var(--accent); }
 
 .field-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
-input[type="text"], input[type="number"], select {
+/* password is included deliberately: the TMDB and OMDb key fields in
+   Settings are type="password" while masked, and while they were omitted
+   here they rendered as raw, unstyled browser inputs — no surface, no
+   border, 21px tall — every time the user hid the key. Toggling
+   visibility silently changed the field's entire appearance. */
+input[type="text"], input[type="number"], input[type="password"], select {
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text);
@@ -1015,13 +1020,62 @@ details[open] > summary::after { transform: rotate(90deg); }
    page. See pages/Home.tsx.
    ============================================================ */
 
+/* Section headings owned their own scale step, but only just: at 1.05rem/700
+   they sat 0.05rem above .wn-episode-line (1rem/700 mono) directly beneath
+   them, so an episode number actually read LOUDER than the heading above it.
+   Size alone could not carry the hierarchy while the page is full of bold
+   text at nearly the same size.
+
+   So the separation is now carried by three things at once — a real jump in
+   scale and weight, the hairline rule, and an accent marker no other element
+   on the page uses. The marker is what makes a heading unmistakable at a
+   glance rather than something you resolve by comparing font sizes. */
 .section-title {
-  margin: 28px 0 12px;
-  font-size: 1.05rem;
-  padding-top: 16px;
+  position: relative;
+  margin: 40px 0 16px;
+  padding-top: 22px;
+  font-size: 1.35rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
   border-top: 1px solid var(--border);
 }
+/* The bar sits in the page gutter (negative offset) rather than indenting the
+   heading. Indenting would have pushed every title out of alignment with the
+   cards and rows below it, trading one visual problem for another. -11px
+   clears the app-shell's padding on both breakpoints (32px desktop, 16px
+   mobile) with room to spare, so it can never touch the screen edge. */
+.section-title::before {
+  content: "";
+  position: absolute;
+  left: -11px;
+  top: 22px;
+  bottom: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+/* The first section on the page opens straight under the header, so it gets
+   no rule above it. This selector is why "Up Next" must exist as a real
+   .section-title: while ShowsHome rendered no heading, "Movies to Watch" was
+   first-of-type and silently lost its divider AND its top margin, which is
+   what made the sections read as one continuous run. */
 .section-title:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
+.section-title:first-of-type::before { top: 0; }
+
+/* Phones: a touch smaller so a long title ("Movies to Watch") stays on one
+   line, and a tighter gutter offset to match the narrower 16px page padding.
+   The scale step over the surrounding text is preserved.
+
+   This block MUST stay after the base rule above. A media query adds no
+   specificity, so when it lived further up the file the plain .section-title
+   rule below simply overrode it and phones kept the desktop size. */
+@media (max-width: 640px) {
+  .section-title {
+    font-size: 1.2rem;
+    margin-top: 34px;
+  }
+  .section-title::before { left: -9px; }
+}
 
 /* Desktop/wide viewports: Continue Watching cards wrap onto new rows as
    needed, matching the mobile card design, but each card keeps a
@@ -1846,3 +1900,112 @@ details[open] > summary::after { transform: rotate(90deg); }
    card, where the rail's overflow can clip it. */
 .rail-card,
 .wn-episode-button { position: relative; }
+
+/* ============================================================
+   Widget episode overlay (src/panel/EpisodePanelApp.tsx)
+
+   The same document as the app, loaded with ?wtpanel=episode inside
+   EpisodePanelActivity's transparent window. Only the page surfaces are
+   neutralised here: the panel itself is the app's own .modal, unchanged,
+   so the overlay and the in-app panel cannot drift apart.
+   ============================================================ */
+
+html[data-wtpanel] , html[data-wtpanel] body, html[data-wtpanel] #root {
+  background: transparent;
+  height: 100%;
+}
+/* .modal-backdrop keeps the app's own dim and its tap-to-close behaviour
+   untouched. The activity window is fully translucent with system dimming
+   off precisely so this one scrim is the only one, and the overlay looks
+   identical to the panel opened inside the app. */
+html[data-wtpanel] .modal-backdrop { padding: 16px; }
+/* A widget overlay is a short window on a small screen: let the card use
+   the height the dialog gives it rather than the app's 80vh cap. */
+html[data-wtpanel] .modal { max-height: 88vh; }
+
+/* ============================================================
+   UI/UX audit fixes. Every item here was measured in the running
+   app, not guessed at — the ratios and pixel sizes in the
+   comments are the values that were actually observed.
+   ============================================================ */
+
+/* CONTRAST — the PREMIERE tag was var(--accent) on var(--accent-dim),
+   which measures 2.81:1. At 0.7rem that needs 4.5:1, so it was failing
+   by a wide margin and was the least readable text in the app. Keeping
+   the dim-red pill (it carries the brand) and switching the label to
+   --text takes it to ~8.7:1. */
+.premiere-tag { color: var(--text); }
+
+/* CONTRAST — the first-run wizard's primary button was #fff on
+   var(--accent): 3.43:1, below the 4.5:1 needed. This is the button
+   every new user must find, on the one screen they cannot skip past
+   without it. --bg on --accent measures 5.77:1 and matches the
+   inversion already used by .pill-tab.active and .watch-toggle-circle. */
+.wizard-primary { color: var(--bg); font-weight: 700; }
+
+/* TOUCH TARGETS — measured on a 375px viewport, controls came in at
+   21–37px against the 44px minimum both Apple and Material specify.
+   This is an Android app, so those are real mis-taps.
+
+   Scoped to (pointer: coarse) deliberately: touch devices get the
+   larger targets, mouse-driven desktop keeps the current density,
+   which is a legitimate difference rather than a compromise between
+   the two. Inline text-style buttons are excluded — a 44px min-height
+   on those would inject stray vertical space mid-sentence. */
+@media (pointer: coarse) {
+  button:not(.watched-badge):not(.watch-toggle-circle):not(.close-x):not(.link-button):not(.skip):not(.back-link),
+  select,
+  summary,
+  input[type="text"],
+  input[type="number"],
+  input[type="password"],
+  input[type="file"] {
+    min-height: 44px;
+  }
+}
+
+/* The small circular controls are exempt above because forcing a
+   min-height would stretch them into ovals. They instead get an
+   invisible, centred hit area — the web equivalent of hitSlop — so the
+   touch region grows to 44px while the control looks exactly as it did.
+   .show-card clips at its own bounds, so the badge's effective area is
+   ~41px there rather than the full 44; still a large gain on 26px. */
+.watched-badge,
+.watch-toggle-circle,
+.close-x {
+  position: relative;
+}
+.watched-badge::after,
+.watch-toggle-circle::after,
+.close-x::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* TYPOGRAPHY — body line-height was never set, so every paragraph
+   inherited `normal` (~1.2). That is fine for the single-line labels
+   inside rows but cramped for the multi-line explanatory copy in
+   Settings, About and the wizard, which is where most of the app's
+   prose lives. Components that need tight leading (.show-name at 1.3)
+   already set their own and are unaffected. */
+p { line-height: 1.55; }
+
+/* The mobile nav labels rendered at 10.88px, the smallest text in the
+   app and below the 12px floor for legible UI text. */
+@media (max-width: 640px) {
+  .bottom-nav-item { font-size: 0.75rem; }
+}
+
+/* Page titles are <h1> now (see the heading-hierarchy fix in the page
+   components); this keeps them rendering at the size <h2> gave them, so
+   the correction is semantic only and changes nothing visually. */
+h1 { margin: 0; font-size: 1.4rem; }
+
+/* Settings' collapsible section titles moved h3 -> h2 so the outline
+   runs h1 -> h2 -> h3 without skipping. Same size as before. */
+.settings-row-text h2 { font-size: 1.05rem; margin: 0; }

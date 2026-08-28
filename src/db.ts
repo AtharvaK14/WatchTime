@@ -103,6 +103,15 @@ export interface Movie {
   overview?: string | null;
   // TMDB original_language. See Show.originalLanguage.
   originalLanguage?: string | null;
+  // First DIGITAL release date (TMDB release_dates type 4, US), distinct
+  // from releaseDate above which is the primary/theatrical one. Notifications
+  // treat "in theatres" and "available at home" as two different events, and
+  // TMDB only exposes the digital one through the separate /release_dates
+  // endpoint, so it needs its own persisted field rather than being derivable
+  // from anything already stored. Same undefined/null convention as overview:
+  // undefined means "never looked up", null means "looked up and TMDB has no
+  // digital date". See lib/notifications/releaseDates.ts.
+  digitalReleaseDate?: string | null;
 }
 
 // Remembers how a raw TV Time title string was resolved, so re-running an
@@ -346,6 +355,22 @@ class TrackerDB extends Dexie {
     // v12: no index, nothing cleared, filled lazily by the existing overview
     // backfill (which already fetches the details response these come in).
     this.version(13).stores({
+      shows: "tmdbId, name, isFollowed, lastWatchedAt, tvdbId",
+      episodes: "key, showId, [showId+seasonNumber]",
+      watchedEpisodes: "key, showId, watchedAt",
+      movies: "tmdbId, title, watched, wantsToWatch",
+      titleMatches: "rawTitle, kind",
+      settings: "key",
+      omdbCache: "cacheKey, kind",
+      titleEmbeddings: "cacheKey, kind",
+    });
+    // v14: added Movie.digitalReleaseDate for the "available at home"
+    // notification. Purely additive, exactly like v13: no index, nothing
+    // cleared, filled lazily by the notification scheduler's backfill for
+    // the small set of movies it actually needs a digital date for (the
+    // unwatched ones whose theatrical date is recent or still ahead), so
+    // an existing library never pays a full-catalogue TMDB sweep for it.
+    this.version(14).stores({
       shows: "tmdbId, name, isFollowed, lastWatchedAt, tvdbId",
       episodes: "key, showId, [showId+seasonNumber]",
       watchedEpisodes: "key, showId, watchedAt",

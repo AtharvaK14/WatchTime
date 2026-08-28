@@ -18,6 +18,9 @@ export default function ForYouPage() {
 
   return (
     <div className="panel">
+      {/* See the note in Home: this tab has no visible title either. */}
+      <h1 className="sr-only">For You</h1>
+
       {/* The page heading lives inside <ForYou> alongside the "Why these?"
           toggle, so the toggle stays co-located with the state it controls. */}
       {!hasApiKey() && (

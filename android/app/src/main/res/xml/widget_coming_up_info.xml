@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- targetCellWidth/Height are the Android 12+ sizing units the launcher
+     actually places by; minWidth/minHeight remain for older launchers. The
+     min resize bounds are set to the smallest size at which the compact row
+     is still legible rather than to the smallest the framework permits, so a
+     user cannot drag the widget into a state the layout cannot serve.
+     resizeMode is horizontal|vertical: both axes adapt (see
+     BaseWidgetProvider.onAppWidgetOptionsChanged).
+
+     configure runs the appearance screen (the background opacity slider) when
+     the widget is added; widgetFeatures="reconfigurable" also lets the user
+     reopen it later from the widget's own long-press menu, so the setting is
+     not a one-shot choice made at add time. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:initialLayout="@layout/widget_container"
+    android:minWidth="180dp"
+    android:minHeight="110dp"
+    android:targetCellWidth="3"
+    android:targetCellHeight="2"
+    android:minResizeWidth="140dp"
+    android:minResizeHeight="80dp"
+    android:maxResizeWidth="500dp"
+    android:maxResizeHeight="580dp"
+    android:resizeMode="horizontal|vertical"
+    android:widgetCategory="home_screen"
+    android:description="@string/widget_coming_up_description"
+    android:previewLayout="@layout/widget_preview_coming_up"
+    android:updatePeriodMillis="1800000"
+    android:configure="com.indie.watchtime.widget.WidgetConfigActivity"
+    android:widgetFeatures="reconfigurable" />

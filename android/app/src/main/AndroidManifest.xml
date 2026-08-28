@@ -20,6 +20,84 @@
             </intent-filter>
         </activity>
 
+        <!-- The episode detail overlay a widget row opens.
+
+             taskAffinity is the whole reason the main app no longer appears
+             behind it. Without an affinity of its own, this activity shares the
+             package default with MainActivity, so FLAG_ACTIVITY_NEW_TASK found
+             the APP's task, brought it to the front and stacked the translucent
+             panel on top - launching the app and showing it through the panel.
+             A private affinity puts the overlay in its own task, so what sits
+             behind it is whatever was there before: the home screen.
+
+             excludeFromRecents keeps that task out of the recents list and
+             noHistory finishes it as soon as it stops, so it behaves like a
+             pop-up rather than something the user has to dismiss twice.
+
+             Deliberately the default launch mode. With singleTask, a second
+             row tap would be delivered to the running instance as onNewIntent
+             and the overlay would keep showing the FIRST episode; the default
+             mode plus the template's CLEAR_TASK finishes and recreates it, so
+             onCreate always reads the extras it was actually started with.
+
+             Not exported: it is started only by our own widget's PendingIntent,
+             which runs with this app's identity. -->
+        <activity
+            android:name=".widget.EpisodePanelActivity"
+            android:theme="@style/WidgetPanelTheme"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=":widgetpanel"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:exported="false" />
+
+        <!-- Widget appearance (background opacity). Must be exported: the
+             launcher starts it via android:configure when a widget is added or
+             reconfigured, and that is a cross-process start. -->
+        <activity
+            android:name=".widget.WidgetConfigActivity"
+            android:theme="@style/WidgetConfigTheme"
+            android:excludeFromRecents="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+
+        <!-- Home-screen widgets. Both providers are exported because the
+             launcher, a different app, has to be able to instantiate them;
+             that is how every app widget works and the receiver exposes no
+             data of its own. -->
+        <receiver
+            android:name=".widget.WatchNextWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_up_next_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_watch_next_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.ComingUpWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_coming_up_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_coming_up_info" />
+        </receiver>
+
+        <!-- BIND_REMOTEVIEWS keeps the system as the only possible binder. -->
+        <service
+            android:name=".widget.WidgetListService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -32,4 +110,11 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Runtime permission on Android 13+ (API 33). Requested only when the
+         user turns notifications on in Settings, never at launch. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Lets a scheduled release notification survive a reboot; without it
+         every pending alarm is silently dropped when the device restarts. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>

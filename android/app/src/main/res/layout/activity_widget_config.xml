@@ -1,0 +1,149 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The widget appearance screen.
+
+     The window is translucent and carries android:windowShowWallpaper (see
+     WidgetConfigTheme), so the user's own wallpaper sits behind everything
+     here. That is why the root and the preview band below have NO background:
+     the wallpaper shows exactly where nothing opaque is drawn, and the panels
+     above and below paint themselves over it. WallpaperViewportView rounds the
+     opening. Without this, the preview sat on a flat page and told the user
+     nothing about how the widget would actually look on their home screen.
+
+     fitsSystemWindows keeps the title clear of the status bar, which a
+     translucent window would otherwise draw underneath. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:fitsSystemWindows="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:background="@color/widget_bg"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="16dp"
+        android:paddingBottom="12dp">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/widget_config_title"
+            android:textColor="@color/widget_text"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/widget_config_hint"
+            android:textColor="@color/widget_muted"
+            android:textSize="13sp" />
+    </LinearLayout>
+
+    <!-- The wallpaper band. Deliberately backgroundless. Tall enough for the
+         preview's full three rows: the previous height cut the last one off
+         mid-poster, which looked like a glitch rather than a longer list. -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="340dp">
+
+        <com.indie.watchtime.widget.WallpaperViewportView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- The widget preview floats inside the opening, at roughly the size
+             and inset it would have on a home screen. -->
+        <FrameLayout
+            android:id="@+id/config_preview_host"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center"
+            android:paddingStart="34dp"
+            android:paddingEnd="34dp"
+            android:paddingTop="18dp"
+            android:paddingBottom="18dp" />
+    </FrameLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@color/widget_bg"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="@drawable/widget_config_card"
+                android:padding="16dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="@string/widget_config_opacity_label"
+                        android:textColor="@color/widget_text"
+                        android:textSize="15sp" />
+
+                    <TextView
+                        android:id="@+id/config_opacity_value"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:textColor="@color/widget_accent"
+                        android:textSize="15sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <SeekBar
+                    android:id="@+id/config_opacity_slider"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:max="100" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/config_cancel"
+                    style="?android:attr/borderlessButtonStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/widget_config_cancel"
+                    android:textColor="@color/widget_muted" />
+
+                <Button
+                    android:id="@+id/config_save"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="12dp"
+                    android:backgroundTint="@color/widget_accent"
+                    android:textColor="@color/widget_text"
+                    android:text="@string/widget_config_save" />
+            </LinearLayout>
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>
