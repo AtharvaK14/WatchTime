@@ -2012,10 +2012,17 @@ html[data-wtpanel] .modal { max-height: 88vh; }
    invisible, centred hit area — the web equivalent of hitSlop — so the
    touch region grows to 44px while the control looks exactly as it did.
    .show-card clips at its own bounds, so the badge's effective area is
-   ~41px there rather than the full 44; still a large gain on 26px. */
-.watched-badge,
-.watch-toggle-circle,
-.close-x {
+   ~41px there rather than the full 44; still a large gain on 26px.
+
+   ONLY .watch-toggle-circle gets position: relative here, and that is
+   load-bearing. .watched-badge and .close-x are already positioned
+   absolute (top/right) by their own rules, and an earlier version of this
+   block listed all three — which silently overrode that, dropped both into
+   normal flow, and moved the Movies watched-badge to the bottom of the tile
+   and the episode panel's close button to the left. An absolutely
+   positioned element is already a containing block for its own ::after, so
+   they never needed it. Do not add them back. */
+.watch-toggle-circle {
   position: relative;
 }
 .watched-badge::after,
@@ -2133,3 +2140,35 @@ select,
 /* .pill-tab.active and .watch-toggle-circle invert to a solid --text
    fill; their own background already provides far more than 3:1 against
    the page, so forcing a lighter outline on top would only add a halo. */
+
+/* Content-type badge on Discover's trending cards.
+
+   "Trending this week" renders a grid of shows immediately followed by a
+   grid of movies under a single heading, so without a per-card marker the
+   two read as one continuous wall of posters.
+
+   It sits on the artwork rather than in .show-card-body deliberately: that
+   caption is opacity:0 until hover on (hover: hover) devices, so a label
+   placed there would say nothing at rest on desktop. Top-LEFT keeps it clear
+   of .watched-badge, which owns the top-right on library cards.
+
+   Styling is borrowed from the badges already in the app — the same
+   translucent-black-over-poster treatment as .watched-badge, with the
+   uppercase micro-label tracking of .show-pill and .premiere-tag. */
+.card-kind {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  pointer-events: none; /* the whole card is the button; never intercept the tap */
+}

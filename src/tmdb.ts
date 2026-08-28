@@ -7,6 +7,21 @@ export const TMDB_IMAGE_BASE = "https://image.tmdb.org/t/p/w342";
 // without shipping a full 1280w/original image for that.
 export const TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w780";
 
+// Episode stills. These were being served from TMDB_IMAGE_BASE (w342), which
+// is a POSTER width: fine for the 64x36 thumbnails in the season browser it
+// was originally chosen for, but the episode detail panel renders the same
+// still as a full-width 16:9 hero. At a 480px modal on a 3x phone that is
+// roughly 1440 physical pixels being filled from a 342px source, which is
+// why it looked soft. w780 is the same size the show detail hero already
+// uses for its backdrop, so the two heroes now match in quality as well as
+// in layout.
+//
+// Note this is deliberately a separate constant rather than a change to
+// TMDB_IMAGE_BASE: that one is used for poster grids all over the app, where
+// w342 is already generous and raising it would cost bandwidth on every
+// screen for no visible gain.
+export const TMDB_STILL_BASE = "https://image.tmdb.org/t/p/w780";
+
 // Exported so Settings and the backup/restore code reference the same
 // storage key instead of re-typing the literal.
 export const TMDB_API_KEY_STORAGE = "tmdb_api_key";
