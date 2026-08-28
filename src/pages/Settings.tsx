@@ -499,12 +499,12 @@ function ResetData() {
 export default function Settings() {
   return (
     <div className="panel">
-      <h2>Settings</h2>
+      <h1>Settings</h1>
 
       <details open>
         <summary>
           <span className="settings-row-text">
-            <h3>Backup &amp; Restore</h3>
+            <h2>Backup &amp; Restore</h2>
             <p className="muted small settings-row-sub">Export your library to a file, restore it anywhere</p>
           </span>
         </summary>
@@ -516,7 +516,7 @@ export default function Settings() {
       <details>
         <summary>
           <span className="settings-row-text">
-            <h3>Import from TV Time</h3>
+            <h2>Import from TV Time</h2>
             <p className="muted small settings-row-sub">JSON export recommended, CSV fallback available</p>
           </span>
         </summary>
@@ -528,7 +528,7 @@ export default function Settings() {
       <details>
         <summary>
           <span className="settings-row-text">
-            <h3>Notifications</h3>
+            <h2>Notifications</h2>
             <p className="muted small settings-row-sub">New episodes and releases from your library only</p>
           </span>
         </summary>
@@ -540,7 +540,7 @@ export default function Settings() {
       <details>
         <summary>
           <span className="settings-row-text">
-            <h3>API Keys</h3>
+            <h2>API Keys</h2>
             <p className="muted small settings-row-sub">TMDB required, OMDb optional for ratings</p>
           </span>
         </summary>
@@ -552,7 +552,7 @@ export default function Settings() {
       <details>
         <summary>
           <span className="settings-row-text">
-            <h3>Watch Next</h3>
+            <h2>Watch Next</h2>
             <p className="muted small settings-row-sub">When shows count as "haven't watched for a while"</p>
           </span>
         </summary>
@@ -564,7 +564,7 @@ export default function Settings() {
       <details>
         <summary>
           <span className="settings-row-text">
-            <h3>Diagnostics</h3>
+            <h2>Diagnostics</h2>
             <p className="muted small settings-row-sub">Compare stored data against TMDB for a show</p>
           </span>
         </summary>
@@ -576,7 +576,7 @@ export default function Settings() {
       <details>
         <summary>
           <span className="settings-row-text">
-            <h3>About</h3>
+            <h2>About</h2>
             <p className="muted small settings-row-sub">Credits, data sources, and privacy</p>
           </span>
         </summary>

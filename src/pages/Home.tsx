@@ -180,7 +180,7 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
           divider and top margin from whichever heading comes first, so while
           this section had none, "Movies to Watch" inherited that treatment and
           the sections ran together with nothing between them. */}
-      <h3 className="section-title">Up Next</h3>
+      <h2 className="section-title">Up Next</h2>
 
       <div className="pill-tabs">
         <button className={`pill-tab ${tab === "next" ? "active" : ""}`} onClick={() => setTab("next")}>
@@ -287,7 +287,7 @@ function ComingUp() {
 
   return (
     <>
-      <h3 className="section-title">Coming Up</h3>
+      <h2 className="section-title">Coming Up</h2>
       <div className="coming-up-cols">
         <div className="coming-up-col">
           <p className="muted small coming-up-col-label">Upcoming episodes</p>
@@ -451,7 +451,7 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
 
   return (
     <>
-      <h3 className="section-title">Movies to Watch</h3>
+      <h2 className="section-title">Movies to Watch</h2>
 
       {sorted.length === 0 ? (
         <p className="muted">Nothing on your movie watchlist right now.</p>
@@ -528,6 +528,12 @@ export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void 
 
   return (
     <div className="panel">
+      {/* Every view needs exactly one h1 or the document outline starts at a
+          sub-level. Home has no visible page title by design (the header
+          carries the mark and the nav shows where you are), so the heading is
+          screen-reader-only rather than redundant on screen. */}
+      <h1 className="sr-only">Home</h1>
+
       <MoodSearch
         setup={mood.setup}
         filter={mood.filter}

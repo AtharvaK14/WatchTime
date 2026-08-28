@@ -225,7 +225,7 @@ export default function Diagnostics() {
 
   return (
     <div className="panel">
-      <h2>Diagnostics</h2>
+      <h3>Diagnostics</h3>
       <p className="muted small">
         Pick a show to compare what's actually stored in your local database against what TMDB reports, to find
         real mismatches instead of guessing at them.

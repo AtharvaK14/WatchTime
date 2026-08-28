@@ -61,7 +61,12 @@ a { color: var(--accent); }
 
 .field-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
-input[type="text"], input[type="number"], select {
+/* password is included deliberately: the TMDB and OMDb key fields in
+   Settings are type="password" while masked, and while they were omitted
+   here they rendered as raw, unstyled browser inputs — no surface, no
+   border, 21px tall — every time the user hid the key. Toggling
+   visibility silently changed the field's entire appearance. */
+input[type="text"], input[type="number"], input[type="password"], select {
   background: var(--surface);
   border: 1px solid var(--border);
   color: var(--text);
@@ -1917,3 +1922,90 @@ html[data-wtpanel] .modal-backdrop { padding: 16px; }
 /* A widget overlay is a short window on a small screen: let the card use
    the height the dialog gives it rather than the app's 80vh cap. */
 html[data-wtpanel] .modal { max-height: 88vh; }
+
+/* ============================================================
+   UI/UX audit fixes. Every item here was measured in the running
+   app, not guessed at — the ratios and pixel sizes in the
+   comments are the values that were actually observed.
+   ============================================================ */
+
+/* CONTRAST — the PREMIERE tag was var(--accent) on var(--accent-dim),
+   which measures 2.81:1. At 0.7rem that needs 4.5:1, so it was failing
+   by a wide margin and was the least readable text in the app. Keeping
+   the dim-red pill (it carries the brand) and switching the label to
+   --text takes it to ~8.7:1. */
+.premiere-tag { color: var(--text); }
+
+/* CONTRAST — the first-run wizard's primary button was #fff on
+   var(--accent): 3.43:1, below the 4.5:1 needed. This is the button
+   every new user must find, on the one screen they cannot skip past
+   without it. --bg on --accent measures 5.77:1 and matches the
+   inversion already used by .pill-tab.active and .watch-toggle-circle. */
+.wizard-primary { color: var(--bg); font-weight: 700; }
+
+/* TOUCH TARGETS — measured on a 375px viewport, controls came in at
+   21–37px against the 44px minimum both Apple and Material specify.
+   This is an Android app, so those are real mis-taps.
+
+   Scoped to (pointer: coarse) deliberately: touch devices get the
+   larger targets, mouse-driven desktop keeps the current density,
+   which is a legitimate difference rather than a compromise between
+   the two. Inline text-style buttons are excluded — a 44px min-height
+   on those would inject stray vertical space mid-sentence. */
+@media (pointer: coarse) {
+  button:not(.watched-badge):not(.watch-toggle-circle):not(.close-x):not(.link-button):not(.skip):not(.back-link),
+  select,
+  summary,
+  input[type="text"],
+  input[type="number"],
+  input[type="password"],
+  input[type="file"] {
+    min-height: 44px;
+  }
+}
+
+/* The small circular controls are exempt above because forcing a
+   min-height would stretch them into ovals. They instead get an
+   invisible, centred hit area — the web equivalent of hitSlop — so the
+   touch region grows to 44px while the control looks exactly as it did.
+   .show-card clips at its own bounds, so the badge's effective area is
+   ~41px there rather than the full 44; still a large gain on 26px. */
+.watched-badge,
+.watch-toggle-circle,
+.close-x {
+  position: relative;
+}
+.watched-badge::after,
+.watch-toggle-circle::after,
+.close-x::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* TYPOGRAPHY — body line-height was never set, so every paragraph
+   inherited `normal` (~1.2). That is fine for the single-line labels
+   inside rows but cramped for the multi-line explanatory copy in
+   Settings, About and the wizard, which is where most of the app's
+   prose lives. Components that need tight leading (.show-name at 1.3)
+   already set their own and are unaffected. */
+p { line-height: 1.55; }
+
+/* The mobile nav labels rendered at 10.88px, the smallest text in the
+   app and below the 12px floor for legible UI text. */
+@media (max-width: 640px) {
+  .bottom-nav-item { font-size: 0.75rem; }
+}
+
+/* Page titles are <h1> now (see the heading-hierarchy fix in the page
+   components); this keeps them rendering at the size <h2> gave them, so
+   the correction is semantic only and changes nothing visually. */
+h1 { margin: 0; font-size: 1.4rem; }
+
+/* Settings' collapsible section titles moved h3 -> h2 so the outline
+   runs h1 -> h2 -> h3 without skipping. Same size as before. */
+.settings-row-text h2 { font-size: 1.05rem; margin: 0; }
