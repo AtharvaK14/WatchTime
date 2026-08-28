@@ -138,13 +138,6 @@ export default function Library() {
           {stats.backfillProgress.total}
         </p>
       )}
-      {!stats.loading && stats.distinctEpisodesWatched > 0 && (
-        <p className="muted small">
-          {stats.exactRuntimeCount.toLocaleString()} of {stats.distinctEpisodesWatched.toLocaleString()} watched
-          episodes use TVmaze's real per-episode runtime, the rest fall back to each show's average (open a show's
-          seasons to fetch its exact episode runtimes).
-        </p>
-      )}
 
       {shows.length === 0 ? (
         <p className="muted">No shows yet. Import your TV Time export, or search TMDB from Add.</p>
