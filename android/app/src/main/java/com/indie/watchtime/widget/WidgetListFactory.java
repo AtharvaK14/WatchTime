@@ -61,13 +61,7 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
         JSONArray source = WidgetStore.readRows(context, kind.snapshotField());
         for (int i = 0; i < source.length(); i++) {
             JSONObject row = source.optJSONObject(i);
-            if (row == null) continue;
-            // Rows ticked on the widget disappear immediately, before the app
-            // has had a chance to write the watch and push a new snapshot.
-            if (kind == WidgetKind.WATCH_NEXT && WidgetStore.isHidden(context, row.optString("episodeKey"))) {
-                continue;
-            }
-            rows.add(row);
+            if (row != null) rows.add(row);
         }
     }
 
@@ -122,11 +116,12 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
             bindPoster(views, row.optString("posterUrl", null));
         }
 
-        // Tapping the row body opens the episode in the app. Widget collection
+        // The whole row is the tap target, not just its text: with the
+        // per-row watch button gone there is nothing else competing for the
+        // touch, and a row with dead zones feels broken. Widget collection
         // items can only carry a fill-in intent; the template lives on the
         // provider side (setPendingIntentTemplate).
-        views.setOnClickFillInIntent(R.id.row_show, openIntent(row));
-        views.setOnClickFillInIntent(R.id.row_episode, openIntent(row));
+        views.setOnClickFillInIntent(R.id.row_root, openIntent(row));
 
         return views;
     }
@@ -143,9 +138,6 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
             views.setViewVisibility(R.id.row_premiere,
                     row.optBoolean("isPremiere", false) ? View.VISIBLE : View.GONE);
         }
-
-        // The direct action: marks the episode watched without opening the app.
-        views.setOnClickFillInIntent(R.id.row_watch_button, watchIntent(row));
     }
 
     private void bindComingUp(RemoteViews views, JSONObject row) {
@@ -156,7 +148,6 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
         if (!compact) {
             views.setTextViewText(R.id.row_episode_name, row.optString("episodeName"));
         }
-        views.setOnClickFillInIntent(R.id.row_date, openIntent(row));
     }
 
     private void bindPoster(RemoteViews views, String posterUrl) {
@@ -170,21 +161,16 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
         }
     }
 
+    /**
+     * Opens this episode's detail overlay. Coming Up rows go read-only: the
+     * episode has not aired, so the panel shows the information without
+     * offering a watch action it would make no sense to take.
+     */
     private Intent openIntent(JSONObject row) {
         Intent intent = new Intent();
-        intent.putExtra(WidgetActionReceiver.EXTRA_ACTION, WidgetActionReceiver.ACTION_OPEN);
         intent.putExtra(WidgetActionReceiver.EXTRA_SHOW_ID, row.optInt("showId"));
         intent.putExtra(WidgetActionReceiver.EXTRA_EPISODE_KEY, row.optString("episodeKey"));
-        return intent;
-    }
-
-    private Intent watchIntent(JSONObject row) {
-        Intent intent = new Intent();
-        intent.putExtra(WidgetActionReceiver.EXTRA_ACTION, WidgetActionReceiver.ACTION_MARK_WATCHED);
-        intent.putExtra(WidgetActionReceiver.EXTRA_SHOW_ID, row.optInt("showId"));
-        intent.putExtra(WidgetActionReceiver.EXTRA_EPISODE_KEY, row.optString("episodeKey"));
-        intent.putExtra(WidgetActionReceiver.EXTRA_SEASON, row.optInt("seasonNumber"));
-        intent.putExtra(WidgetActionReceiver.EXTRA_EPISODE, row.optInt("episodeNumber"));
+        intent.putExtra(WidgetActionReceiver.EXTRA_READONLY, kind == WidgetKind.COMING_UP);
         return intent;
     }
 

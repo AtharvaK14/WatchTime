@@ -6,17 +6,21 @@
 // the app updates the widget without anything having to remember to call a
 // refresh.
 //
-// Widget -> app: taps queued natively while the app was not running are
-// drained and replayed through the normal write path, then the snapshot is
-// rebuilt from the result. The replay is what makes a widget tick show up in
-// the app's Up Next list.
+// Widget -> app: nothing needs replaying. A watch recorded from a widget
+// happens in the episode overlay (EpisodePanelActivity), whose WebView is
+// same-origin with the app and therefore writes the real IndexedDB directly,
+// then pushes a fresh snapshot itself. The app simply sees the write, exactly
+// as if it had been made in-app. There is deliberately no pending-action
+// queue any more: the earlier row-level "mark watched" button had no way to
+// reach the database from the launcher process and needed one, but that
+// button is gone and a queue with no producer is just a trap.
 
 import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { Capacitor } from "@capacitor/core";
 import { App as CapacitorApp } from "@capacitor/app";
 import { db } from "../../db";
-import { markNextEpisodeWatched } from "../watchEvents";
-import { drainWidgetDeepLink, hasPlacedWidgets, pushSnapshot, takePendingWatchActions, widgetsSupported } from "./bridge";
+import { drainWidgetDeepLink, hasPlacedWidgets, pushSnapshot } from "./bridge";
 import { buildWidgetSnapshot } from "./snapshot";
 
 /**
@@ -25,26 +29,6 @@ import { buildWidgetSnapshot } from "./snapshot";
  * writes in quick succession and only the final state is worth pushing.
  */
 const PUSH_DEBOUNCE_MS = 400;
-
-/**
- * Replays every watch tap queued by the widget while the app was closed.
- * Returns how many were applied.
- *
- * Safe to call repeatedly: the native queue is cleared as it is read, and
- * markNextEpisodeWatched is itself idempotent enough that a duplicated
- * replay would bump a rewatch count rather than corrupt anything.
- */
-export async function flushPendingWidgetActions(): Promise<number> {
-  const actions = await takePendingWatchActions();
-  for (const action of actions) {
-    await markNextEpisodeWatched(
-      action.showId,
-      { seasonNumber: action.seasonNumber, episodeNumber: action.episodeNumber },
-      new Date(action.tappedAt).toISOString()
-    );
-  }
-  return actions.length;
-}
 
 /**
  * Mounted once from App. Does nothing at all on the web build, and nothing
@@ -61,17 +45,16 @@ export function useWidgetSync(): void {
   // rather than only at mount. The same resume is the right moment to drain
   // taps that happened while we were backgrounded.
   useEffect(() => {
-    if (!widgetsSupported()) return;
+    if (Capacitor.getPlatform() !== "android") return;
     let cancelled = false;
 
     async function refresh() {
       // Deep links first: a tap that launched the app should open its panel
-      // without waiting on the widget census or the action replay.
+      // without waiting on the widget census.
       await drainWidgetDeepLink();
       const isPlaced = await hasPlacedWidgets();
       if (cancelled) return;
       setPlaced(isPlaced);
-      if (isPlaced) await flushPendingWidgetActions();
     }
 
     refresh();

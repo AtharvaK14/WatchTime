@@ -20,6 +20,26 @@
             </intent-filter>
         </activity>
 
+        <!-- The episode detail overlay a widget row opens. A separate task
+             (excludeFromRecents + noHistory) so it behaves like a pop-up over
+             the home screen rather than becoming part of the app's back stack:
+             dismissing it returns the user to their launcher, not into the app.
+
+             Deliberately the default launch mode. With singleTask, a second
+             row tap would be delivered to the running instance as onNewIntent
+             and the overlay would keep showing the FIRST episode; the default
+             mode plus the receiver's CLEAR_TOP finishes and recreates it, so
+             onCreate always reads the extras it was actually started with.
+
+             Not exported - only our own widget receiver starts it. -->
+        <activity
+            android:name=".widget.EpisodePanelActivity"
+            android:theme="@style/WidgetPanelTheme"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|locale|smallestScreenSize|screenLayout|uiMode|navigation|density"
+            android:exported="false" />
+
         <!-- Home-screen widgets. Both providers are exported because the
              launcher, a different app, has to be able to instantiate them;
              that is how every app widget works and the receiver exposes no

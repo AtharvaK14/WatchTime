@@ -6,13 +6,13 @@
      button are fixed, so narrowing the widget shortens the text and never
      pushes the button off the edge. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/row_root"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:background="@drawable/widget_card_background"
-    android:padding="8dp"
-    android:layout_marginBottom="6dp">
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp">
 
     <ImageView
         android:id="@+id/row_poster"
@@ -27,7 +27,6 @@
         android:layout_height="wrap_content"
         android:layout_weight="1"
         android:layout_marginStart="10dp"
-        android:layout_marginEnd="8dp"
         android:orientation="vertical">
 
         <TextView
@@ -77,14 +76,4 @@
             android:ellipsize="end" />
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/row_watch_button"
-        android:layout_width="30dp"
-        android:layout_height="30dp"
-        android:gravity="center"
-        android:background="@drawable/widget_watch_button"
-        android:textColor="@color/widget_bg"
-        android:textSize="14sp"
-        android:text="✓"
-        android:contentDescription="@string/widget_mark_watched" />
 </LinearLayout>

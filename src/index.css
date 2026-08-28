@@ -1016,11 +1016,17 @@ details[open] > summary::after { transform: rotate(90deg); }
    ============================================================ */
 
 .section-title {
-  margin: 28px 0 12px;
+  margin: 34px 0 14px;
   font-size: 1.05rem;
-  padding-top: 16px;
+  font-weight: 700;
+  padding-top: 20px;
   border-top: 1px solid var(--border);
 }
+/* The first section on the page opens straight under the header, so it gets
+   no rule above it. This selector is why "Up Next" must exist as a real
+   .section-title: while ShowsHome rendered no heading, "Movies to Watch" was
+   first-of-type and silently lost its divider AND its top margin, which is
+   what made the sections read as one continuous run. */
 .section-title:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
 
 /* Desktop/wide viewports: Continue Watching cards wrap onto new rows as
@@ -1846,3 +1852,25 @@ details[open] > summary::after { transform: rotate(90deg); }
    card, where the rail's overflow can clip it. */
 .rail-card,
 .wn-episode-button { position: relative; }
+
+/* ============================================================
+   Widget episode overlay (src/panel/EpisodePanelApp.tsx)
+
+   The same document as the app, loaded with ?wtpanel=episode inside
+   EpisodePanelActivity's transparent window. Only the page surfaces are
+   neutralised here: the panel itself is the app's own .modal, unchanged,
+   so the overlay and the in-app panel cannot drift apart.
+   ============================================================ */
+
+html[data-wtpanel] , html[data-wtpanel] body, html[data-wtpanel] #root {
+  background: transparent;
+  height: 100%;
+}
+/* .modal-backdrop keeps the app's own dim and its tap-to-close behaviour
+   untouched. The activity window is fully translucent with system dimming
+   off precisely so this one scrim is the only one, and the overlay looks
+   identical to the panel opened inside the app. */
+html[data-wtpanel] .modal-backdrop { padding: 16px; }
+/* A widget overlay is a short window on a small screen: let the card use
+   the height the dialog gives it rather than the app's 80vh cap. */
+html[data-wtpanel] .modal { max-height: 88vh; }

@@ -12,4 +12,8 @@
     <color name="widget_muted">#86858A</color>          <!-- var(muted) -->
     <color name="widget_accent">#FF4433</color>         <!-- var(accent) -->
     <color name="widget_accent_dim">#7A2A20</color>     <!-- var(accent-dim) -->
+    <!-- Faded hairline between episode rows. Deliberately much weaker than
+         widget_border, which drew card outlines: a separator should organise
+         the list, not compete with it. -->
+    <color name="widget_divider">#1FF2F1EF</color>
 </resources>

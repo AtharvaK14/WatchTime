@@ -176,6 +176,12 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
 
   return (
     <>
+      {/* This heading is not decoration. .section-title:first-of-type drops the
+          divider and top margin from whichever heading comes first, so while
+          this section had none, "Movies to Watch" inherited that treatment and
+          the sections ran together with nothing between them. */}
+      <h3 className="section-title">Up Next</h3>
+
       <div className="pill-tabs">
         <button className={`pill-tab ${tab === "next" ? "active" : ""}`} onClick={() => setTab("next")}>
           Watch Next{watchNext.length > 0 ? ` (${watchNext.length})` : ""}
@@ -259,11 +265,15 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
  * issuing new network requests, this only reads db.episodes, which
  * ShowsHome's sync effect already keeps populated for every followed show.
  */
-function ComingUp({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
+function ComingUp() {
   const shows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(), []);
   const allEpisodes = useLiveQuery(() => db.episodes.toArray(), []);
   const movies = useLiveQuery(() => db.movies.toArray(), []);
   const [openMovie, setOpenMovie] = useState<number | null>(null);
+  // Tapping an upcoming episode opens THAT episode, matching the Coming Up
+  // widget. It used to open the show's panel, which made the user hunt for the
+  // episode they had just pointed at.
+  const [openEpisode, setOpenEpisode] = useState<UpcomingEpisodeRow | null>(null);
 
   const upcomingEpisodes = useMemo<UpcomingEpisodeRow[]>(
     () => (!shows || !allEpisodes ? [] : buildUpcomingEpisodeRows(shows, allEpisodes)),
@@ -288,11 +298,11 @@ function ComingUp({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
               className="up-row"
               role="button"
               tabIndex={0}
-              onClick={() => onOpenShow(row.showId)}
+              onClick={() => setOpenEpisode(row)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
                   e.preventDefault();
-                  onOpenShow(row.showId);
+                  setOpenEpisode(row);
                 }
               }}
             >
@@ -344,6 +354,24 @@ function ComingUp({ onOpenShow }: { onOpenShow: (tmdbId: number) => void }) {
         </div>
       </div>
       {openMovie !== null && <DetailsPanel kind="movie" tmdbId={openMovie} onClose={() => setOpenMovie(null)} />}
+
+      {/* The app's own episode panel, same as Watch Next opens. canToggleWatched
+          is false because these episodes have not aired: there is nothing to
+          mark, and offering it would be a bug rather than a convenience. */}
+      {openEpisode && (
+        <EpisodeDetailsPanel
+          show={{
+            name: openEpisode.showName,
+            imdbId: shows.find((sh) => sh.tmdbId === openEpisode.showId)?.imdbId,
+          }}
+          episode={openEpisode.episode}
+          watched={false}
+          watchCount={0}
+          canToggleWatched={false}
+          onToggleWatched={() => {}}
+          onClose={() => setOpenEpisode(null)}
+        />
+      )}
     </>
   );
 }
@@ -517,7 +545,7 @@ export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void 
 
       {/* Coming up is calendar data, not recommendations, so a mood filter
           deliberately does not apply to it. */}
-      <ComingUp onOpenShow={setOpenShow} />
+      <ComingUp />
 
       {openShow !== null && <DetailsPanel kind="show" tmdbId={openShow} onClose={() => setOpenShow(null)} />}
     </div>

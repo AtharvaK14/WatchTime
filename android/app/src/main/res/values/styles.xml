@@ -19,4 +19,22 @@
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
         <item name="android:background">@drawable/splash</item>
     </style>
+
+    <!-- The episode overlay opened from a home-screen widget.
+
+         Fully translucent and edge-to-edge rather than a floating dialog: the
+         web page already draws the app's own .modal-backdrop scrim and centres
+         the card in it, so letting the window be the whole screen means the
+         overlay is pixel-identical to the panel opened inside the app.
+         System dimming is off for the same reason - the page provides the
+         one and only scrim. -->
+    <style name="WidgetPanelTheme" parent="Theme.AppCompat.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+    </style>
 </resources>

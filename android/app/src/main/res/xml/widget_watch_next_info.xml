@@ -19,5 +19,5 @@
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
     android:description="@string/widget_watch_next_description"
-    android:previewLayout="@layout/widget_container"
+    android:previewLayout="@layout/widget_preview_watch_next"
     android:updatePeriodMillis="1800000" />

@@ -1,24 +1,25 @@
 package com.indie.watchtime.widget;
 
-import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
- * The web layer's door to the widgets. Four methods, matching
+ * The web layer's door to the widgets. Three methods, matching
  * src/lib/widget/bridge.ts:
  *
  *  - updateSnapshot: store what the widgets should show, then redraw them
- *  - takePendingWatchActions: drain taps queued while the app was closed
  *  - hasPlacedWidgets: let the app skip snapshot work when nobody uses them
- *  - consumePendingDeepLink: collect the row the user tapped to get here
+ *  - consumePendingDeepLink: collect a target the user asked to open in the app
+ *
+ * The episode overlay reaches the same WidgetStore through its own injected
+ * host object instead (see EpisodePanelActivity), because it runs outside
+ * Capacitor.
  *
  * There is deliberately no method that reads library data: the widgets never
  * query, they only receive.
@@ -36,19 +37,6 @@ public class WidgetBridgePlugin extends Plugin {
         WidgetStore.writeSnapshot(getContext(), snapshot);
         BaseWidgetProvider.refreshAll(getContext());
         call.resolve();
-    }
-
-    @PluginMethod
-    public void takePendingWatchActions(PluginCall call) {
-        JSONArray queued = WidgetStore.takePendingActions(getContext());
-        JSArray actions = new JSArray();
-        for (int i = 0; i < queued.length(); i++) {
-            JSONObject action = queued.optJSONObject(i);
-            if (action != null) actions.put(action);
-        }
-        JSObject result = new JSObject();
-        result.put("actions", actions);
-        call.resolve(result);
     }
 
     @PluginMethod

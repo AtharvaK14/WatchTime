@@ -4,84 +4,43 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 
-import com.indie.watchtime.MainActivity;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-
 /**
  * Handles taps on widget rows.
  *
- * Both row actions land here because a collection item can only carry a
- * fill-in intent against one template, so the template is a broadcast and the
- * extras say which of the two the user meant.
+ * A row tap opens the episode overlay (EpisodePanelActivity), NOT the app. The
+ * user stays on their home screen and gets the app's own episode detail panel
+ * as a pop-up, with "Mark as Watched" inside it. Both widgets behave the same
+ * way; the only difference is that Coming Up rows open read-only, because an
+ * episode that has not aired cannot be watched.
  *
- * ACTION_OPEN launches the app with a deep-link target stored for the web
- * layer to pick up, which opens the app's real episode detail panel - not a
- * second copy of it built for the widget.
- *
- * ACTION_MARK_WATCHED is the direct action, and never opens the app. The
- * write itself cannot happen here: the library is in IndexedDB behind the
- * WebView. So the tap is queued for replay and the row is hidden immediately,
- * which is what makes the widget feel like it did the thing, because from the
- * user's point of view it did - the queued write is applied verbatim, at the
- * timestamp of this tap, the next time the app runs.
+ * The row-level "mark watched" button this receiver used to handle is gone.
+ * The action now lives where the user expects it, inside the panel, and works
+ * properly there: the overlay shares the app's IndexedDB, so it writes the
+ * library directly instead of queueing an intention for the app to replay.
  */
 public class WidgetActionReceiver extends BroadcastReceiver {
 
     public static final String ACTION_ROW_CLICK = "com.indie.watchtime.widget.ROW_CLICK";
 
-    public static final String EXTRA_ACTION = "action";
     public static final String EXTRA_SHOW_ID = "showId";
     public static final String EXTRA_EPISODE_KEY = "episodeKey";
-    public static final String EXTRA_SEASON = "seasonNumber";
-    public static final String EXTRA_EPISODE = "episodeNumber";
-
-    public static final String ACTION_OPEN = "open";
-    public static final String ACTION_MARK_WATCHED = "markWatched";
+    public static final String EXTRA_READONLY = "readonly";
 
     @Override
     public void onReceive(Context context, Intent intent) {
         if (intent == null || !ACTION_ROW_CLICK.equals(intent.getAction())) return;
 
-        String action = intent.getStringExtra(EXTRA_ACTION);
-        int showId = intent.getIntExtra(EXTRA_SHOW_ID, 0);
         String episodeKey = intent.getStringExtra(EXTRA_EPISODE_KEY);
+        if (episodeKey == null || episodeKey.isEmpty()) return;
 
-        if (ACTION_MARK_WATCHED.equals(action) && episodeKey != null && !episodeKey.isEmpty()) {
-            WidgetStore.queueWatchAction(context, episodeKey, showId,
-                    intent.getIntExtra(EXTRA_SEASON, 0),
-                    intent.getIntExtra(EXTRA_EPISODE, 0));
-            WidgetStore.hideRow(context, episodeKey);
-            BaseWidgetProvider.refreshAll(context);
-            return;
-        }
-
-        openInApp(context, showId, episodeKey);
-    }
-
-    private void openInApp(Context context, int showId, String episodeKey) {
-        try {
-            JSONObject target = new JSONObject();
-            if (episodeKey != null && !episodeKey.isEmpty()) {
-                target.put("kind", "episode");
-                target.put("showId", showId);
-                target.put("episodeKey", episodeKey);
-            } else {
-                // A row with no cached episode still identifies its show, and
-                // the show panel is the right place to land.
-                target.put("kind", "show");
-                target.put("showId", showId);
-            }
-            WidgetStore.setPendingDeepLink(context, target.toString());
-        } catch (JSONException e) {
-            // Fall through: the app still opens, just at its usual home screen.
-        }
-
-        Intent launch = new Intent(context, MainActivity.class);
-        // SINGLE_TOP rather than CLEAR_TOP: MainActivity is already singleTask,
-        // and clearing would tear down a running session the user may return to.
-        launch.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        context.startActivity(launch);
+        Intent panel = new Intent(context, EpisodePanelActivity.class);
+        panel.putExtra(EpisodePanelActivity.EXTRA_SHOW_ID, intent.getIntExtra(EXTRA_SHOW_ID, 0));
+        panel.putExtra(EpisodePanelActivity.EXTRA_EPISODE_KEY, episodeKey);
+        panel.putExtra(EpisodePanelActivity.EXTRA_READONLY, intent.getBooleanExtra(EXTRA_READONLY, false));
+        // NEW_TASK is required to start an activity from a receiver.
+        // CLEAR_TOP drops any overlay left over from a previous row, so tapping
+        // a second episode replaces the pop-up rather than stacking on it.
+        panel.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        context.startActivity(panel);
     }
 }
