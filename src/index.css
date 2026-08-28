@@ -1,15 +1,58 @@
+/* Self-hosted, Latin subset, variable weight. See public/fonts/README.md.
+
+   These replace a Google Fonts <link> that fetched Inter over the network.
+   That was a real defect in a Capacitor app rather than a style preference:
+   offline — a state this app supports and shows a banner for — the webfont
+   never arrived and every screen silently fell back to the system sans.
+   font-display: swap keeps text visible while the file loads instead of
+   flashing invisible. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-latin-var.woff2") format("woff2-variations");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/geist-mono-latin-var.woff2") format("woff2-variations");
+}
+
 :root {
   --bg: #0A0A0B;
   --surface: #141416;
   --surface-raised: #1D1D20;
-  --border: #26262A;
+  /* Two border tokens, because --border was doing two unrelated jobs at
+     1.31:1 and only one of them is governed by a contrast requirement.
+
+     WCAG 1.4.11 asks 3:1 of visuals needed to IDENTIFY a control — a button
+     or input outline. It does not govern decorative rules. Meeting 3:1 on
+     every surface with one token means #6A6A73, near as light as --muted,
+     which would make every section divider in the app shout.
+
+     So: --border stays subtle for dividers and card edges (lifted from
+     #26262A to #33333A, enough to register on an OLED panel without becoming
+     the loudest thing on screen), and --border-strong carries the real 3:1
+     for anything the user is meant to recognise as a control.
+     Measured: #6A6A73 is 3.70:1 on --bg, 3.44:1 on --surface, 3.14:1 on
+     --surface-raised, so it clears 3:1 on every surface a control sits on. */
+  --border: #33333A;
+  --border-strong: #6A6A73;
   --text: #F2F1EF;
   --muted: #86858A;
   --accent: #FF4433;
   --accent-dim: #7A2A20;
   --danger: #FF4433;
-  --font-display: "Inter", -apple-system, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+  --font-display: "Geist", -apple-system, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  /* Geist Mono replaces the bare system stack. The mono face is not
+     decorative here — it sets every "S02 | E04" episode number — and the
+     system default resolves to something different on every platform, which
+     on Android is Droid Sans Mono. Shipping the face makes that line look the
+     same everywhere. */
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Code", monospace;
 }
 
 * { box-sizing: border-box; }
@@ -1147,7 +1190,11 @@ details[open] > summary::after { transform: rotate(90deg); }
   overflow: hidden;
   gap: 14px;
 }
-.mtw-card { width: 120px; flex-shrink: 0; }
+/* position: relative anchors the .watched-badge overlay. The poster is the
+   card's first child and spans its full width, so the card's top-right corner
+   is the poster's top-right corner and the badge lands in the same place it
+   does on a Movies-page tile. */
+.mtw-card { width: 120px; flex-shrink: 0; position: relative; }
 .mtw-poster {
   width: 100%;
   aspect-ratio: 2/3;
@@ -1159,17 +1206,15 @@ details[open] > summary::after { transform: rotate(90deg); }
 }
 .mtw-name {
   font-size: 0.82rem;
-  margin: 6px 0 6px;
+  margin: 6px 0 0;
   cursor: pointer;
   /* Exactly one line, long titles get an ellipsis (full title in the
-     hover tooltip): keeps every card the same height so the Mark watched
-     button sits at a fixed position regardless of title length. */
+     hover tooltip): keeps every card the same height regardless of title
+     length, so the rail stays on one baseline. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mtw-card button { width: 100%; font-size: 0.78rem; padding: 6px 0; }
-
 .mtw-view-all-tile {
   width: 100%;
   aspect-ratio: 2/3;
@@ -1194,7 +1239,7 @@ details[open] > summary::after { transform: rotate(90deg); }
 @media (max-width: 640px) {
   .mtw-rail {
     overflow-x: auto;
-    padding-bottom: 8px; /* keep the scrollbar off the buttons */
+    padding-bottom: 8px; /* keep the scrollbar clear of the card titles */
     scrollbar-width: thin;
     overscroll-behavior-x: contain; /* don't trigger browser/WebView swipe-nav at the ends */
   }
@@ -1969,10 +2014,17 @@ html[data-wtpanel] .modal { max-height: 88vh; }
    invisible, centred hit area — the web equivalent of hitSlop — so the
    touch region grows to 44px while the control looks exactly as it did.
    .show-card clips at its own bounds, so the badge's effective area is
-   ~41px there rather than the full 44; still a large gain on 26px. */
-.watched-badge,
-.watch-toggle-circle,
-.close-x {
+   ~41px there rather than the full 44; still a large gain on 26px.
+
+   ONLY .watch-toggle-circle gets position: relative here, and that is
+   load-bearing. .watched-badge and .close-x are already positioned
+   absolute (top/right) by their own rules, and an earlier version of this
+   block listed all three — which silently overrode that, dropped both into
+   normal flow, and moved the Movies watched-badge to the bottom of the tile
+   and the episode panel's close button to the left. An absolutely
+   positioned element is already a containing block for its own ::after, so
+   they never needed it. Do not add them back. */
+.watch-toggle-circle {
   position: relative;
 }
 .watched-badge::after,
@@ -2009,3 +2061,116 @@ h1 { margin: 0; font-size: 1.4rem; }
 /* Settings' collapsible section titles moved h3 -> h2 so the outline
    runs h1 -> h2 -> h3 without skipping. Same size as before. */
 .settings-row-text h2 { font-size: 1.05rem; margin: 0; }
+
+/* ============================================================
+   Tactile feedback.
+
+   The app had 7 transitions in ~1900 lines and nothing responded to a
+   press, which on a touch device reads as an unresponsive app rather
+   than a restrained one: the gap between tapping and the screen
+   changing is unacknowledged.
+
+   Scale is used rather than colour so the feedback works identically
+   on artwork, cards and text buttons, and it is applied on :active
+   only — no hover-dependent affordance, since a phone has no hover.
+   Everything animates transform/opacity exclusively, and the
+   prefers-reduced-motion block already in this file neutralises all of
+   it for users who ask for that.
+   ============================================================ */
+
+button,
+.show-card,
+.movie-card,
+.watch-next-row,
+.up-row,
+.mtw-card .mtw-poster,
+.pill-tab {
+  transition: transform 140ms cubic-bezier(0.2, 0, 0, 1), opacity 140ms ease-out;
+}
+
+/* The press itself is deliberately quick and shallow. A deeper squash
+   reads as a toy; this is just enough to confirm the tap landed. */
+button:active:not(:disabled),
+.pill-tab:active,
+.show-card:active,
+.movie-card:active,
+.watch-next-row:active,
+.up-row:active,
+.mtw-card .mtw-poster:active {
+  transform: scale(0.975);
+}
+
+/* Small circular controls squash proportionally less, or they appear to
+   vanish rather than depress. */
+.watched-badge:active,
+.watch-toggle-circle:active,
+.close-x:active {
+  transform: scale(0.9);
+}
+
+/* Rows are wide, so scaling the whole row is more movement than the
+   interaction deserves; a brief dim reads as a press without the shift. */
+.watch-next-row:active,
+.up-row:active {
+  transform: none;
+  opacity: 0.7;
+}
+
+/* ============================================================
+   Control outlines at 3:1 (WCAG 1.4.11).
+
+   Applied here as an override rather than by editing each rule, so
+   the split between "decorative rule" and "this is a control" stays
+   visible in one place. Only elements a user is meant to recognise
+   and operate are listed; section dividers and card edges keep the
+   subtler --border deliberately.
+   ============================================================ */
+
+button:not(.link-button):not(.skip):not(.back-link):not(.pill-tab.active),
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="file"],
+select,
+.pill-tab,
+.watch-toggle,
+.watched-badge,
+.filter-sheet-trigger {
+  border-color: var(--border-strong);
+}
+
+/* .pill-tab.active and .watch-toggle-circle invert to a solid --text
+   fill; their own background already provides far more than 3:1 against
+   the page, so forcing a lighter outline on top would only add a halo. */
+
+/* Content-type badge on Discover's trending cards.
+
+   "Trending this week" renders a grid of shows immediately followed by a
+   grid of movies under a single heading, so without a per-card marker the
+   two read as one continuous wall of posters.
+
+   It sits on the artwork rather than in .show-card-body deliberately: that
+   caption is opacity:0 until hover on (hover: hover) devices, so a label
+   placed there would say nothing at rest on desktop. Top-LEFT keeps it clear
+   of .watched-badge, which owns the top-right on library cards.
+
+   Styling is borrowed from the badges already in the app — the same
+   translucent-black-over-poster treatment as .watched-badge, with the
+   uppercase micro-label tracking of .show-pill and .premiere-tag. */
+.card-kind {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: var(--text);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.4;
+  pointer-events: none; /* the whole card is the button; never intercept the tap */
+}

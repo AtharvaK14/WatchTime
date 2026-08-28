@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Episode } from "../db";
-import { TMDB_IMAGE_BASE } from "../tmdb";
+import { TMDB_STILL_BASE } from "../tmdb";
 import { getOmdbEpisodeRating, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbEpisodeRating } from "../omdb";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useBackHandler } from "../lib/backHandler";
@@ -81,7 +81,7 @@ export default function EpisodeDetailsPanel({
         {/* 1 + 2: landscape thumbnail with the S/E number overlaid bottom-left */}
         <div className="episode-hero">
           {episode.stillPath ? (
-            <img src={`${TMDB_IMAGE_BASE}${episode.stillPath}`} alt={episode.name} className="episode-hero-img" />
+            <img src={`${TMDB_STILL_BASE}${episode.stillPath}`} alt={episode.name} className="episode-hero-img" />
           ) : (
             <div className="poster-placeholder episode-hero-img" />
           )}

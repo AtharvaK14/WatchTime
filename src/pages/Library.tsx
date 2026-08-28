@@ -116,7 +116,7 @@ export default function Library() {
 
   return (
     <div className="panel">
-      <h1>Shows</h1>
+      <h1 className="sr-only">Shows</h1>
 
       <div className="stats-grid">
         <div className="stat-card">
@@ -136,13 +136,6 @@ export default function Library() {
         <p className="muted small">
           Fetching runtime data for shows added before this feature existed: {stats.backfillProgress.done} /{" "}
           {stats.backfillProgress.total}
-        </p>
-      )}
-      {!stats.loading && stats.distinctEpisodesWatched > 0 && (
-        <p className="muted small">
-          {stats.exactRuntimeCount.toLocaleString()} of {stats.distinctEpisodesWatched.toLocaleString()} watched
-          episodes use TVmaze's real per-episode runtime, the rest fall back to each show's average (open a show's
-          seasons to fetch its exact episode runtimes).
         </p>
       )}
 

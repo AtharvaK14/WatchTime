@@ -284,7 +284,6 @@ export default function ImportWizard() {
 
   return (
     <div className="panel">
-      <h3>Import from TV Time</h3>
       <div className="field-row">
         <select value={source} onChange={(e) => setSource(e.target.value as "json" | "csv")}>
           <option value="json">Third-party JSON export (recommended)</option>

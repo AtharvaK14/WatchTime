@@ -22,6 +22,10 @@ function ShowRow({ items, onOpen }: { items: TvSearchResult[]; onOpen: (id: numb
           ) : (
             <div className="poster-placeholder" />
           )}
+          {/* Sits on the artwork rather than in .show-card-body, because that
+              caption is hidden until hover on pointer:fine devices — a type
+              label there would be invisible at rest on desktop. */}
+          <span className="card-kind">TV</span>
           <div className="show-card-body">
             <p className="show-name">{r.name}</p>
             <p className="muted small">{r.first_air_date?.slice(0, 4) ?? "?"}</p>
@@ -42,6 +46,8 @@ function MovieRow({ items, onOpen }: { items: MovieSearchResult[]; onOpen: (id: 
           ) : (
             <div className="poster-placeholder" />
           )}
+          {/* See ShowRow. */}
+          <span className="card-kind">Film</span>
           <div className="show-card-body">
             <p className="show-name">{r.title}</p>
             <p className="muted small">{r.release_date?.slice(0, 4) ?? "?"}</p>
@@ -171,7 +177,7 @@ export default function AddTitle() {
 
   return (
     <div className="panel">
-      <h1>Discover</h1>
+      <h1 className="sr-only">Discover</h1>
 
       <UniversalSearch
         onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })}
