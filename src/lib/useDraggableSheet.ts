@@ -18,7 +18,12 @@ const SNAP_TRANSITION = "transform 320ms cubic-bezier(0.32, 0.72, 0, 1)";
 // wait this long before actually calling onDismiss, so the panel closes
 // (and unmounts) only once it has visibly finished sliding away, not
 // mid-animation.
-const DISMISS_ANIMATION_MS = 320;
+//
+// Exported because a sheet can also be dismissed WITHOUT a drag — the close
+// button, the backdrop, Escape, Android back — and those paths animate the
+// same slide by overriding the transform while reusing this transition, so
+// they must wait exactly as long before unmounting.
+export const DISMISS_ANIMATION_MS = 320;
 
 // A fast flick snaps to the direction of the flick even if the release
 // position is closer to the OTHER snap point, matching native bottom-sheet
@@ -90,6 +95,12 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
   const [dismissOffset, setDismissOffset] = useState(() => window.innerHeight * SHEET_VISIBLE_FRACTION);
   const [liveTranslateY, setLiveTranslateY] = useState<number | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // The sheet mounts fully off-screen and slides up to its resting point on
+  // the very next frame, so opening a panel is the same motion as closing one
+  // in reverse. Before this it simply materialised at the collapsed position,
+  // which made every panel in the app appear out of nowhere and then animate
+  // beautifully only on the way out.
+  const [entering, setEntering] = useState(true);
   const dragState = useRef<DragState | null>(null);
   const dismissTimeoutRef = useRef<number | null>(null);
   const onDismissRef = useRef(onDismiss);
@@ -113,9 +124,35 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
     };
   }, []);
 
+  // Two frames, not one: the first guarantees the browser has painted the
+  // off-screen position, the second changes it. Flipping in the same frame as
+  // the mount gives the transition no start value and the sheet just appears.
+  //
+  // The timeout is a safety net, not a duplicate. requestAnimationFrame does
+  // not run at all while a document is hidden, and a WebView can be considered
+  // hidden at moments the app does not control. Without the fallback the sheet
+  // would then sit off-screen forever — an invisible panel is a far worse
+  // failure than an entrance that occasionally skips its animation, so
+  // whichever fires first wins.
+  useEffect(() => {
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => setEntering(false));
+    });
+    const fallback = window.setTimeout(() => setEntering(false), 100);
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+      window.clearTimeout(fallback);
+    };
+  }, []);
+
   const onPointerDown = useCallback(
     (e: ReactPointerEvent<HTMLDivElement>) => {
       if (e.button !== 0 && e.pointerType === "mouse") return;
+      // Grabbing the handle mid-entrance hands control straight to the finger
+      // rather than fighting the slide-up for the rest of its duration.
+      setEntering(false);
       const startTranslateY = expanded ? 0 : collapsedOffset;
       dragState.current = {
         startClientY: e.clientY,
@@ -192,7 +229,16 @@ export function useDraggableSheet(onDismiss: () => void): DraggableSheetHandle {
     }
   }, [liveTranslateY, collapsedOffset, dismissOffset]);
 
-  const currentTranslateY = liveTranslateY !== null ? liveTranslateY : expanded ? 0 : collapsedOffset;
+  // The entrance is the outermost case but yields immediately to a live drag,
+  // so a fast grab is never overridden by the opening animation.
+  const currentTranslateY =
+    entering && liveTranslateY === null
+      ? dismissOffset
+      : liveTranslateY !== null
+        ? liveTranslateY
+        : expanded
+          ? 0
+          : collapsedOffset;
 
   return {
     expanded,

@@ -1,19 +1,34 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { db, type Episode, type Movie } from "../db";
 import { getTvShowDetails, getMovieDetails, TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE } from "../tmdb";
 import { getOmdbRatings, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbRatings } from "../omdb";
 import { averageRuntime } from "../lib/runtime";
 import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount } from "../lib/episodeSync";
 import { ensureEpisodesWatched, recordEpisodeRewatch, recordMovieRewatch } from "../lib/watchEvents";
-import { useDraggableSheet } from "../lib/useDraggableSheet";
+import { useDraggableSheet, DISMISS_ANIMATION_MS } from "../lib/useDraggableSheet";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useBackHandler } from "../lib/backHandler";
+import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
+
+/** Matches the reverse of the desktop-modal-in keyframes in index.css. */
+const DESKTOP_MODAL_EXIT_MS = 180;
 
 interface Props {
   kind: "show" | "movie";
   tmdbId: number;
+  /**
+   * Shows only. Opens with this season already expanded (and fetched if it
+   * was never cached), instead of a fully collapsed accordion.
+   *
+   * Set by the widget overlay's "open the full episode list" handoff: the
+   * user tapped an episode's capsule or title, so landing them on a closed
+   * list they have to search through would lose exactly the context they
+   * asked to keep. Undefined everywhere else, which is the previous
+   * behaviour unchanged.
+   */
+  initialSeason?: number;
   onClose: () => void;
 }
 
@@ -49,7 +64,7 @@ function MetaLine({ details }: { details: CoreDetails }) {
   );
 }
 
-export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
+export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: Props) {
   // This component is only ever mounted while its modal is open (callers
   // use `{openDetails !== null && <DetailsPanel .../>}`), so it's safe to
   // call these unconditionally, they mount/unmount together with the panel.
@@ -59,9 +74,19 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   useLockBodyScroll();
   const { sheetStyle, handleProps } = useDraggableSheet(onClose);
   const isMobile = useIsMobile();
+  // Closing without a drag — the X, the backdrop, Escape, Android back — used
+  // to unmount the panel in the same frame, so a sheet that slides away
+  // beautifully when flicked simply blinked out when dismissed any other way.
+  // requestClose plays the matching exit first; the duration differs by form
+  // factor because the two exits are different animations (a sheet slides, a
+  // dialog fades).
+  const { closing, requestClose } = useAnimatedDismiss(
+    onClose,
+    isMobile ? DISMISS_ANIMATION_MS : DESKTOP_MODAL_EXIT_MS
+  );
   // Android back closes this panel instead of the app. A stacked episode
   // panel registers its own handler on top, so back closes that first.
-  useBackHandler(true, onClose);
+  useBackHandler(true, requestClose);
 
   const [details, setDetails] = useState<CoreDetails | null>(null);
   const [ratings, setRatings] = useState<OmdbRatings | null | "loading">("loading");
@@ -88,11 +113,11 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   // just that top layer first, not both at once.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && !openEpisode) onClose();
+      if (e.key === "Escape" && !openEpisode) requestClose();
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, openEpisode]);
+  }, [requestClose, openEpisode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -193,6 +218,28 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
       setLoadingSeason(null);
     }
   }
+
+  /**
+   * Applies `initialSeason` once the season list is known.
+   *
+   * Guarded on the season actually existing for this show, so a stale or
+   * malformed deep link opens a normal collapsed panel rather than an
+   * accordion pointing at a season that is not there. `appliedInitialSeason`
+   * makes it strictly one-shot: after this, expanding and collapsing seasons
+   * is entirely the user's, and a re-render must not re-open what they just
+   * closed.
+   */
+  const appliedInitialSeason = useRef(false);
+  useEffect(() => {
+    if (appliedInitialSeason.current) return;
+    if (initialSeason === undefined || seasonNumbers === null) return;
+    appliedInitialSeason.current = true;
+    if (!seasonNumbers.includes(initialSeason)) return;
+    toggleExpand(initialSeason);
+    // toggleExpand is recreated every render and would re-run this on each
+    // one; the ref above is what actually bounds it to a single application.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSeason, seasonNumbers]);
 
   const [catchUpOffer, setCatchUpOffer] = useState<{ episodesInSeason: Episode[]; earlierSeasonNumbers: number[] } | null>(
     null
@@ -630,17 +677,20 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
 
   if (isMobile) {
     return (
-      <div className="modal-backdrop" onClick={onClose}>
+      <div className={`modal-backdrop ${closing ? "is-leaving" : ""}`} onClick={requestClose}>
         <div
           className={`details-sheet ${showsSeasonBrowser ? "details-modal-wide" : ""}`}
-          style={sheetStyle}
+          // Overriding only the transform reuses the drag hook's own snap
+          // transition, so a tapped dismiss slides away on exactly the same
+          // curve and duration as a flicked one.
+          style={closing ? { ...sheetStyle, transform: "translateY(100%)" } : sheetStyle}
           onClick={(e) => e.stopPropagation()}
         >
           <div className="sheet-drag-handle" {...handleProps}>
             <div className="sheet-drag-handle-bar" />
           </div>
 
-          <button className="close-x hero-close-x" onClick={onClose} aria-label="Close">
+          <button className="close-x hero-close-x" onClick={requestClose} aria-label="Close">
             &times;
           </button>
 
@@ -691,9 +741,11 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className={`modal-backdrop ${closing ? "is-leaving" : ""}`} onClick={requestClose}>
       <div
-        className={`modal details-modal-desktop ${showsSeasonBrowser ? "details-modal-desktop-wide" : ""}`}
+        className={`modal details-modal-desktop ${showsSeasonBrowser ? "details-modal-desktop-wide" : ""} ${
+          closing ? "is-leaving" : ""
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {error && <p className="status-error">{error}</p>}
@@ -717,7 +769,7 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
                 )
               )}
               <div className="details-hero-scrim" />
-              <button className="desktop-hero-close-x" onClick={onClose} aria-label="Close">
+              <button className="desktop-hero-close-x" onClick={requestClose} aria-label="Close">
                 &times;
               </button>
             </div>

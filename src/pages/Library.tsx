@@ -5,7 +5,7 @@ import { TMDB_IMAGE_BASE, getTvGenres, type Genre } from "../tmdb";
 import { computeWatchStatus, type ShowWatchStatus } from "../lib/showWatchStatus";
 import { useShowStats, toDurationParts } from "../lib/stats";
 import DetailsPanel from "../components/DetailsPanel";
-import FilterSheet from "../components/FilterSheet";
+import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -38,14 +38,22 @@ export default function Library() {
   }, []);
   const [openDetails, setOpenDetails] = useState<number | null>(null);
   const [query, setQuery] = useState("");
-  // Recently added first: a tracker is used to keep up with what you just
-  // started following, and alphabetical buries that under whatever begins
-  // with "A". Alphabetical is still one tap away in the sort control.
-  const [sortKey, setSortKey] = useState<SortKey>("recentlyAdded");
-  const [filterKey, setFilterKey] = useState<FilterKey>("all");
+  // Defaults: Currently Watching, most recently watched first. A tracker is
+  // opened to answer "what am I in the middle of", and that question is
+  // answered by the shows with unwatched episodes and recent activity — not
+  // by whatever happens to begin with "A", nor by everything ever added.
+  // Both are one tap from being widened again in the Status group.
+  const [sortKey, setSortKey] = useState<SortKey>("recentlyWatched");
+  const [filterKey, setFilterKey] = useState<FilterKey>("currentlyWatching");
   const [genreFilter, setGenreFilter] = useState<number | null>(null);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [statusByShow, setStatusByShow] = useState<Map<number, ShowWatchStatus>>(new Map());
+  // Currently Watching is the default status now, and it is the one filter
+  // that cannot answer instantly: computeWatchStatus walks every show's
+  // cached episodes. Without this flag the page would say "no shows match"
+  // during that pass, which is a claim about the library rather than about
+  // the work still in progress.
+  const [statusesReady, setStatusesReady] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
 
   const stats = useShowStats();
@@ -64,12 +72,16 @@ export default function Library() {
     if (!shows) return;
     const showList = shows;
     let cancelled = false;
+    setStatusesReady(false);
     async function compute() {
       const map = new Map<number, ShowWatchStatus>();
       for (const show of showList) {
         map.set(show.tmdbId, await computeWatchStatus(show.tmdbId));
       }
-      if (!cancelled) setStatusByShow(map);
+      if (!cancelled) {
+        setStatusByShow(map);
+        setStatusesReady(true);
+      }
     }
     compute();
     return () => {
@@ -150,39 +162,58 @@ export default function Library() {
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search your shows..."
             />
+            {/* Three categories, in the order the questions are actually
+                asked: which shows, narrowed how, in what order. The controls
+                inside each group are exactly the ones that were here before —
+                FilterGroup only labels and separates them. */}
             <FilterSheet resultCount={visible.length} open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
-              <SegmentedControl options={STATUS_OPTIONS} value={filterKey} onChange={setFilterKey} />
-              {isMobile ? (
-                <GenreChips genres={genres} value={genreFilter} onChange={setGenreFilter} />
-              ) : (
-                <select
-                  className="compact-select"
-                  value={genreFilter ?? ""}
-                  onChange={(e) => setGenreFilter(e.target.value ? Number(e.target.value) : null)}
-                >
-                  <option value="">All genres</option>
-                  {genres.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {isMobile ? (
-                <SegmentedControl options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
-              ) : (
-                <select className="compact-select" value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
-                  {SORT_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <FilterGroup title="Watch status">
+                <SegmentedControl options={STATUS_OPTIONS} value={filterKey} onChange={setFilterKey} />
+              </FilterGroup>
+              <FilterGroup title="Genre">
+                {isMobile ? (
+                  <GenreChips genres={genres} value={genreFilter} onChange={setGenreFilter} />
+                ) : (
+                  <select
+                    className="compact-select"
+                    value={genreFilter ?? ""}
+                    onChange={(e) => setGenreFilter(e.target.value ? Number(e.target.value) : null)}
+                  >
+                    <option value="">All genres</option>
+                    {genres.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </FilterGroup>
+              <FilterGroup title="Sort by">
+                {isMobile ? (
+                  <SegmentedControl options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
+                ) : (
+                  <select
+                    className="compact-select"
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as SortKey)}
+                  >
+                    {SORT_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </FilterGroup>
             </FilterSheet>
           </div>
 
-          {visible.length === 0 && <p className="muted">No shows match that search/filter.</p>}
+          {visible.length === 0 &&
+            (filterKey === "currentlyWatching" && !statusesReady ? (
+              <p className="muted">Working out which shows you're currently watching...</p>
+            ) : (
+              <p className="muted">No shows match that search/filter.</p>
+            ))}
 
           <div className="show-grid">
             {visible.map((show) => (

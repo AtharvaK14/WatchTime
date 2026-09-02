@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useLiveQuery } from "dexie-react-hooks";
+import { db } from "../db";
 import {
   getPopularTvShows,
   getPopularMovies,
@@ -12,7 +14,61 @@ import {
 import DetailsPanel from "../components/DetailsPanel";
 import UniversalSearch, { type SearchResults } from "../components/UniversalSearch";
 
-function ShowRow({ items, onOpen }: { items: TvSearchResult[]; onOpen: (id: number) => void }) {
+/**
+ * Which TMDB ids are already in the library, read live.
+ *
+ * Live rather than a one-off read on purpose: adding or removing a title
+ * happens in DetailsPanel, which this page opens on top of itself, so the
+ * badge updates the moment that panel writes — without the user closing it,
+ * and without this page refetching anything from TMDB.
+ *
+ * primaryKeys() rather than toArray(): the only thing needed here is
+ * membership, and a large library should not be materialised into objects to
+ * answer that.
+ */
+function useLibraryIds() {
+  const showIds = useLiveQuery(() => db.shows.toCollection().primaryKeys(), []);
+  const movieIds = useLiveQuery(() => db.movies.toCollection().primaryKeys(), []);
+  return useMemo(
+    () => ({
+      shows: new Set<number>((showIds as number[] | undefined) ?? []),
+      movies: new Set<number>((movieIds as number[] | undefined) ?? []),
+    }),
+    [showIds, movieIds]
+  );
+}
+
+/**
+ * "Already in your library", shown directly on the artwork so the user no
+ * longer has to open a title to find out.
+ *
+ * A tick in a filled circle rather than a worded pill: at three cards per row
+ * on a phone an "IN LIBRARY" label is either unreadable or covers the poster,
+ * and the app already uses this exact vocabulary for the same fact elsewhere
+ * (.watched-badge on Movies, .rail-owned on For You). Top-RIGHT, leaving the
+ * top-left to .card-kind so the two can never collide. The word itself still
+ * reaches screen readers from the .sr-only text each caller renders.
+ */
+function InLibraryBadge() {
+  return (
+    <span className="card-in-library" aria-hidden="true">
+      &#10003;
+    </span>
+  );
+}
+
+function ShowRow({
+  items,
+  onOpen,
+  inLibrary,
+  showTypeTag = false,
+}: {
+  items: TvSearchResult[];
+  onOpen: (id: number) => void;
+  inLibrary: Set<number>;
+  /** Only true in sections whose own heading does not already say what these are. */
+  showTypeTag?: boolean;
+}) {
   return (
     <div className="show-grid">
       {items.map((r) => (
@@ -25,18 +81,30 @@ function ShowRow({ items, onOpen }: { items: TvSearchResult[]; onOpen: (id: numb
           {/* Sits on the artwork rather than in .show-card-body, because that
               caption is hidden until hover on pointer:fine devices — a type
               label there would be invisible at rest on desktop. */}
-          <span className="card-kind">TV</span>
+          {showTypeTag && <span className="card-kind">TV</span>}
+          {inLibrary.has(r.id) && <InLibraryBadge />}
           <div className="show-card-body">
             <p className="show-name">{r.name}</p>
             <p className="muted small">{r.first_air_date?.slice(0, 4) ?? "?"}</p>
           </div>
+          {inLibrary.has(r.id) && <span className="sr-only">In your library</span>}
         </button>
       ))}
     </div>
   );
 }
 
-function MovieRow({ items, onOpen }: { items: MovieSearchResult[]; onOpen: (id: number) => void }) {
+function MovieRow({
+  items,
+  onOpen,
+  inLibrary,
+  showTypeTag = false,
+}: {
+  items: MovieSearchResult[];
+  onOpen: (id: number) => void;
+  inLibrary: Set<number>;
+  showTypeTag?: boolean;
+}) {
   return (
     <div className="show-grid">
       {items.map((r) => (
@@ -47,11 +115,13 @@ function MovieRow({ items, onOpen }: { items: MovieSearchResult[]; onOpen: (id: 
             <div className="poster-placeholder" />
           )}
           {/* See ShowRow. */}
-          <span className="card-kind">Film</span>
+          {showTypeTag && <span className="card-kind">Film</span>}
+          {inLibrary.has(r.id) && <InLibraryBadge />}
           <div className="show-card-body">
             <p className="show-name">{r.title}</p>
             <p className="muted small">{r.release_date?.slice(0, 4) ?? "?"}</p>
           </div>
+          {inLibrary.has(r.id) && <span className="sr-only">In your library</span>}
         </button>
       ))}
     </div>
@@ -62,11 +132,15 @@ function MovieRow({ items, onOpen }: { items: MovieSearchResult[]; onOpen: (id: 
 function Results({
   results,
   onOpen,
+  library,
 }: {
   results: SearchResults;
   onOpen: (kind: "show" | "movie", tmdbId: number) => void;
+  library: { shows: Set<number>; movies: Set<number> };
 }) {
   const nothing = results.titles.length === 0 && results.mood.length === 0;
+  const owned = (kind: "show" | "movie", tmdbId: number) =>
+    (kind === "show" ? library.shows : library.movies).has(tmdbId);
   return (
     <>
       {results.titles.length > 0 && (
@@ -84,13 +158,18 @@ function Results({
                 ) : (
                   <div className="poster-placeholder" />
                 )}
+                {owned(t.kind, t.tmdbId) && <InLibraryBadge />}
                 <div className="show-card-body">
                   <p className="show-name">{t.name}</p>
+                  {/* Search mixes shows and films under one heading, so the
+                      type stays in this caption for the same reason it stays
+                      on Trending. */}
                   <p className="muted small">
                     {t.kind === "show" ? "TV" : "Film"}
                     {t.year ? ` · ${t.year}` : ""}
                   </p>
                 </div>
+                {owned(t.kind, t.tmdbId) && <span className="sr-only">In your library</span>}
               </button>
             ))}
           </div>
@@ -117,6 +196,10 @@ function Results({
                   ) : (
                     <div className="poster-placeholder" />
                   )}
+                  {/* m.inLibrary is the search index's own answer; the live
+                      sets are authoritative once a title is added or removed
+                      through the panel this page opens on top of itself. */}
+                  {(m.inLibrary || owned(m.kind, m.tmdbId)) && <InLibraryBadge />}
                   <div className="show-card-body">
                     <p className="show-name">{m.name}</p>
                     <p className="muted small">
@@ -146,6 +229,8 @@ export default function AddTitle() {
   const [upcomingMovies, setUpcomingMovies] = useState<MovieSearchResult[] | null>(null);
   const [atHomeMovies, setAtHomeMovies] = useState<MovieSearchResult[] | null>(null);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
+
+  const library = useLibraryIds();
 
   useEffect(() => {
     if (!hasApiKey()) return;
@@ -188,19 +273,35 @@ export default function AddTitle() {
       {!hasApiKey() && <p className="status-error">Add your TMDB API key on the Settings page to search or browse.</p>}
 
       {searching ? (
-        <Results results={results} onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })} />
+        <Results
+          results={results}
+          library={library}
+          onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })}
+        />
       ) : (
         hasApiKey() && (
           <div className="discover-sections">
             {discoverError && <p className="status-error">Couldn't load suggestions: {discoverError}</p>}
 
             {/* Personalised recommendations now live on their own For You
-                tab; this page is search plus the same-for-everyone rails. */}
+                tab; this page is search plus the same-for-everyone rails.
+
+                Trending is the ONLY rail that carries the TV/Film tag. It
+                renders a grid of shows immediately followed by a grid of
+                movies under a single heading, so without a per-card marker
+                the two read as one continuous wall of posters. Every rail
+                below it is single-type and its heading already says so; a tag
+                repeating that on every card is clutter, not context. */}
             <h2 className="section-title">Trending this week</h2>
             {!popularShows ? (
               <p className="muted small">Loading...</p>
             ) : (
-              <ShowRow items={popularShows.slice(0, 10)} onOpen={(id) => setOpenDetails({ kind: "show", tmdbId: id })} />
+              <ShowRow
+                items={popularShows.slice(0, 10)}
+                inLibrary={library.shows}
+                showTypeTag
+                onOpen={(id) => setOpenDetails({ kind: "show", tmdbId: id })}
+              />
             )}
 
             {!popularMovies ? (
@@ -208,6 +309,8 @@ export default function AddTitle() {
             ) : (
               <MovieRow
                 items={popularMovies.slice(0, 10)}
+                inLibrary={library.movies}
+                showTypeTag
                 onOpen={(id) => setOpenDetails({ kind: "movie", tmdbId: id })}
               />
             )}
@@ -218,15 +321,12 @@ export default function AddTitle() {
             ) : (
               <MovieRow
                 items={upcomingMovies.slice(0, 10)}
+                inLibrary={library.movies}
                 onOpen={(id) => setOpenDetails({ kind: "movie", tmdbId: id })}
               />
             )}
 
             <h2 className="section-title">Recently available at home</h2>
-            <p className="muted small">
-              TMDB's closest match to Rotten Tomatoes' "movies at home" list: recent US digital releases. Not the
-              same curation, an approximation built from TMDB's own release-type data.
-            </p>
             {!atHomeMovies ? (
               <p className="muted small">Loading...</p>
             ) : atHomeMovies.length === 0 ? (
@@ -234,6 +334,7 @@ export default function AddTitle() {
             ) : (
               <MovieRow
                 items={atHomeMovies.slice(0, 10)}
+                inLibrary={library.movies}
                 onOpen={(id) => setOpenDetails({ kind: "movie", tmdbId: id })}
               />
             )}

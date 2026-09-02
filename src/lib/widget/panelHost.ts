@@ -15,6 +15,15 @@ interface PanelHost {
   close(): void;
   /** Hands native a fresh widget snapshot and refreshes every placed widget. */
   updateSnapshot(snapshot: string): void;
+  /**
+   * Closes the overlay and launches the MAIN app on the given deep-link
+   * target. The only thing in the overlay that opens the app.
+   *
+   * Optional at the type level because the page and the activity ship
+   * separately: a web build newer than the installed APK would otherwise call
+   * a method that is not there and throw inside the panel.
+   */
+  openInApp?(target: string): void;
 }
 
 declare global {
@@ -34,4 +43,39 @@ export function isPanelHosted(): boolean {
 
 export function closePanel(): void {
   panelHost()?.close();
+}
+
+/**
+ * Whether this overlay can hand off to the main app.
+ *
+ * False on an older APK whose PanelHost has no openInApp, and false in every
+ * non-panel context. Callers use it to decide whether to OFFER the handoff at
+ * all, so a control that could not work is never shown.
+ */
+export function canOpenInApp(): boolean {
+  return typeof panelHost()?.openInApp === "function";
+}
+
+/**
+ * Opens the show's full episode list in the main app and dismisses the
+ * overlay.
+ *
+ * This is the ONLY path from the widget's episode panel into the app. Every
+ * other interaction in that panel - marking watched, rewatching, closing -
+ * deliberately stays inside the overlay, which is the whole point of the
+ * overlay existing. It is never automatic: the user has to tap the
+ * season/episode capsule or the episode title to get here.
+ *
+ * `seasonNumber` rides along so the app opens with that season already
+ * expanded, rather than on a collapsed accordion the user has to search for
+ * the episode they were just looking at.
+ */
+export function openShowEpisodeListInApp(showId: number, seasonNumber: number): void {
+  const host = panelHost();
+  if (!host?.openInApp) return;
+  try {
+    host.openInApp(JSON.stringify({ kind: "show", showId, seasonNumber }));
+  } catch {
+    // The overlay stays open and usable; only the handoff is lost.
+  }
 }

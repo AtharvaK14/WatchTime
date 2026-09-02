@@ -1,6 +1,7 @@
 package com.indie.watchtime.widget;
 
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.webkit.JavascriptInterface;
@@ -128,10 +129,10 @@ public class EpisodePanelActivity extends AppCompatActivity {
     }
 
     /**
-     * The page's channel back to native. Two methods, matching
+     * The page's channel back to native. Three methods, matching
      * src/lib/widget/panelHost.ts.
      *
-     * Both are called on a WebView JavaScript thread, so anything touching the
+     * All are called on a WebView JavaScript thread, so anything touching the
      * activity or the widget manager is posted to the main thread.
      */
     private class PanelHost {
@@ -160,6 +161,37 @@ public class EpisodePanelActivity extends AppCompatActivity {
             runOnUiThread(() -> {
                 WidgetStore.writeSnapshot(getApplicationContext(), snapshot);
                 BaseWidgetProvider.refreshAll(getApplicationContext());
+            });
+        }
+
+        /**
+         * Hands off to the main app on an explicit user action - tapping the
+         * season/episode capsule or the episode title to see the show's full
+         * episode list.
+         *
+         * This is the ONLY route out of the overlay and into the app, and it
+         * exists precisely because the overlay must not do this on its own.
+         * A widget row tap, and marking an episode watched, both stay here.
+         *
+         * The target goes through the same pending-deep-link slot a widget
+         * header tap uses, rather than a new intent extra: MainActivity is
+         * singleTask, so a launch may either cold-start the app or resume an
+         * existing task, and the stored-target path is the one that already
+         * handles both (the web layer drains it at mount AND on resume).
+         */
+        @JavascriptInterface
+        public void openInApp(String target) {
+            if (target == null || target.isEmpty()) return;
+            runOnUiThread(() -> {
+                android.content.Context context = getApplicationContext();
+                WidgetStore.setPendingDeepLink(context, target);
+                Intent openApp = new Intent(context, com.indie.watchtime.MainActivity.class);
+                openApp.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                context.startActivity(openApp);
+                // The overlay has served its purpose; leaving it behind the app
+                // would put a stale panel on the back stack.
+                finish();
+                overridePendingTransition(0, android.R.anim.fade_out);
             });
         }
     }

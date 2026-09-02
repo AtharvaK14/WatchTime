@@ -279,7 +279,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .episode-list li { padding: 6px 8px; border-radius: 6px; }
 
 .episode-list label { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-.ep-number { font-family: var(--font-mono); color: var(--muted); font-size: 0.85rem; width: 40px; flex-shrink: 0; }
+/* No fixed width. This carried `width: 40px` from an older markup where the
+   label was just "E4"; the season/episode capsule now reads "S2 | E1", which
+   does not fit 40px and wrapped onto a second line inside the episode row.
+   nowrap makes that impossible to regress into again at any font size. */
+.ep-number { font-family: var(--font-mono); color: var(--muted); font-size: 0.85rem; flex-shrink: 0; white-space: nowrap; }
 .ep-name { flex: 1; }
 
 hr { border: none; border-top: 1px solid var(--border); }
@@ -380,13 +384,39 @@ hr { border: none; border-top: 1px solid var(--border); }
   background: var(--surface-raised);
 }
 .episode-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
-.episode-row-body .ep-number { font-family: var(--font-mono); color: var(--muted); font-size: 0.78rem; }
-.episode-row-body .ep-name { font-size: 0.9rem; }
+/* align-self: start rather than stretch, so the capsule is exactly as wide as
+   its own text instead of spanning the body column. */
+.episode-row-body .ep-number {
+  align-self: flex-start;
+  font-family: var(--font-mono); color: var(--muted); font-size: 0.78rem;
+  line-height: 1.35;
+}
+/* Two lines maximum, then ellipsis. A long episode title used to grow the row
+   taller than the thumbnail and break the alignment of every row around it. */
+.episode-row-body .ep-name {
+  font-size: 0.9rem;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 .watch-toggle {
   width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; padding: 0;
   background: var(--surface-raised); border: 1px solid var(--border); color: var(--muted);
   display: flex; align-items: center; justify-content: center; font-size: 0.9rem;
+  /* Every one of these is load-bearing against the "stretched into an oval"
+     bug: the (pointer: coarse) block near the end of this file puts
+     min-height: 44px on buttons, line-height: normal on a 30px box pushes it
+     taller than 30px on its own, and align-self would otherwise inherit the
+     row's stretch on any future change to .episode-row's align-items. */
+  min-height: 0;
+  line-height: 1;
+  align-self: center;
+  /* Anchors the invisible 44px hit area added further down. */
+  position: relative;
 }
 .watch-toggle.on { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
 
@@ -1038,6 +1068,45 @@ details[open] > summary::after { transform: rotate(90deg); }
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* ---- Filter categories (components/FilterSheet.tsx: FilterGroup) ---------
+   Outside the mobile sheet these wrappers are `display: contents`, so the
+   controls remain direct flex children of .filters-row and the desktop row
+   is laid out exactly as it was before grouping existed. The heading is
+   hidden there rather than removed: the group structure is the same in both
+   render paths, only its presentation differs. */
+.filter-group,
+.filter-group-body { display: contents; }
+.filter-group-title { display: none; }
+
+@media (max-width: 640px) {
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .filter-group-body {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  /* A rule between categories, never above the first one — the sheet's drag
+     handle already separates that from the top of the sheet. */
+  .filter-group + .filter-group {
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+    margin-top: 4px;
+  }
+  .filter-group-title {
+    display: block;
+    margin: 0;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
 }
 
 .filter-sheet-body select {
@@ -1998,7 +2067,7 @@ html[data-wtpanel] .modal { max-height: 88vh; }
    the two. Inline text-style buttons are excluded — a 44px min-height
    on those would inject stray vertical space mid-sentence. */
 @media (pointer: coarse) {
-  button:not(.watched-badge):not(.watch-toggle-circle):not(.close-x):not(.link-button):not(.skip):not(.back-link),
+  button:not(.watched-badge):not(.watch-toggle):not(.watch-toggle-circle):not(.close-x):not(.episode-hero-badge):not(.link-button):not(.skip):not(.back-link),
   select,
   summary,
   input[type="text"],
@@ -2010,7 +2079,10 @@ html[data-wtpanel] .modal { max-height: 88vh; }
 }
 
 /* The small circular controls are exempt above because forcing a
-   min-height would stretch them into ovals. They instead get an
+   min-height would stretch them into ovals — which is exactly what had
+   happened to .watch-toggle, the episode row's tick: 30px wide and 44px tall.
+   It is in the exclusion list now and takes the hit area below instead. They
+   instead get an
    invisible, centred hit area — the web equivalent of hitSlop — so the
    touch region grows to 44px while the control looks exactly as it did.
    .show-card clips at its own bounds, so the badge's effective area is
@@ -2028,6 +2100,7 @@ html[data-wtpanel] .modal { max-height: 88vh; }
   position: relative;
 }
 .watched-badge::after,
+.watch-toggle::after,
 .watch-toggle-circle::after,
 .close-x::after {
   content: "";
@@ -2103,6 +2176,7 @@ button:active:not(:disabled),
 /* Small circular controls squash proportionally less, or they appear to
    vanish rather than depress. */
 .watched-badge:active,
+.watch-toggle:active,
 .watch-toggle-circle:active,
 .close-x:active {
   transform: scale(0.9);
@@ -2173,4 +2247,325 @@ select,
   text-transform: uppercase;
   line-height: 1.4;
   pointer-events: none; /* the whole card is the button; never intercept the tap */
+}
+
+/* "Already in your library" on a Discover card.
+
+   Top-RIGHT so it can never collide with .card-kind, which owns the top-left
+   on Trending. Deliberately the same filled-tick vocabulary as .watched-badge
+   on the Movies grid and .rail-owned on For You, rather than a fourth way of
+   saying the same thing — and a mark instead of a word because at three
+   cards per row on a phone an "IN LIBRARY" label either covers the poster or
+   is too small to read. The word still reaches screen readers as .sr-only
+   text inside the card. */
+.card-in-library {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  line-height: 1;
+  /* Reads on a pale poster as well as a dark one, matching .rail-owned. */
+  box-shadow: 0 0 0 2px rgba(10, 10, 11, 0.8);
+  pointer-events: none; /* the whole card is the button, same as .card-kind */
+}
+
+/* ============================================================
+   MOTION PASS
+
+   The app had press feedback (the block further up) but nothing that
+   moved between states: tabs cut, panels appeared and were deleted,
+   filters flipped. Everything below is entrance/exit motion for those
+   transitions.
+
+   Three rules held throughout:
+     - transform and opacity only, so nothing here touches layout or
+       triggers a reflow mid-animation;
+     - 160-320ms, fast enough that no interaction waits on an animation
+       that the user has already moved past;
+     - the same curve family the sheet drag already uses
+       (cubic-bezier(0.32, 0.72, 0, 1) for sheets, (0.2, 0, 0, 1) for
+       everything else), so the new motion reads as the existing app
+       rather than a second design.
+
+   The prefers-reduced-motion block earlier in this file collapses every
+   duration here to ~0. The JavaScript that waits for an exit before
+   unmounting checks the same preference (see lib/useAnimatedDismiss.ts)
+   and skips the wait, so reduced motion means instant, not delayed.
+   ============================================================ */
+
+/* ---- Overlay scrim -------------------------------------------------- */
+
+.modal-backdrop {
+  animation: backdrop-in 160ms ease-out;
+}
+@keyframes backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+/* Applied by the panels while their exit plays; the element is removed for
+   real when the timer in useAnimatedDismiss fires. pointer-events: none so a
+   second tap during those few frames cannot land on a leaving panel. */
+.modal-backdrop.is-leaving {
+  animation: backdrop-out 180ms ease-in forwards;
+  pointer-events: none;
+}
+@keyframes backdrop-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* ---- Centred dialogs ------------------------------------------------ */
+
+/* The genre popover and the import disambiguation modal, which had no
+   entrance at all. .details-modal-desktop is excluded because it already
+   has its own (desktop-modal-in, further up) and this rule is later in the
+   file, so without the :not() it would silently replace it. */
+.modal:not(.details-modal-desktop) {
+  animation: modal-in 200ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+.details-modal-desktop.is-leaving {
+  animation: desktop-modal-out 180ms ease-in forwards;
+  pointer-events: none;
+}
+@keyframes desktop-modal-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(0.97) translateY(6px); }
+}
+
+/* ---- Episode panel -------------------------------------------------- */
+/* Three exits, because they mean three different things: dismissed,
+   watched-and-moving-on, and arriving. Durations are mirrored by the
+   constants in EpisodeDetailsPanel.tsx and EpisodePanelApp.tsx, which time
+   the unmount and the hand-off against them. */
+
+.episode-detail-modal.is-leaving {
+  animation: episode-panel-out 200ms ease-in forwards;
+  pointer-events: none;
+}
+@keyframes episode-panel-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(8px) scale(0.97); }
+}
+
+/* Marked watched: the card lifts UP and out, the direction a finished item
+   leaves a list, rather than dropping like a dismissal. */
+.episode-detail-modal.is-leave-watched {
+  animation: episode-panel-watched-out 420ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  pointer-events: none;
+}
+@keyframes episode-panel-watched-out {
+  0% { opacity: 1; transform: none; }
+  35% { opacity: 1; transform: scale(0.985); }
+  100% { opacity: 0; transform: translateY(-28px) scale(0.94); }
+}
+
+/* The next episode arriving from below, completing the "one leaves, one
+   takes its place" reading. */
+.episode-detail-modal.is-enter {
+  animation: episode-panel-in 260ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes episode-panel-in {
+  from { opacity: 0; transform: translateY(24px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The confirmation itself. Without this the panel simply leaves and the user
+   has to infer from the widget behind it that the watch was recorded. */
+/* Sits inside .modal-backdrop, alongside the card rather than within it — the
+   card is a scroll container, and an absolutely positioned overlay inside one
+   is anchored to the content, not to the visible box. */
+.episode-watched-flash {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 10, 11, 0.35);
+  pointer-events: none;
+  animation: watched-flash-in 200ms ease-out both;
+}
+.episode-watched-flash-mark {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.9rem;
+  font-weight: 800;
+  line-height: 1;
+  animation: watched-mark-pop 320ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+@keyframes watched-flash-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes watched-mark-pop {
+  0% { opacity: 0; transform: scale(0.4); }
+  60% { opacity: 1; transform: scale(1.08); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+/* ---- "Open the full episode list" (widget overlay only) -------------- */
+/* Both routes into the app share one class so they cannot drift apart in
+   look or behaviour. Styled as the elements they replace, plus the "text ›"
+   affordance .show-pill already uses on Home to mean "this navigates". */
+.episode-open-list {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 7px;
+}
+.episode-open-list:hover:not(:disabled) { border-color: transparent; }
+
+/* Keeps every pixel of the badge's own chrome; only the element type changed. */
+.episode-hero-badge.episode-open-list {
+  background: rgba(0, 0, 0, 0.72);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.9rem;
+  letter-spacing: 0.02em;
+  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 0;
+}
+.episode-hero-badge.episode-open-list:hover { background: rgba(0, 0, 0, 0.85); }
+
+.episode-title-link {
+  display: block;
+  width: 100%;
+  color: var(--text);
+  padding: 2px 0;
+}
+.episode-title-link:hover { color: var(--accent); }
+
+/* ---- Tab navigation -------------------------------------------------- */
+/* Keyed on the active tab in App.tsx, so this restarts on every switch.
+
+   The transform is bounded to the animation's own duration (no fill-mode),
+   which matters: a transformed ancestor becomes the containing block for
+   position:fixed descendants, and every panel in this app is fixed. Nothing
+   can be open during a tab switch, and the transform is gone by the time
+   anything could be. Do not add `forwards` here. */
+.tab-view {
+  min-width: 0; /* same overflow containment as .panel, see the block above */
+  animation: tab-view-in 240ms cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes tab-view-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---- Filter sheet ---------------------------------------------------- */
+
+.filter-sheet {
+  animation: filter-sheet-in 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes filter-sheet-in {
+  from { transform: translateY(100%); }
+  to { transform: none; }
+}
+.filter-sheet.is-leaving {
+  animation: filter-sheet-out 220ms cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  pointer-events: none;
+}
+@keyframes filter-sheet-out {
+  from { transform: none; }
+  to { transform: translateY(100%); }
+}
+
+/* ---- Filter selection ------------------------------------------------ */
+/* Picking a filter used to be an instant repaint. These are colour
+   transitions rather than a pop, deliberately: a pop keyframe would also
+   fire for every already-selected chip the moment the sheet opens, which
+   turns opening a menu into a burst of movement. */
+.segmented button,
+.genre-chips .opt,
+.pill-tab,
+.filter-sheet-trigger {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 140ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ---- Watched / unwatched -------------------------------------------- */
+/* Same reasoning as above: the tick fills and the row tints over ~200ms
+   instead of snapping, and neither fires on mount, so expanding a season of
+   already-watched episodes stays still. The press itself is already
+   acknowledged by the :active scale in the tactile-feedback block. */
+.watch-toggle,
+.watched-badge,
+.watch-toggle-circle {
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    color 200ms ease,
+    transform 140ms cubic-bezier(0.2, 0, 0, 1);
+}
+.episode-row {
+  transition: background-color 240ms ease;
+}
+.season-progress span,
+.poster-progress span {
+  transition: width 320ms cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ---- Lists gaining and losing items ---------------------------------- */
+/* Scoped to the two lists whose items genuinely arrive one at a time — a
+   season being expanded, and the Up Next rows. Deliberately NOT applied to
+   .show-grid: a library of a few hundred posters would animate every tile on
+   every visit to the tab, which is a lot of simultaneous work for no
+   information. Those grids arrive with the .tab-view transition instead. */
+.episode-list > .episode-row,
+.watch-next-list > .watch-next-row {
+  animation: list-item-in 220ms ease-out both;
+}
+@keyframes list-item-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ---- Touch target for the capsule ------------------------------------ */
+/* .episode-hero-badge is excluded from the (pointer: coarse) min-height rule
+   above — 44px would turn a small overlaid capsule into a slab across the
+   still — so it takes the same invisible hit area the other small controls
+   use. It is already position: absolute, so it is already a containing block
+   for its own ::after; do NOT add position: relative (see the warning on the
+   .watch-toggle-circle block above). */
+.episode-hero-badge.episode-open-list::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  min-width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
 }

@@ -10,7 +10,11 @@
 
 export type DeepLinkTarget =
   | { kind: "episode"; showId: number; episodeKey: string }
-  | { kind: "show"; tmdbId: number }
+  // seasonNumber is optional and only set by the widget overlay's "open the
+  // full episode list" handoff, so the show panel opens with that season
+  // already expanded instead of a collapsed accordion the user has to hunt
+  // through for the episode they were just looking at.
+  | { kind: "show"; tmdbId: number; seasonNumber?: number }
   | { kind: "movie"; tmdbId: number };
 
 type Listener = (target: DeepLinkTarget) => void;
@@ -48,7 +52,14 @@ export function parseDeepLinkTarget(raw: unknown): DeepLinkTarget | null {
   if (data.kind === "episode" && Number.isFinite(showId) && typeof data.episodeKey === "string") {
     return { kind: "episode", showId, episodeKey: data.episodeKey };
   }
-  if (data.kind === "show" && Number.isFinite(showId)) return { kind: "show", tmdbId: showId };
+  if (data.kind === "show" && Number.isFinite(showId)) {
+    const seasonNumber = Number(data.seasonNumber);
+    return {
+      kind: "show",
+      tmdbId: showId,
+      ...(Number.isFinite(seasonNumber) ? { seasonNumber } : {}),
+    };
+  }
   if (data.kind === "movie" && Number.isFinite(tmdbId)) return { kind: "movie", tmdbId };
   return null;
 }
