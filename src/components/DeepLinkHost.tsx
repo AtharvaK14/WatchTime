@@ -46,7 +46,17 @@ export default function DeepLinkHost() {
   if (!target) return null;
 
   if (target.kind === "show") {
-    return <DetailsPanel kind="show" tmdbId={target.tmdbId} onClose={() => setTarget(null)} />;
+    // seasonNumber is present only on a batch-release notification, which
+    // opens the show ON the season that just landed. Every other show link
+    // leaves it undefined and opens the panel collapsed.
+    return (
+      <DetailsPanel
+        kind="show"
+        tmdbId={target.tmdbId}
+        initialSeason={target.seasonNumber}
+        onClose={() => setTarget(null)}
+      />
+    );
   }
 
   if (target.kind === "movie") {

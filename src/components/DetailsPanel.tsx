@@ -1,19 +1,33 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { db, type Episode, type Movie } from "../db";
 import { getTvShowDetails, getMovieDetails, TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE } from "../tmdb";
 import { getOmdbRatings, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbRatings } from "../omdb";
 import { averageRuntime } from "../lib/runtime";
 import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount } from "../lib/episodeSync";
 import { ensureEpisodesWatched, recordEpisodeRewatch, recordMovieRewatch } from "../lib/watchEvents";
-import { useDraggableSheet } from "../lib/useDraggableSheet";
+import { useDraggableSheet, DISMISS_ANIMATION_MS } from "../lib/useDraggableSheet";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useBackHandler } from "../lib/backHandler";
+import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
+
+/** Matches the reverse of the desktop-modal-in keyframes in index.css. */
+const DESKTOP_MODAL_EXIT_MS = 180;
 
 interface Props {
   kind: "show" | "movie";
   tmdbId: number;
+  /**
+   * Shows only. Opens with this season already expanded (and fetched if it
+   * was never cached), instead of a fully collapsed accordion.
+   *
+   * Set by a batch-release notification — "Season 3 is now available" has no
+   * single episode to open, so it opens the show ON that season; landing the
+   * user on a closed accordion would lose the one thing the notification was
+   * about. Undefined everywhere else, which is the collapsed default.
+   */
+  initialSeason?: number;
   onClose: () => void;
 }
 
@@ -49,7 +63,7 @@ function MetaLine({ details }: { details: CoreDetails }) {
   );
 }
 
-export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
+export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: Props) {
   // This component is only ever mounted while its modal is open (callers
   // use `{openDetails !== null && <DetailsPanel .../>}`), so it's safe to
   // call these unconditionally, they mount/unmount together with the panel.
@@ -57,11 +71,29 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   // mobile-specific. useDraggableSheet's output is only wired into the
   // JSX on the mobile render path below, it's inert otherwise.
   useLockBodyScroll();
-  const { sheetStyle, handleProps } = useDraggableSheet(onClose);
+  // Aliased: this file already has an `expandedSeason` for the accordion, and
+  // two unqualified "expanded" flags meaning different things read badly.
+  const {
+    sheetStyle,
+    handleProps,
+    contentProps,
+    expanded: sheetExpanded,
+    setExpanded: setSheetExpanded,
+  } = useDraggableSheet(onClose);
   const isMobile = useIsMobile();
+  // Closing without a drag — the X, the backdrop, Escape, Android back — used
+  // to unmount the panel in the same frame, so a sheet that slides away
+  // beautifully when flicked simply blinked out when dismissed any other way.
+  // requestClose plays the matching exit first; the duration differs by form
+  // factor because the two exits are different animations (a sheet slides, a
+  // dialog fades).
+  const { closing, requestClose } = useAnimatedDismiss(
+    onClose,
+    isMobile ? DISMISS_ANIMATION_MS : DESKTOP_MODAL_EXIT_MS
+  );
   // Android back closes this panel instead of the app. A stacked episode
   // panel registers its own handler on top, so back closes that first.
-  useBackHandler(true, onClose);
+  useBackHandler(true, requestClose);
 
   const [details, setDetails] = useState<CoreDetails | null>(null);
   const [ratings, setRatings] = useState<OmdbRatings | null | "loading">("loading");
@@ -82,17 +114,28 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   const [watchCountByKey, setWatchCountByKey] = useState<Map<string, number>>(new Map());
   const [openEpisode, setOpenEpisode] = useState<Episode | null>(null);
 
+  // Collapsing returns the sheet to the top of its content.
+  //
+  // Load-bearing, not tidiness: the collapsed state turns the inner scroller
+  // off, and scrollTop survives that. Without this, collapsing after reading
+  // partway down the episode list would leave the half-open sheet showing the
+  // middle of a list with no way to scroll back to the title.
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!sheetExpanded && scrollAreaRef.current) scrollAreaRef.current.scrollTop = 0;
+  }, [sheetExpanded]);
+
   // Escape closes this panel, unless the episode panel is stacked on top
   // of it (openEpisode set), in which case that panel's own Escape
   // handler (added alongside it in EpisodeDetailsPanel.tsx) should close
   // just that top layer first, not both at once.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && !openEpisode) onClose();
+      if (e.key === "Escape" && !openEpisode) requestClose();
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose, openEpisode]);
+  }, [requestClose, openEpisode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -193,6 +236,27 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
       setLoadingSeason(null);
     }
   }
+
+  /**
+   * Applies `initialSeason` once the season list is known.
+   *
+   * Guarded on the season actually existing for this show, so a stale link
+   * opens a normal collapsed panel rather than an accordion pointing at a
+   * season that is not there. The ref makes it strictly one-shot: after this,
+   * expanding and collapsing seasons is entirely the user's, and a re-render
+   * must not re-open what they just closed.
+   */
+  const appliedInitialSeason = useRef(false);
+  useEffect(() => {
+    if (appliedInitialSeason.current) return;
+    if (initialSeason === undefined || seasonNumbers === null) return;
+    appliedInitialSeason.current = true;
+    if (!seasonNumbers.includes(initialSeason)) return;
+    toggleExpand(initialSeason);
+    // toggleExpand is recreated every render and would re-run this on each
+    // one; the ref above is what actually bounds it to a single application.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialSeason, seasonNumbers]);
 
   const [catchUpOffer, setCatchUpOffer] = useState<{ episodesInSeason: Episode[]; earlierSeasonNumbers: number[] } | null>(
     null
@@ -630,21 +694,58 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
 
   if (isMobile) {
     return (
-      <div className="modal-backdrop" onClick={onClose}>
+      <div className={`modal-backdrop ${closing ? "is-leaving" : ""}`} onClick={requestClose}>
         <div
           className={`details-sheet ${showsSeasonBrowser ? "details-modal-wide" : ""}`}
-          style={sheetStyle}
+          // Overriding only the transform reuses the drag hook's own snap
+          // transition, so a tapped dismiss slides away on exactly the same
+          // curve and duration as a flicked one.
+          style={closing ? { ...sheetStyle, transform: "translateY(100%)" } : sheetStyle}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="sheet-drag-handle" {...handleProps}>
-            <div className="sheet-drag-handle-bar" />
+          {/* A real header row, not a floating button.
+              Close used to be absolutely positioned over the top of the
+              sheet, which meant every episode row's watched tick slid
+              directly underneath it as the season list scrolled — two
+              different controls sharing one patch of screen. The bar is a
+              flex sibling of the scroll area now, so the content physically
+              cannot reach it. */}
+          <div className="sheet-top-bar">
+            {/* Fills the bar except for the close button, so the whole strip
+                is grabbable rather than just the 40x4px grabber. Close is a
+                sibling, so pressing it never reaches these handlers. */}
+            <div
+              className="sheet-grab-area"
+              role="button"
+              tabIndex={0}
+              aria-label={sheetExpanded ? "Collapse panel" : "Expand panel"}
+              aria-expanded={sheetExpanded}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSheetExpanded(!sheetExpanded);
+                }
+              }}
+              {...handleProps}
+            >
+              <div className="sheet-drag-handle-bar" />
+            </div>
+
+            <button className="close-x sheet-close-x" onClick={requestClose} aria-label="Close">
+              &times;
+            </button>
           </div>
 
-          <button className="close-x hero-close-x" onClick={onClose} aria-label="Close">
-            &times;
-          </button>
-
-          <div className="sheet-scroll-area">
+          {/* is-collapsed turns off inner scrolling at the half-open size, so
+              every vertical swipe there moves the SHEET. That is what makes
+              "swipe up to reach the episodes" the obvious gesture instead of
+              a hidden inner scroll that reveals the list without ever
+              expanding the panel. */}
+          <div
+            ref={scrollAreaRef}
+            className={`sheet-scroll-area ${sheetExpanded ? "" : "is-collapsed"}`}
+            {...contentProps}
+          >
             {error && <p className="status-error">{error}</p>}
             {!details && !error && <p className="muted">Loading...</p>}
 
@@ -691,9 +792,11 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
   }
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className={`modal-backdrop ${closing ? "is-leaving" : ""}`} onClick={requestClose}>
       <div
-        className={`modal details-modal-desktop ${showsSeasonBrowser ? "details-modal-desktop-wide" : ""}`}
+        className={`modal details-modal-desktop ${showsSeasonBrowser ? "details-modal-desktop-wide" : ""} ${
+          closing ? "is-leaving" : ""
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {error && <p className="status-error">{error}</p>}
@@ -717,7 +820,7 @@ export default function DetailsPanel({ kind, tmdbId, onClose }: Props) {
                 )
               )}
               <div className="details-hero-scrim" />
-              <button className="desktop-hero-close-x" onClick={onClose} aria-label="Close">
+              <button className="desktop-hero-close-x" onClick={requestClose} aria-label="Close">
                 &times;
               </button>
             </div>

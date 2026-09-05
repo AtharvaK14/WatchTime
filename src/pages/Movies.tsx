@@ -4,7 +4,7 @@ import { db } from "../db";
 import { TMDB_IMAGE_BASE, getMovieGenres, type Genre } from "../tmdb";
 import { useMovieStats, toDurationParts } from "../lib/stats";
 import DetailsPanel from "../components/DetailsPanel";
-import FilterSheet from "../components/FilterSheet";
+import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -36,9 +36,13 @@ export default function Movies({
   const isMobile = useIsMobile();
   const [openDetails, setOpenDetails] = useState<number | null>(null);
   const [query, setQuery] = useState("");
-  // Recently added first, same reasoning as the Shows grid.
+  // Defaults: the watchlist, newest first. A movie library is mostly a queue
+  // of things not yet seen, so "what could I put on tonight" is the question
+  // this page opens on; the watched back-catalogue is one tap away under
+  // Watch status. Recently added is also what Home's "View all" rail shows,
+  // so arriving from there no longer reorders the grid under the user.
   const [sortKey, setSortKey] = useState<SortKey>("recentlyAdded");
-  const [filterKey, setFilterKey] = useState<FilterKey>("all");
+  const [filterKey, setFilterKey] = useState<FilterKey>("wantToWatch");
   const [genreFilter, setGenreFilter] = useState<number | null>(null);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
@@ -148,35 +152,48 @@ export default function Movies({
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search your movies..."
             />
+            {/* Same three categories, in the same order, as the Shows filter
+                menu — the two pages are the same job on different content and
+                should not need to be learned twice. */}
             <FilterSheet resultCount={visible.length} open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
-              <SegmentedControl options={STATUS_OPTIONS} value={filterKey} onChange={setFilterKey} />
-              {isMobile ? (
-                <GenreChips genres={genres} value={genreFilter} onChange={setGenreFilter} />
-              ) : (
-                <select
-                  className="compact-select"
-                  value={genreFilter ?? ""}
-                  onChange={(e) => setGenreFilter(e.target.value ? Number(e.target.value) : null)}
-                >
-                  <option value="">All genres</option>
-                  {genres.map((g) => (
-                    <option key={g.id} value={g.id}>
-                      {g.name}
-                    </option>
-                  ))}
-                </select>
-              )}
-              {isMobile ? (
-                <SegmentedControl options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
-              ) : (
-                <select className="compact-select" value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
-                  {SORT_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
-              )}
+              <FilterGroup title="Watch status">
+                <SegmentedControl options={STATUS_OPTIONS} value={filterKey} onChange={setFilterKey} />
+              </FilterGroup>
+              <FilterGroup title="Genre">
+                {isMobile ? (
+                  <GenreChips genres={genres} value={genreFilter} onChange={setGenreFilter} />
+                ) : (
+                  <select
+                    className="compact-select"
+                    value={genreFilter ?? ""}
+                    onChange={(e) => setGenreFilter(e.target.value ? Number(e.target.value) : null)}
+                  >
+                    <option value="">All genres</option>
+                    {genres.map((g) => (
+                      <option key={g.id} value={g.id}>
+                        {g.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </FilterGroup>
+              <FilterGroup title="Sort by">
+                {isMobile ? (
+                  <SegmentedControl options={SORT_OPTIONS} value={sortKey} onChange={setSortKey} />
+                ) : (
+                  <select
+                    className="compact-select"
+                    value={sortKey}
+                    onChange={(e) => setSortKey(e.target.value as SortKey)}
+                  >
+                    {SORT_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>
+                        {o.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </FilterGroup>
             </FilterSheet>
           </div>
 

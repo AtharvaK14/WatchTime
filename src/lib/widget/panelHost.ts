@@ -15,6 +15,15 @@ interface PanelHost {
   close(): void;
   /** Hands native a fresh widget snapshot and refreshes every placed widget. */
   updateSnapshot(snapshot: string): void;
+  /**
+   * Closes the overlay and launches the MAIN app on the given deep-link
+   * target. The only thing in the overlay that opens the app.
+   *
+   * Optional at the type level because the page and the activity ship
+   * separately: a web build newer than the installed APK would otherwise call
+   * a method that is not there and throw inside the panel.
+   */
+  openInApp?(target: string): void;
 }
 
 declare global {
@@ -34,4 +43,51 @@ export function isPanelHosted(): boolean {
 
 export function closePanel(): void {
   panelHost()?.close();
+}
+
+/**
+ * Whether this overlay can hand off to the main app.
+ *
+ * False on an older APK whose PanelHost has no openInApp, and false in every
+ * non-panel context. Callers use it to decide whether to OFFER the handoff at
+ * all, so a control that could not work is never shown.
+ */
+export function canOpenInApp(): boolean {
+  return typeof panelHost()?.openInApp === "function";
+}
+
+/**
+ * The two ways out of the widget's episode panel and into the app. Both are
+ * explicit taps by the user; nothing here ever fires on its own, which is the
+ * whole point of the overlay existing. Marking watched, rewatching and
+ * closing all stay inside the overlay.
+ *
+ * They are deliberately different destinations, and each opens the panel the
+ * user was pointing at rather than its container:
+ *
+ *  - the episode title opens THAT EPISODE's own detail panel in the app
+ *  - the show capsule opens the SERIES panel for the show as a whole
+ *
+ * Both are shapes DeepLinkHost already renders — an episode link is the same
+ * one a tapped notification uses — so neither adds a navigation path or a
+ * panel that did not already exist.
+ */
+function openInApp(payload: Record<string, unknown>): void {
+  const host = panelHost();
+  if (!host?.openInApp) return;
+  try {
+    host.openInApp(JSON.stringify(payload));
+  } catch {
+    // The overlay stays open and usable; only the handoff is lost.
+  }
+}
+
+/** The episode title's destination: this episode's own panel in the app. */
+export function openEpisodeInApp(showId: number, episodeKey: string): void {
+  openInApp({ kind: "episode", showId, episodeKey });
+}
+
+/** The show capsule's destination: the series panel, no season pre-expanded. */
+export function openSeriesInApp(showId: number): void {
+  openInApp({ kind: "show", showId });
 }

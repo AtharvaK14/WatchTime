@@ -202,14 +202,22 @@ function App() {
         )}
 
         <main>
-          {tab === "home" && <Home onViewAllMovies={viewAllWantToWatchMovies} />}
-          {tab === "shows" && <Library />}
-          {tab === "movies" && (
-            <Movies initialFilter={moviesInitialFilter} onInitialFilterConsumed={() => setMoviesInitialFilter(null)} />
-          )}
-          {tab === "discover" && <AddTitle />}
-          {tab === "forYou" && <ForYouPage />}
-          {tab === "settings" && <Settings />}
+          {/* Keyed on the tab so React remounts this wrapper on every switch,
+              which is what restarts the entrance animation. The page
+              components below already mounted and unmounted per tab, so this
+              adds a transition without changing what is rendered or when.
+              Nothing is keyed inside a page, so state within a tab is
+              untouched. */}
+          <div key={tab} className="tab-view">
+            {tab === "home" && <Home onViewAllMovies={viewAllWantToWatchMovies} />}
+            {tab === "shows" && <Library />}
+            {tab === "movies" && (
+              <Movies initialFilter={moviesInitialFilter} onInitialFilterConsumed={() => setMoviesInitialFilter(null)} />
+            )}
+            {tab === "discover" && <AddTitle />}
+            {tab === "forYou" && <ForYouPage />}
+            {tab === "settings" && <Settings />}
+          </div>
         </main>
 
         {/* display:none above 640px via CSS, this is the mobile-only nav. */}

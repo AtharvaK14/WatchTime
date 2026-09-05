@@ -7,11 +7,13 @@ import type { NotificationKind } from "./events";
 
 const ENABLED_KEY = "notifications_enabled";
 const ASKED_KEY = "notifications_permission_asked";
-const HOUR_KEY = "notifications_hour";
 const KIND_PREFIX = "notifications_kind_";
 
-/** Local hour of day notifications fire at. 9am is late enough not to wake anyone and early enough to be the day's news. */
-export const DEFAULT_NOTIFICATION_HOUR = 9;
+// There is deliberately no delivery-hour preference any more. Notifications
+// go out as soon as the thing they are about becomes available, so there is
+// no time for anyone to choose. The old "notifications_hour" key is left
+// unread in localStorage rather than migrated — nothing consults it, and
+// deleting a stranger's stored value buys nothing.
 
 export function notificationsEnabled(): boolean {
   return localStorage.getItem(ENABLED_KEY) === "true";
@@ -38,15 +40,6 @@ export function markPermissionRequested(): void {
   localStorage.setItem(ASKED_KEY, "true");
 }
 
-export function getNotificationHour(): number {
-  const raw = Number(localStorage.getItem(HOUR_KEY));
-  return Number.isInteger(raw) && raw >= 0 && raw <= 23 ? raw : DEFAULT_NOTIFICATION_HOUR;
-}
-
-export function setNotificationHour(hour: number): void {
-  localStorage.setItem(HOUR_KEY, String(hour));
-}
-
 /** Per-category opt-out. Every category defaults to on once notifications are enabled at all. */
 export function kindEnabled(kind: NotificationKind): boolean {
   return localStorage.getItem(KIND_PREFIX + kind) !== "false";
@@ -56,9 +49,9 @@ export function setKindEnabled(kind: NotificationKind, on: boolean): void {
   localStorage.setItem(KIND_PREFIX + kind, String(on));
 }
 
-export const NOTIFICATION_KIND_LABELS: Record<NotificationKind, string> = {
-  episode: "New episodes",
-  "season-premiere": "Season premieres",
-  "movie-theatrical": "Movies in cinemas",
-  "movie-digital": "Movies available at home",
-};
+// The per-category LABELS used to live here too. They moved to
+// components/NotificationSettings.tsx, which is the only thing that ever read
+// them: how a preference is worded is presentation, and the wording is now
+// group-relative ("Theatrical releases" under a "Movies" heading), which only
+// makes sense next to the layout it is written for. This module keeps to
+// storage.

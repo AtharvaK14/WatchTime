@@ -1,4 +1,4 @@
-// Permission handling and OS scheduling for library notifications.
+// Permission handling and scheduling for library notifications.
 //
 // These are LOCAL notifications, not push. The app has no server and no FCM
 // project, and it does not need one: everything worth announcing (episode air
@@ -6,9 +6,10 @@
 // TMDB by the same sync Home relies on. Local scheduling also keeps the
 // library on the device, which push would not.
 //
-// Event selection lives in ./events.ts and is deliberately pure. This file
-// only decides whether it is allowed to fire anything, converts events into
-// OS alarms, and routes taps back into the app.
+// Event selection lives in ./events.ts and is deliberately pure. Delivery
+// lives natively (./bridge.ts explains why). This file is the join: it
+// decides whether it is allowed to fire anything, turns events into a
+// schedule, and hands that to native.
 
 import { Capacitor } from "@capacitor/core";
 import { LocalNotifications, type PermissionStatus } from "@capacitor/local-notifications";
@@ -16,24 +17,24 @@ import { db } from "../../db";
 import { getMovieReleaseDates } from "../../tmdb";
 import { requestDeepLink, parseDeepLinkTarget } from "../deepLink";
 import { buildNotificationEvents, notificationId, todayIso, type NotificationEvent } from "./events";
+import { clearSchedule, pushSchedule, toScheduledNotification } from "./bridge";
 import {
-  getNotificationHour,
   kindEnabled,
   markPermissionRequested,
   notificationsEnabled,
   permissionAlreadyRequested,
 } from "./prefs";
 
-const CHANNEL_ID = "library_releases";
-
 /**
- * Upper bound on alarms held at once. Android's own limit on pending alarms
- * per app is finite, and a large library of returning shows can generate
- * hundreds of events inside the horizon. Taking the soonest N is correct
- * rather than merely safe: the scheduler re-runs on every resume, so anything
- * trimmed is picked back up long before its date.
+ * Upper bound on the schedule handed to native.
+ *
+ * This is no longer about the OS: delivery runs off a single rolling alarm
+ * rather than one alarm per event, so the platform's pending-alarm limit is
+ * not in play any more. It only bounds how much JSON is parked in
+ * SharedPreferences. Anything trimmed is picked back up on a later run —
+ * the scheduler re-runs on every resume, long before those dates arrive.
  */
-const MAX_SCHEDULED = 60;
+const MAX_SCHEDULED = 150;
 
 export type NotificationAvailability = "unsupported" | "granted" | "denied" | "prompt";
 
@@ -85,19 +86,22 @@ export function mustUseSystemSettings(availability: NotificationAvailability): b
   return availability === "denied" && permissionAlreadyRequested();
 }
 
-async function ensureChannel(): Promise<void> {
-  if (Capacitor.getPlatform() !== "android") return;
+/**
+ * Cancels anything still queued with @capacitor/local-notifications.
+ *
+ * Purely a migration path. Earlier builds scheduled through that plugin, so
+ * an install updating to this one can have its alarms already pending; left
+ * alone they would fire alongside the native ones and double every release.
+ * Cheap, idempotent, and self-healing once those queues are empty.
+ */
+async function dropLegacyCapacitorSchedule(): Promise<void> {
   try {
-    await LocalNotifications.createChannel({
-      id: CHANNEL_ID,
-      name: "Releases from your library",
-      description: "New episodes, season premieres and movie releases for titles you follow.",
-      importance: 3, // DEFAULT: shows in the shade and makes a sound, never interrupts full-screen
-      visibility: 1, // public lock-screen visibility; nothing here is sensitive
-    });
+    const pending = await LocalNotifications.getPending();
+    if (pending.notifications.length > 0) {
+      await LocalNotifications.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) });
+    }
   } catch {
-    // A channel that already exists, or an OS that predates channels. Neither
-    // is a failure - scheduling still works, so this must not abort the run.
+    // No permission to enumerate, or nothing there. Nothing to undo.
   }
 }
 
@@ -148,27 +152,37 @@ async function backfillDigitalReleaseDates(limit = 12): Promise<void> {
   }
 }
 
-function scheduleTimeFor(event: NotificationEvent, hour: number): Date {
-  const at = new Date(`${event.date}T00:00:00`);
-  at.setHours(hour, 0, 0, 0);
-  return at;
+/**
+ * The moment a release actually becomes available.
+ *
+ * Midnight local on its date, because that IS the moment at the precision the
+ * data has: TMDB's air_date and release dates carry no time of day, so a
+ * calendar day is all anyone knows. Anything later would be a delay this app
+ * invented, which is exactly what the removed "deliver at" preference was.
+ *
+ * Local, not UTC, for the same reason todayIso() is: a release on the 10th
+ * should announce itself when the user's own 10th starts.
+ */
+function releaseMomentFor(event: NotificationEvent): Date {
+  return new Date(`${event.date}T00:00:00`);
 }
 
 /**
- * Reconciles the OS's pending alarms with what the library currently implies.
+ * Reconciles the native schedule with what the library currently implies.
  *
- * Idempotent by construction: ids are a stable hash of the event id, so
- * re-running replaces rather than duplicates, and anything pending that no
- * longer corresponds to a wanted event is cancelled. That cancellation is
- * what makes the feature respect library changes - unfollow a show or mark a
- * movie watched and its queued notifications disappear on the next run,
- * instead of firing days later for something no longer in the library.
+ * Idempotent by construction: the payload REPLACES whatever was stored, and
+ * ids are a stable hash of the event id, so re-running never duplicates. The
+ * replacement is also what makes the feature respect library changes —
+ * unfollow a show or mark a movie watched and its queued releases stop
+ * existing, instead of firing days later for something no longer in the
+ * library. Native additionally remembers which ids it has already posted, so
+ * running this on every resume cannot re-announce anything.
  */
 export async function syncScheduledNotifications(): Promise<number> {
   if (!notificationsSupported() || !notificationsEnabled()) return 0;
   if ((await checkNotificationPermission()) !== "granted") return 0;
 
-  await ensureChannel();
+  await dropLegacyCapacitorSchedule();
   await backfillDigitalReleaseDates().catch(() => {});
 
   const [shows, episodes, movies] = await Promise.all([
@@ -177,37 +191,21 @@ export async function syncScheduledNotifications(): Promise<number> {
     db.movies.toArray(),
   ]);
 
-  const hour = getNotificationHour();
   const now = Date.now();
   const wanted = buildNotificationEvents(shows, episodes, movies)
     .filter((e) => kindEnabled(e.kind))
-    // An event whose fire time has already passed today would be delivered
-    // immediately by the OS, which is wrong: the user would get a burst of
-    // "airs today" alerts every time they opened the app after 9am.
-    .filter((e) => scheduleTimeFor(e, hour).getTime() > now)
+    // Belt and braces. buildNotificationEvents already emits only strictly
+    // future dates, so every release moment here is ahead of now; this keeps
+    // a clock change or a date-boundary race from queueing something the
+    // native side would then fire the instant it was stored.
+    .filter((e) => releaseMomentFor(e).getTime() > now)
     .slice(0, MAX_SCHEDULED);
 
-  const wantedIds = new Set(wanted.map((e) => notificationId(e.eventId)));
-
-  const pending = await LocalNotifications.getPending();
-  const stale = pending.notifications.filter((n) => !wantedIds.has(n.id));
-  if (stale.length > 0) {
-    await LocalNotifications.cancel({ notifications: stale.map((n) => ({ id: n.id })) });
-  }
-
-  if (wanted.length > 0) {
-    await LocalNotifications.schedule({
-      notifications: wanted.map((event) => ({
-        id: notificationId(event.eventId),
-        title: event.title,
-        body: event.body,
-        channelId: CHANNEL_ID,
-        schedule: { at: scheduleTimeFor(event, hour), allowWhileIdle: true },
-        // Carried through the tap so the app can open the exact title.
-        extra: { ...event.target, eventKind: event.kind },
-      })),
-    });
-  }
+  await pushSchedule(
+    wanted.map((event) =>
+      toScheduledNotification(event, releaseMomentFor(event), notificationId(event.eventId))
+    )
+  );
 
   return wanted.length;
 }
@@ -215,20 +213,20 @@ export async function syncScheduledNotifications(): Promise<number> {
 /** Drops every queued notification. Called when the user turns the feature off. */
 export async function cancelAllNotifications(): Promise<void> {
   if (!notificationsSupported()) return;
-  try {
-    const pending = await LocalNotifications.getPending();
-    if (pending.notifications.length > 0) {
-      await LocalNotifications.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) });
-    }
-  } catch {
-    // Nothing pending, or no permission to enumerate. Either way there is
-    // nothing left to cancel.
-  }
+  await clearSchedule();
+  await dropLegacyCapacitorSchedule();
 }
 
 /**
  * Wires taps to the deep-link store. Registered once from App; the returned
  * cleanup removes the listener.
+ *
+ * Taps on notifications this build posts do NOT come through here — those are
+ * opened by MainActivity, which parks the target in the same pending slot a
+ * widget tap uses, and the web layer drains it at mount and on resume. This
+ * listener remains for the notifications an OLDER build may still have queued
+ * with @capacitor/local-notifications: until those have fired or been
+ * cancelled, a tap on one has to keep working.
  */
 export function initNotificationTapHandling(): () => void {
   if (!notificationsSupported()) return () => {};

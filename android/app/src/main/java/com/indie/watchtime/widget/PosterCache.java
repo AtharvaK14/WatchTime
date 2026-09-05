@@ -23,10 +23,16 @@ import java.util.Map;
  * row on each refresh and re-downloading a poster every half hour for a widget
  * that has not changed would be indefensible.
  *
- * Every call happens on the factory's background thread, which is why the
- * network read is synchronous here.
+ * Every call happens on a background thread, which is why the network read is
+ * synchronous here.
+ *
+ * Public, and shared with com.indie.watchtime.notify: a release notification
+ * needs the very same poster as its large icon. Going through this rather than
+ * fetching separately means a show already drawn on a widget costs nothing to
+ * put on a notification, and there is one place that knows how to size and
+ * cache TMDB artwork rather than two that can drift.
  */
-final class PosterCache {
+public final class PosterCache {
 
     /** Widget posters are drawn at ~36dp; anything larger is wasted transfer and memory. */
     private static final int MAX_DIMENSION = 180;
@@ -47,7 +53,7 @@ final class PosterCache {
     private PosterCache() {}
 
     /** The poster for a URL, or null if it cannot be had. Callers fall back to the placeholder drawable. */
-    static Bitmap get(Context context, String url) {
+    public static Bitmap get(Context context, String url) {
         if (url == null || url.isEmpty()) return null;
         String key = Integer.toHexString(url.hashCode());
 
