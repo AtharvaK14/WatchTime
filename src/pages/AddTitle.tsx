@@ -13,6 +13,7 @@ import {
 } from "../tmdb";
 import DetailsPanel from "../components/DetailsPanel";
 import UniversalSearch, { type SearchResults } from "../components/UniversalSearch";
+import { BookmarkIcon } from "../components/icons";
 
 /**
  * Which TMDB ids are already in the library, read live.
@@ -42,17 +43,23 @@ function useLibraryIds() {
  * "Already in your library", shown directly on the artwork so the user no
  * longer has to open a title to find out.
  *
- * A tick in a filled circle rather than a worded pill: at three cards per row
- * on a phone an "IN LIBRARY" label is either unreadable or covers the poster,
- * and the app already uses this exact vocabulary for the same fact elsewhere
- * (.watched-badge on Movies, .rail-owned on For You). Top-RIGHT, leaving the
- * top-left to .card-kind so the two can never collide. The word itself still
- * reaches screen readers from the .sr-only text each caller renders.
+ * A BOOKMARK, not a tick. The first version of this was a tick in a filled
+ * accent circle, which was a mistake: a tick on a poster already means WATCHED
+ * in this app (.watched-badge on the Movies grid, .watch-toggle on an episode
+ * row), so the same mark was carrying two unrelated facts and the badge read
+ * as "you have seen this". A bookmark says saved-not-consumed and cannot be
+ * confused with either the watched state or the Mark as Watched control.
+ *
+ * A mark rather than a worded pill because at three cards per row on a phone
+ * an "IN LIBRARY" label either covers the poster or is too small to read; the
+ * word still reaches screen readers from the .sr-only text each caller
+ * renders. Top-RIGHT, leaving the top-left to .card-kind so the two can never
+ * collide.
  */
 function InLibraryBadge() {
   return (
     <span className="card-in-library" aria-hidden="true">
-      &#10003;
+      <BookmarkIcon size={13} />
     </span>
   );
 }
@@ -206,8 +213,15 @@ function Results({
                       {m.kind === "show" ? "TV" : "Film"}
                       {m.year ? ` · ${m.year}` : ""}
                     </p>
-                    {m.inLibrary && <span className="rail-badge">In your library</span>}
+                    {/* The worded badge that used to sit here is gone: the
+                        bookmark on the artwork above says the same thing, and
+                        Discover should say it one way everywhere. It keeps
+                        reaching screen readers below, same as every other
+                        card on this page. */}
                   </div>
+                  {(m.inLibrary || owned(m.kind, m.tmdbId)) && (
+                    <span className="sr-only">In your library</span>
+                  )}
                 </button>
               ))}
             </div>

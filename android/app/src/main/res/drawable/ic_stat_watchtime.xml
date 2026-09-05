@@ -1,0 +1,56 @@
+<!--
+    The WatchTime mark as a notification small icon.
+
+    Two jobs: the status-bar glyph, and - because every release notification
+    also carries the poster as its large icon - the badge Android draws into
+    that poster's bottom-right corner. That badge is the whole "which app sent
+    this" half of the design, so this file is what makes it read.
+
+    Rules the platform imposes, and why this looks the way it does:
+      - a small icon is flattened to a silhouette and tinted, so it must be
+        white on transparent. The launcher icon's coral "W" cannot be used
+        here; it would come out as a solid white blob.
+      - it is drawn at ~16dp in the status bar and smaller still as a corner
+        badge, so the shape has to survive at that size. The mark is redrawn
+        here at a heavier weight than components/BrandMark.tsx uses on screen
+        rather than being scaled down from it - the on-screen antenna and leg
+        strokes (22/1024 of the width) would vanish entirely.
+
+    Same silhouette as the app icon: a TV with antennas and legs, the "W" of
+    the wordmark on its screen.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFFFF">
+
+    <!-- Antennas -->
+    <path
+        android:pathData="M9.5,6.1 L7.6,3.3 M14.5,6.1 L16.4,3.3"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round" />
+
+    <!-- Screen -->
+    <path
+        android:pathData="M5,6.1 H19 A2.4,2.4 0 0 1 21.4,8.5 V16.3 A2.4,2.4 0 0 1 19,18.7 H5 A2.4,2.4 0 0 1 2.6,16.3 V8.5 A2.4,2.4 0 0 1 5,6.1 Z"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.9" />
+
+    <!-- Legs -->
+    <path
+        android:pathData="M7.6,18.7 L6.5,20.9 M16.4,18.7 L17.5,20.9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round" />
+
+    <!-- The "W" -->
+    <path
+        android:pathData="M7.3,9.9 L9.3,14.9 L12,11.8 L14.7,14.9 L16.7,9.9"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

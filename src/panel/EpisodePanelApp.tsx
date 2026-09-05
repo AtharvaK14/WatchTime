@@ -3,7 +3,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Episode, type Show } from "../db";
 import EpisodeDetailsPanel, { type EpisodePanelTransition } from "../components/EpisodeDetailsPanel";
 import { markNextEpisodeWatched, recordEpisodeRewatch } from "../lib/watchEvents";
-import { canOpenInApp, closePanel, openShowEpisodeListInApp } from "../lib/widget/panelHost";
+import { canOpenInApp, closePanel, openEpisodeInApp, openSeriesInApp } from "../lib/widget/panelHost";
 import { pushSnapshot } from "../lib/widget/bridge";
 import { buildWidgetSnapshot, type WidgetSnapshot } from "../lib/widget/snapshot";
 import { prefersReducedMotion } from "../lib/useAnimatedDismiss";
@@ -240,14 +240,15 @@ export default function EpisodePanelApp({
       watchCount={watch?.watchCount ?? 0}
       canToggleWatched={canToggleWatched}
       transition={transition}
-      // The one deliberate route out of the overlay and into the app. Offered
-      // only when the host actually supports it, so an older APK shows plain
-      // text rather than a control that would do nothing.
-      onOpenFullEpisodeList={
-        canOpenInApp()
-          ? () => openShowEpisodeListInApp(show.tmdbId, episode.seasonNumber)
-          : undefined
+      // The two deliberate routes out of the overlay and into the app: the
+      // episode title goes to this episode's own panel, the show capsule to
+      // the series panel. Both are offered only when the host actually
+      // supports the hand-off, so an older APK renders plain text rather than
+      // controls that would do nothing.
+      onOpenEpisodeInApp={
+        canOpenInApp() ? () => openEpisodeInApp(show.tmdbId, episode.key) : undefined
       }
+      onOpenSeries={canOpenInApp() ? () => openSeriesInApp(show.tmdbId) : undefined}
       onToggleWatched={async () => {
         if (watch) {
           // Un-marking is a correction, not the end of the interaction: the

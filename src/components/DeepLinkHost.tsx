@@ -46,9 +46,9 @@ export default function DeepLinkHost() {
   if (!target) return null;
 
   if (target.kind === "show") {
-    // seasonNumber is only present on the widget overlay's "open the full
-    // episode list" handoff; every other show link leaves it undefined and
-    // opens the panel collapsed, exactly as before.
+    // seasonNumber is present only on a batch-release notification, which
+    // opens the show ON the season that just landed. Every other show link
+    // leaves it undefined and opens the panel collapsed.
     return (
       <DetailsPanel
         kind="show"

@@ -46,6 +46,23 @@
   --accent: #FF4433;
   --accent-dim: #7A2A20;
   --danger: #FF4433;
+  /* Watched state in the episode list.
+     Its own hue rather than --accent, because --accent is also --danger: a
+     row tinted with it read as a warning, and the same red marked both
+     "you have seen this" and "Remove from Shows". Green says done without
+     competing with the brand red for meaning.
+     Measured: #3FB950 is 7.7:1 on --bg and 7.3:1 on --surface, and 3.85:1 on
+     --watched-dim, which clears the 3:1 that non-text graphics need (the red
+     pairing it replaces was 2.8:1, so this is also a contrast gain).
+     --watched-dim is tuned to the same relative luminance as --accent-dim
+     (0.056 vs 0.058) rather than being a straight hue rotation of it: green
+     reads brighter than red at equal luminance, and a lighter value made the
+     watched tick louder than the red one it replaced instead of equal to it.
+     --watched-tint is --watched at 8% alpha, written out because a hex
+     custom property cannot be given an alpha channel without color-mix(). */
+  --watched: #3FB950;
+  --watched-dim: #1A4D21;
+  --watched-tint: rgba(63, 185, 80, 0.08);
   --font-display: "Geist", -apple-system, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   /* Geist Mono replaces the bare system stack. The mono face is not
      decorative here — it sets every "S02 | E04" episode number — and the
@@ -377,8 +394,12 @@ hr { border: none; border-top: 1px solid var(--border); }
 
 .episode-row {
   display: flex; align-items: center; gap: 10px; padding: 6px 4px !important;
+  /* How far the watched tick sits in from the row's right edge. Change this
+     one value to move every tick in every episode list; nothing else needs
+     touching, and the 44px hit area travels with it. */
+  --watch-toggle-inset: 8px;
 }
-.episode-row.watched { background: rgba(255, 68, 51, 0.08); }
+.episode-row.watched { background: var(--watched-tint); }
 .episode-thumb {
   width: 64px; height: 36px; object-fit: cover; border-radius: 4px; flex-shrink: 0; cursor: pointer;
   background: var(--surface-raised);
@@ -418,7 +439,14 @@ hr { border: none; border-top: 1px solid var(--border); }
   /* Anchors the invisible 44px hit area added further down. */
   position: relative;
 }
-.watch-toggle.on { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+/* Follows the row's tint. A green row with a red tick would read as two
+   different states on one line rather than one state stated twice. */
+.watch-toggle.on { background: var(--watched-dim); border-color: var(--watched); color: var(--watched); }
+
+/* Nudges the tick in from the row's right edge — see --watch-toggle-inset on
+   .episode-row above. Scoped to episode rows so the same control used
+   anywhere else is unaffected. */
+.episode-row .watch-toggle { margin-right: var(--watch-toggle-inset); }
 
 .stat-value { font-size: 1.4rem; }
 .stat-unit { font-size: 0.7em; color: var(--muted); margin-right: 4px; }
@@ -520,21 +548,63 @@ hr { border: none; border-top: 1px solid var(--border); }
 }
 .details-sheet.details-modal-wide { max-width: 720px; }
 
-.sheet-drag-handle {
+/* The sheet's header row: grabber plus close, and nothing else.
+
+   It is a flex SIBLING of the scroll area, not an overlay on top of it.
+   That is the whole point: close was previously position:absolute over the
+   sheet, so every episode row's watched tick passed underneath it as the
+   season list scrolled, putting two unrelated controls in one place. A real
+   row cannot be scrolled into. */
+.sheet-top-bar {
+  position: relative;
   flex-shrink: 0;
+  height: 48px; /* room for a 44px close target with the grabber centred in it */
+  z-index: 3;
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
+}
+
+/* Fills the bar so the whole strip drags, rather than only the 40x4px
+   grabber. It is a sibling of the close button, so a press on close never
+   reaches these handlers and can never start a drag. */
+.sheet-grab-area {
+  position: absolute;
+  inset: 0;
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding: 10px 0 6px;
   cursor: grab;
   touch-action: none; /* stop the browser claiming this gesture for native
                           page-scroll before our pointer handlers see it */
 }
-.sheet-drag-handle:active { cursor: grabbing; }
+.sheet-grab-area:active { cursor: grabbing; }
 .sheet-drag-handle-bar {
   width: 40px;
   height: 4px;
   border-radius: 999px;
-  background: var(--border);
+  background: var(--border-strong); /* it is a control; it should read as one */
+}
+
+/* Inside the bar rather than floating over the artwork. Same circular
+   treatment as before so it is still unmistakably the close control. */
+.sheet-close-x {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  line-height: 1;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  z-index: 1;
 }
 
 .sheet-scroll-area {
@@ -543,6 +613,23 @@ hr { border: none; border-top: 1px solid var(--border); }
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 20px 24px;
+  /* Expanded: the browser owns vertical scrolling, and useDraggableSheet only
+     takes the gesture over when the list is already at its top and the finger
+     is pulling down. */
+  touch-action: pan-y;
+}
+
+/* Collapsed (the half-open resting state).
+
+   Scrolling is off here on purpose. Previously the half-open sheet scrolled
+   internally, so the episode list could be reached without ever expanding the
+   panel — which is why expanding felt optional and obscure, and why the list
+   was hard to get at. With the inner scroller disabled, every vertical swipe
+   on the panel moves the SHEET, so "swipe up" is the single, obvious gesture
+   for reaching the episodes. */
+.sheet-scroll-area.is-collapsed {
+  overflow-y: hidden;
+  touch-action: none;
 }
 
 /* Hero header: blurred poster fills the banner, sharp thumbnail + title
@@ -617,27 +704,11 @@ hr { border: none; border-top: 1px solid var(--border); }
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
 }
 
-/* Bigger, responsive (clamp() scales with viewport width instead of a
-   fixed px size), circular so it stays legible over any backdrop image
-   regardless of its color/brightness, with a frosted-glass background
-   behind the glyph for contrast. Scoped to the hero specifically via this
-   second class, .close-x itself (used by EpisodeDetailsPanel and the
-   desktop pop-out) is intentionally untouched. */
-.hero-close-x {
-  top: clamp(30px, 3vw, 16px);
-  right: clamp(10px, 3vw, 10px);
-  width: clamp(30px, 8vw, 40px);
-  height: clamp(30px, 8vw, 40px);
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: clamp(1.2rem, 4vw, 1.6rem);
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
-  color: #fff;
-}
+/* .hero-close-x is gone: the mobile sheet's close button moved into
+   .sheet-top-bar above, because floating it over the hero put it in the same
+   patch of screen that the scrolling episode list passes through. .close-x
+   itself is unchanged and still used by EpisodeDetailsPanel and the desktop
+   pop-out. */
 
 .details-meta-line {
    margin: 12px 0 14px;
@@ -1522,10 +1593,24 @@ details[open] > summary::after { transform: rotate(90deg); }
   display: block;
   border-radius: 12px 12px 0 0; /* match the modal's top corners */
 }
-.episode-hero-badge {
+/* The capsule row along the bottom of the still.
+
+   space-between puts the show on the left and the S/E on the right when both
+   are present (the widget overlay). With only the S/E capsule — which is the
+   case everywhere inside the app — a single flex child sits left, exactly
+   where the capsule has always been, so the app's panel is unchanged. */
+.episode-hero-capsules {
   position: absolute;
   left: 12px;
+  right: 12px;
   bottom: 12px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.episode-hero-badge {
   background: rgba(0, 0, 0, 0.72);
   color: var(--text);
   font-family: var(--font-mono);
@@ -1534,7 +1619,41 @@ details[open] > summary::after { transform: rotate(90deg); }
   letter-spacing: 0.02em;
   padding: 4px 10px;
   border-radius: 7px;
+  flex-shrink: 0;
 }
+
+/* INFORMATION, not a control. No chevron, no hover, no pointer, and it is a
+   <span> in both contexts so there is nothing to tap in the first place. The
+   muted colour is what separates it at a glance from the show capsule beside
+   it, which navigates. */
+.episode-number-badge {
+  color: var(--muted);
+  font-weight: 600;
+  cursor: default;
+}
+
+/* NAVIGATION. The series name, in the display face rather than the mono one
+   so it does not read as another code alongside "S02 | E01", with the border
+   and the "›" that mean "this takes you somewhere" elsewhere in the app. */
+.episode-show-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0; /* so a long series name can ellipsis instead of pushing the S/E capsule off */
+  flex-shrink: 1;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border: 1px solid var(--border-strong);
+}
+.episode-show-badge-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color: var(--accent); }
 
 .episode-detail-body {
   display: flex;
@@ -1546,6 +1665,19 @@ details[open] > summary::after { transform: rotate(90deg); }
 
 .episode-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .ep-action-btn { flex: 1 1 130px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+
+/* The one filled control in the panel, so the ACTION is unmistakably an
+   action and not another of the navigation capsules above it. Same inversion
+   as .pill-tab.active, .filter-sheet-apply and .watch-toggle-circle — this is
+   the app's existing "primary" treatment, not a new one. Applied only while
+   the episode is unwatched; see EpisodeDetailsPanel.tsx for why. */
+.ep-action-primary {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+  font-weight: 700;
+}
+.ep-action-primary:hover:not(:disabled) { border-color: var(--text); opacity: 0.9; }
 
 .rewatch-badge {
   display: inline-flex;
@@ -2182,6 +2314,13 @@ button:active:not(:disabled),
   transform: scale(0.9);
 }
 
+/* The sheet's close button is vertically centred with translateY(-50%), and
+   the bare scale() above would drop that and jerk it half its height down on
+   every press. Its press state has to carry the centring. */
+.sheet-close-x:active {
+  transform: translateY(-50%) scale(0.9);
+}
+
 /* Rows are wide, so scaling the whole row is more movement than the
    interaction deserves; a brief dim reads as a press without the shift. */
 .watch-next-row:active,
@@ -2200,7 +2339,7 @@ button:active:not(:disabled),
    subtler --border deliberately.
    ============================================================ */
 
-button:not(.link-button):not(.skip):not(.back-link):not(.pill-tab.active),
+button:not(.link-button):not(.skip):not(.back-link):not(.pill-tab.active):not(.watch-toggle.on),
 input[type="text"],
 input[type="number"],
 input[type="password"],
@@ -2213,9 +2352,15 @@ select,
   border-color: var(--border-strong);
 }
 
-/* .pill-tab.active and .watch-toggle-circle invert to a solid --text
-   fill; their own background already provides far more than 3:1 against
-   the page, so forcing a lighter outline on top would only add a halo. */
+/* .pill-tab.active, .watch-toggle.on and .watch-toggle-circle carry their own
+   filled state; that background already provides far more than 3:1 against
+   the page, so forcing a lighter outline on top would only add a halo.
+
+   The :not() on .watch-toggle.on is load-bearing, not tidiness. Every :not()
+   here adds its argument's specificity, so this selector is (0,5,1) — far
+   above the (0,2,0) of `.watch-toggle.on`, and later in the file besides. Any
+   colour that rule sets on the border was being silently discarded until the
+   watched tick was excluded here. */
 
 /* Content-type badge on Discover's trending cards.
 
@@ -2251,13 +2396,21 @@ select,
 
 /* "Already in your library" on a Discover card.
 
-   Top-RIGHT so it can never collide with .card-kind, which owns the top-left
-   on Trending. Deliberately the same filled-tick vocabulary as .watched-badge
-   on the Movies grid and .rail-owned on For You, rather than a fourth way of
-   saying the same thing — and a mark instead of a word because at three
-   cards per row on a phone an "IN LIBRARY" label either covers the poster or
-   is too small to read. The word still reaches screen readers as .sr-only
-   text inside the card. */
+   Two deliberate departures from .watched-badge, because the first version of
+   this badge WAS a tick in a filled accent circle and read as "watched":
+
+     - the glyph is a bookmark, not a tick (see BookmarkIcon in icons.tsx);
+     - the container is a rounded SQUARE, not a circle. Every circular badge
+       on a poster in this app is an interactive watched control
+       (.watched-badge, .watch-toggle, .watch-toggle-circle), so the shape
+       alone now separates "saved" from "seen" before the glyph is even
+       resolved.
+
+   Accent on translucent black: accent already means "yours" here (.rail-owned
+   on For You), and the dark chip is the same treatment .card-kind uses so the
+   two markers on one poster look like a set. Top-RIGHT, leaving the top-left
+   to .card-kind so they can never collide. The word still reaches screen
+   readers as .sr-only text inside the card. */
 .card-in-library {
   position: absolute;
   top: 6px;
@@ -2265,19 +2418,17 @@ select,
   z-index: 2;
   width: 22px;
   height: 22px;
-  border-radius: 50%;
-  background: var(--accent);
-  color: var(--bg);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.62);
+  border: 1px solid var(--border);
+  color: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.72rem;
-  font-weight: 800;
   line-height: 1;
-  /* Reads on a pale poster as well as a dark one, matching .rail-owned. */
-  box-shadow: 0 0 0 2px rgba(10, 10, 11, 0.8);
   pointer-events: none; /* the whole card is the button, same as .card-kind */
 }
+.card-in-library svg { display: block; }
 
 /* ============================================================
    MOTION PASS
@@ -2424,45 +2575,48 @@ select,
   100% { opacity: 1; transform: scale(1); }
 }
 
-/* ---- "Open the full episode list" (widget overlay only) -------------- */
-/* Both routes into the app share one class so they cannot drift apart in
-   look or behaviour. Styled as the elements they replace, plus the "text ›"
-   affordance .show-pill already uses on Home to mean "this navigates". */
+/* ---- Routes into the app (widget overlay only) ----------------------- */
+/* The show capsule and the episode title share this class as a marker, and
+   NOTHING ELSE. It deliberately carries no reset: one of the two is a capsule
+   that must keep its chrome and the other is a heading that must have none,
+   so a shared reset would only have to be undone again by one of them — and
+   when it did carry one, it silently stripped the capsule's background and
+   border. (.episode-open-list and .episode-show-badge have equal specificity
+   and this rule sits later in the file, so it wins by source order alone.)
+   Each variant styles itself below. */
 .episode-open-list {
-  background: none;
-  border: none;
-  padding: 0;
-  margin: 0;
-  font: inherit;
-  color: inherit;
-  text-align: left;
   cursor: pointer;
-  border-radius: 7px;
 }
-.episode-open-list:hover:not(:disabled) { border-color: transparent; }
 
-/* Keeps every pixel of the badge's own chrome; only the element type changed. */
+/* The capsule variant. .episode-hero-badge and .episode-show-badge already
+   provide every visual property; this adds only what being a <button>
+   requires. position: relative anchors the invisible hit area at the end of
+   this file to the capsule itself — it is a static flex child now (it used to
+   be absolutely positioned, back when it was the only thing on the still), so
+   without this the hit area would resolve against .episode-hero and stretch
+   across the artwork. */
 .episode-hero-badge.episode-open-list {
-  background: rgba(0, 0, 0, 0.72);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 0.9rem;
-  letter-spacing: 0.02em;
-  padding: 4px 10px;
-  display: inline-flex;
-  align-items: center;
+  position: relative;
   min-height: 0;
+  text-align: left;
 }
-.episode-hero-badge.episode-open-list:hover { background: rgba(0, 0, 0, 0.85); }
 
+/* The title variant, which DOES need the full reset: it has to look like the
+   <h2> it sits inside, not like a button. font: inherit is what picks the
+   heading's type up. */
 .episode-title-link {
   display: block;
   width: 100%;
-  color: var(--text);
+  background: none;
+  border: none;
+  margin: 0;
   padding: 2px 0;
+  border-radius: 6px;
+  font: inherit;
+  color: var(--text);
+  text-align: left;
 }
-.episode-title-link:hover { color: var(--accent); }
+.episode-title-link:hover { color: var(--accent); border-color: transparent; }
 
 /* ---- Tab navigation -------------------------------------------------- */
 /* Keyed on the active tab in App.tsx, so this restarts on every switch.
@@ -2552,13 +2706,17 @@ select,
   to { opacity: 1; transform: none; }
 }
 
-/* ---- Touch target for the capsule ------------------------------------ */
+/* ---- Touch target for the show capsule -------------------------------- */
 /* .episode-hero-badge is excluded from the (pointer: coarse) min-height rule
    above — 44px would turn a small overlaid capsule into a slab across the
    still — so it takes the same invisible hit area the other small controls
-   use. It is already position: absolute, so it is already a containing block
-   for its own ::after; do NOT add position: relative (see the warning on the
-   .watch-toggle-circle block above). */
+   use. Its containing block comes from the position: relative on
+   .episode-hero-badge.episode-open-list, which is why that is there.
+
+   height: 44px extends the target ~10px past the capsule in each direction,
+   which stays inside the still: the capsule row sits 12px above the hero's
+   bottom edge, and the episode title below it starts after the body's own
+   16px padding. The two navigation targets do not meet. */
 .episode-hero-badge.episode-open-list::after {
   content: "";
   position: absolute;

@@ -38,14 +38,23 @@ interface Props {
   // preview contexts without library membership simply don't offer it.
   onWatchAgain?: () => void;
   /**
-   * Widget overlay only. When supplied, the season/episode capsule and the
-   * episode title become controls that leave the overlay and open this show's
-   * full episode list in the main app.
+   * Widget overlay only. When supplied, the episode title becomes a control
+   * that leaves the overlay and opens THIS EPISODE's own detail panel in the
+   * main app — not the show's, which is what the capsule beside it is for.
    *
-   * Undefined in the app itself, where the panel is ALREADY on top of that
-   * list and there would be nowhere to navigate to.
+   * Undefined in the app itself, where this panel IS that destination and
+   * there would be nowhere to navigate to.
    */
-  onOpenFullEpisodeList?: () => void;
+  onOpenEpisodeInApp?: () => void;
+  /**
+   * Widget overlay only. Opens the SERIES detail panel in the main app — the
+   * show as a whole, which is the one thing the episode title does not go to.
+   *
+   * Supplied alongside onOpenEpisodeInApp and hidden in the app for the
+   * same reason. When it is absent the show title is not rendered as a
+   * capsule at all, so the app's own panel is untouched.
+   */
+  onOpenSeries?: () => void;
   /** See EpisodePanelTransition. Undefined = the panel animates itself. */
   transition?: EpisodePanelTransition;
   onClose: () => void;
@@ -59,7 +68,8 @@ export default function EpisodeDetailsPanel({
   canToggleWatched = true,
   onToggleWatched,
   onWatchAgain,
-  onOpenFullEpisodeList,
+  onOpenEpisodeInApp,
+  onOpenSeries,
   transition,
   onClose,
 }: Props) {
@@ -109,7 +119,7 @@ export default function EpisodeDetailsPanel({
   // list (see episodeLabel() in lib/widget/snapshot.ts), so the capsule the
   // user tapped in the widget reads identically in the panel it opened.
   const seasonEp = `S${String(episode.seasonNumber).padStart(2, "0")} | E${String(episode.episodeNumber).padStart(2, "0")}`;
-  const openListLabel = `Open the full episode list for ${show.name}`;
+  const openEpisodeLabel = `Open ${episode.name} in the app`;
 
   // An explicit dismissal always wins: whatever the parent is orchestrating,
   // a user who asks to close should see the panel close. Otherwise the
@@ -130,42 +140,49 @@ export default function EpisodeDetailsPanel({
           &times;
         </button>
 
-        {/* 1 + 2: landscape thumbnail with the S/E number overlaid bottom-left.
-            In the widget overlay the capsule is a control that opens the show's
-            full episode list in the app; in the app it is plain text, because
-            the panel is already on top of that list. */}
+        {/* 1 + 2: landscape thumbnail with two capsules along its bottom edge.
+
+            LEFT is the show, RIGHT is the season/episode, and the split is the
+            interaction hierarchy made visible: the show capsule NAVIGATES (to
+            the series panel in the app) and carries the "text ›" affordance
+            .show-pill uses on Home for exactly that; the S/E capsule is
+            INFORMATION and is always a plain span, never a control, in either
+            context. The route to this EPISODE in the app is its title below,
+            so each control goes to the thing it names. */}
         <div className="episode-hero">
           {episode.stillPath ? (
             <img src={`${TMDB_STILL_BASE}${episode.stillPath}`} alt={episode.name} className="episode-hero-img" />
           ) : (
             <div className="poster-placeholder episode-hero-img" />
           )}
-          {onOpenFullEpisodeList ? (
-            <button
-              type="button"
-              className="episode-hero-badge episode-open-list"
-              onClick={onOpenFullEpisodeList}
-              aria-label={openListLabel}
-            >
-              {seasonEp}
-              {/* Same "text ›" vocabulary .show-pill uses on Home for
-                  "this takes you somewhere". */}
-              <span aria-hidden="true"> &rsaquo;</span>
-            </button>
-          ) : (
-            <span className="episode-hero-badge">{seasonEp}</span>
-          )}
+          <div className="episode-hero-capsules">
+            {/* Widget overlay only. In the app this is absent and the row
+                holds just the S/E capsule, sitting bottom-left exactly where
+                it always did — the app's episode panel is unchanged by this. */}
+            {onOpenSeries && (
+              <button
+                type="button"
+                className="episode-hero-badge episode-show-badge episode-open-list"
+                onClick={onOpenSeries}
+                aria-label={`Open ${show.name} in the app`}
+              >
+                <span className="episode-show-badge-name">{show.name}</span>
+                <span aria-hidden="true">&rsaquo;</span>
+              </button>
+            )}
+            <span className="episode-hero-badge episode-number-badge">{seasonEp}</span>
+          </div>
         </div>
 
         <div className="episode-detail-body">
           {/* 3: title, also a route to the full episode list in the overlay. */}
           <h2 className="episode-detail-title">
-            {onOpenFullEpisodeList ? (
+            {onOpenEpisodeInApp ? (
               <button
                 type="button"
                 className="episode-open-list episode-title-link"
-                onClick={onOpenFullEpisodeList}
-                aria-label={openListLabel}
+                onClick={onOpenEpisodeInApp}
+                aria-label={openEpisodeLabel}
               >
                 {episode.name}
                 <span aria-hidden="true"> &rsaquo;</span>
@@ -205,11 +222,21 @@ export default function EpisodeDetailsPanel({
           {/* 7: actions. Separate "Mark watched" toggle and "Watch again",
               the latter shown only once watched. Deliberately plain buttons,
               not a <label>+checkbox (that pattern once caused opening the
-              panel to silently toggle watched state). */}
+              panel to silently toggle watched state).
+
+              ep-action-primary is applied only while UNWATCHED, so the one
+              thing the panel most expects you to do is the one filled control
+              on screen — clearly an action, and clearly not another of the
+              navigation capsules above it. Once watched, marking it back is a
+              correction rather than the main path, so it drops to the outlined
+              treatment it shares with "Watch Again". */}
           {canToggleWatched && (
             <>
               <div className="episode-actions">
-                <button className="ep-action-btn" onClick={onToggleWatched}>
+                <button
+                  className={`ep-action-btn ${watched ? "" : "ep-action-primary"}`}
+                  onClick={onToggleWatched}
+                >
                   {watched ? "Mark as Unwatched" : "Mark as Watched"}
                 </button>
                 {watched && onWatchAgain && (

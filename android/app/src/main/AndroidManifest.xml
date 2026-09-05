@@ -98,6 +98,25 @@
             android:permission="android.permission.BIND_REMOTEVIEWS"
             android:exported="false" />
 
+        <!-- Posts release notifications when they come due.
+
+             Not exported: the rolling alarm targets it explicitly, and the two
+             boot-time actions below are protected broadcasts only the system
+             can send, which it delivers to this app's own receivers regardless.
+
+             BOOT_COMPLETED and MY_PACKAGE_REPLACED are both here because a
+             pending alarm survives neither a restart nor an app update. Without
+             them, every scheduled release would be dropped on the floor until
+             the user happened to open the app again. -->
+        <receiver
+            android:name=".notify.ReleaseAlarmReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -22,11 +22,10 @@ interface Props {
    * Shows only. Opens with this season already expanded (and fetched if it
    * was never cached), instead of a fully collapsed accordion.
    *
-   * Set by the widget overlay's "open the full episode list" handoff: the
-   * user tapped an episode's capsule or title, so landing them on a closed
-   * list they have to search through would lose exactly the context they
-   * asked to keep. Undefined everywhere else, which is the previous
-   * behaviour unchanged.
+   * Set by a batch-release notification — "Season 3 is now available" has no
+   * single episode to open, so it opens the show ON that season; landing the
+   * user on a closed accordion would lose the one thing the notification was
+   * about. Undefined everywhere else, which is the collapsed default.
    */
   initialSeason?: number;
   onClose: () => void;
@@ -72,7 +71,15 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // mobile-specific. useDraggableSheet's output is only wired into the
   // JSX on the mobile render path below, it's inert otherwise.
   useLockBodyScroll();
-  const { sheetStyle, handleProps } = useDraggableSheet(onClose);
+  // Aliased: this file already has an `expandedSeason` for the accordion, and
+  // two unqualified "expanded" flags meaning different things read badly.
+  const {
+    sheetStyle,
+    handleProps,
+    contentProps,
+    expanded: sheetExpanded,
+    setExpanded: setSheetExpanded,
+  } = useDraggableSheet(onClose);
   const isMobile = useIsMobile();
   // Closing without a drag — the X, the backdrop, Escape, Android back — used
   // to unmount the panel in the same frame, so a sheet that slides away
@@ -106,6 +113,17 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // rewatch count (+N) as "Watch again" is pressed.
   const [watchCountByKey, setWatchCountByKey] = useState<Map<string, number>>(new Map());
   const [openEpisode, setOpenEpisode] = useState<Episode | null>(null);
+
+  // Collapsing returns the sheet to the top of its content.
+  //
+  // Load-bearing, not tidiness: the collapsed state turns the inner scroller
+  // off, and scrollTop survives that. Without this, collapsing after reading
+  // partway down the episode list would leave the half-open sheet showing the
+  // middle of a list with no way to scroll back to the title.
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!sheetExpanded && scrollAreaRef.current) scrollAreaRef.current.scrollTop = 0;
+  }, [sheetExpanded]);
 
   // Escape closes this panel, unless the episode panel is stacked on top
   // of it (openEpisode set), in which case that panel's own Escape
@@ -222,12 +240,11 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   /**
    * Applies `initialSeason` once the season list is known.
    *
-   * Guarded on the season actually existing for this show, so a stale or
-   * malformed deep link opens a normal collapsed panel rather than an
-   * accordion pointing at a season that is not there. `appliedInitialSeason`
-   * makes it strictly one-shot: after this, expanding and collapsing seasons
-   * is entirely the user's, and a re-render must not re-open what they just
-   * closed.
+   * Guarded on the season actually existing for this show, so a stale link
+   * opens a normal collapsed panel rather than an accordion pointing at a
+   * season that is not there. The ref makes it strictly one-shot: after this,
+   * expanding and collapsing seasons is entirely the user's, and a re-render
+   * must not re-open what they just closed.
    */
   const appliedInitialSeason = useRef(false);
   useEffect(() => {
@@ -686,15 +703,49 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
           style={closing ? { ...sheetStyle, transform: "translateY(100%)" } : sheetStyle}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="sheet-drag-handle" {...handleProps}>
-            <div className="sheet-drag-handle-bar" />
+          {/* A real header row, not a floating button.
+              Close used to be absolutely positioned over the top of the
+              sheet, which meant every episode row's watched tick slid
+              directly underneath it as the season list scrolled — two
+              different controls sharing one patch of screen. The bar is a
+              flex sibling of the scroll area now, so the content physically
+              cannot reach it. */}
+          <div className="sheet-top-bar">
+            {/* Fills the bar except for the close button, so the whole strip
+                is grabbable rather than just the 40x4px grabber. Close is a
+                sibling, so pressing it never reaches these handlers. */}
+            <div
+              className="sheet-grab-area"
+              role="button"
+              tabIndex={0}
+              aria-label={sheetExpanded ? "Collapse panel" : "Expand panel"}
+              aria-expanded={sheetExpanded}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSheetExpanded(!sheetExpanded);
+                }
+              }}
+              {...handleProps}
+            >
+              <div className="sheet-drag-handle-bar" />
+            </div>
+
+            <button className="close-x sheet-close-x" onClick={requestClose} aria-label="Close">
+              &times;
+            </button>
           </div>
 
-          <button className="close-x hero-close-x" onClick={requestClose} aria-label="Close">
-            &times;
-          </button>
-
-          <div className="sheet-scroll-area">
+          {/* is-collapsed turns off inner scrolling at the half-open size, so
+              every vertical swipe there moves the SHEET. That is what makes
+              "swipe up to reach the episodes" the obvious gesture instead of
+              a hidden inner scroll that reveals the list without ever
+              expanding the panel. */}
+          <div
+            ref={scrollAreaRef}
+            className={`sheet-scroll-area ${sheetExpanded ? "" : "is-collapsed"}`}
+            {...contentProps}
+          >
             {error && <p className="status-error">{error}</p>}
             {!details && !error && <p className="muted">Loading...</p>}
 

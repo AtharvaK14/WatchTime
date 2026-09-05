@@ -57,25 +57,37 @@ export function canOpenInApp(): boolean {
 }
 
 /**
- * Opens the show's full episode list in the main app and dismisses the
- * overlay.
+ * The two ways out of the widget's episode panel and into the app. Both are
+ * explicit taps by the user; nothing here ever fires on its own, which is the
+ * whole point of the overlay existing. Marking watched, rewatching and
+ * closing all stay inside the overlay.
  *
- * This is the ONLY path from the widget's episode panel into the app. Every
- * other interaction in that panel - marking watched, rewatching, closing -
- * deliberately stays inside the overlay, which is the whole point of the
- * overlay existing. It is never automatic: the user has to tap the
- * season/episode capsule or the episode title to get here.
+ * They are deliberately different destinations, and each opens the panel the
+ * user was pointing at rather than its container:
  *
- * `seasonNumber` rides along so the app opens with that season already
- * expanded, rather than on a collapsed accordion the user has to search for
- * the episode they were just looking at.
+ *  - the episode title opens THAT EPISODE's own detail panel in the app
+ *  - the show capsule opens the SERIES panel for the show as a whole
+ *
+ * Both are shapes DeepLinkHost already renders — an episode link is the same
+ * one a tapped notification uses — so neither adds a navigation path or a
+ * panel that did not already exist.
  */
-export function openShowEpisodeListInApp(showId: number, seasonNumber: number): void {
+function openInApp(payload: Record<string, unknown>): void {
   const host = panelHost();
   if (!host?.openInApp) return;
   try {
-    host.openInApp(JSON.stringify({ kind: "show", showId, seasonNumber }));
+    host.openInApp(JSON.stringify(payload));
   } catch {
     // The overlay stays open and usable; only the handoff is lost.
   }
+}
+
+/** The episode title's destination: this episode's own panel in the app. */
+export function openEpisodeInApp(showId: number, episodeKey: string): void {
+  openInApp({ kind: "episode", showId, episodeKey });
+}
+
+/** The show capsule's destination: the series panel, no season pre-expanded. */
+export function openSeriesInApp(showId: number): void {
+  openInApp({ kind: "show", showId });
 }

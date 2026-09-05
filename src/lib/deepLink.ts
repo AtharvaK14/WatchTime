@@ -10,10 +10,10 @@
 
 export type DeepLinkTarget =
   | { kind: "episode"; showId: number; episodeKey: string }
-  // seasonNumber is optional and only set by the widget overlay's "open the
-  // full episode list" handoff, so the show panel opens with that season
-  // already expanded instead of a collapsed accordion the user has to hunt
-  // through for the episode they were just looking at.
+  // seasonNumber is optional and set only by a batch-release notification —
+  // "Season 3 is now available" has no single episode to open, so it opens
+  // the show with that season already expanded, which is the thing the
+  // notification was actually about. Every other show link omits it.
   | { kind: "show"; tmdbId: number; seasonNumber?: number }
   | { kind: "movie"; tmdbId: number };
 
@@ -52,11 +52,17 @@ export function parseDeepLinkTarget(raw: unknown): DeepLinkTarget | null {
   if (data.kind === "episode" && Number.isFinite(showId) && typeof data.episodeKey === "string") {
     return { kind: "episode", showId, episodeKey: data.episodeKey };
   }
-  if (data.kind === "show" && Number.isFinite(showId)) {
+  if (data.kind === "show") {
+    // Two producers spell this differently: notifications send `tmdbId`,
+    // matching DeepLinkTarget, while the widget overlay sends `showId`.
+    // Accepting both is deliberate rather than lazy — a link the widget
+    // queued natively before an app update has to still resolve after it.
+    const id = Number.isFinite(tmdbId) ? tmdbId : showId;
+    if (!Number.isFinite(id)) return null;
     const seasonNumber = Number(data.seasonNumber);
     return {
       kind: "show",
-      tmdbId: showId,
+      tmdbId: id,
       ...(Number.isFinite(seasonNumber) ? { seasonNumber } : {}),
     };
   }
