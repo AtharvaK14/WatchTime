@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ComponentType } from "react";
 import {
   cancelAllNotifications,
   checkNotificationPermission,
@@ -10,23 +10,67 @@ import {
 } from "../lib/notifications";
 import type { NotificationKind } from "../lib/notifications/events";
 import {
-  DEFAULT_NOTIFICATION_HOUR,
-  getNotificationHour,
   kindEnabled,
   notificationsEnabled,
-  NOTIFICATION_KIND_LABELS,
   setKindEnabled,
-  setNotificationHour,
   setNotificationsEnabled,
 } from "../lib/notifications/prefs";
+import { HomeIcon, SeasonsIcon, ShowsIcon, TicketIcon, type IconProps } from "./icons";
 
-const KINDS: NotificationKind[] = ["episode", "season-premiere", "movie-theatrical", "movie-digital"];
-
-function formatHour(hour: number): string {
-  const suffix = hour < 12 ? "am" : "pm";
-  const display = hour % 12 === 0 ? 12 : hour % 12;
-  return `${display}${suffix}`;
+interface KindRow {
+  kind: NotificationKind;
+  label: string;
+  /** What being on actually causes. Every row says WHEN, because "when" is no longer configurable. */
+  detail: string;
+  icon: ComponentType<IconProps>;
 }
+
+/**
+ * The categories, grouped the way a person thinks about them rather than the
+ * way the event builder happens to enumerate them.
+ *
+ * Labels are group-relative: inside "Movies", "Theatrical releases" says
+ * everything "Movies in cinemas" did without repeating the group heading on
+ * every row. This is the only place these strings live — the presentation of
+ * a preference belongs with the screen that presents it, not with the
+ * localStorage wrapper that stores it.
+ */
+const GROUPS: { title: string; rows: KindRow[] }[] = [
+  {
+    title: "TV shows",
+    rows: [
+      {
+        kind: "episode",
+        label: "New episodes",
+        detail: "The moment an episode you follow becomes available",
+        icon: ShowsIcon,
+      },
+      {
+        kind: "season-premiere",
+        label: "New seasons",
+        detail: "A season premiere, or a whole season landing at once",
+        icon: SeasonsIcon,
+      },
+    ],
+  },
+  {
+    title: "Movies",
+    rows: [
+      {
+        kind: "movie-theatrical",
+        label: "Theatrical releases",
+        detail: "When a film on your list reaches cinemas",
+        icon: TicketIcon,
+      },
+      {
+        kind: "movie-digital",
+        label: "Digital releases",
+        detail: "When it becomes available to watch at home",
+        icon: HomeIcon,
+      },
+    ],
+  },
+];
 
 /**
  * The only place the OS notification permission is ever requested.
@@ -40,11 +84,10 @@ function formatHour(hour: number): string {
 export default function NotificationSettings() {
   const [availability, setAvailability] = useState<NotificationAvailability | null>(null);
   const [enabled, setEnabled] = useState(() => notificationsEnabled());
-  const [hour, setHour] = useState(() => getNotificationHour());
-  // Mirrored into state so the checkboxes re-render; localStorage stays the
+  // Mirrored into state so the switches re-render; localStorage stays the
   // source of truth, matching how the stale-days threshold is handled.
   const [kinds, setKinds] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(KINDS.map((k) => [k, kindEnabled(k)]))
+    Object.fromEntries(GROUPS.flatMap((g) => g.rows).map((r) => [r.kind, kindEnabled(r.kind)]))
   );
   const [scheduled, setScheduled] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -84,21 +127,12 @@ export default function NotificationSettings() {
     if (enabled) reschedule();
   }
 
-  function changeHour(value: number) {
-    setHour(value);
-    setNotificationHour(value);
-    if (enabled) reschedule();
-  }
-
   if (!notificationsSupported()) {
     return (
-      <div className="settings-block">
-        <h3>Notifications</h3>
-        <p className="muted small">
-          Release notifications are only available in the Android app. The browser build has no scheduler to hand
-          them to.
-        </p>
-      </div>
+      <p className="muted small">
+        Release notifications are only available in the Android app. The browser build has no scheduler to hand
+        them to.
+      </p>
     );
   }
 
@@ -106,12 +140,13 @@ export default function NotificationSettings() {
 
   return (
     <>
+      {/* No heading of its own: the <summary> this sits under already says
+          "Notifications", and repeating it put the same word on screen twice
+          with nothing between them. */}
       <div className="settings-block">
-        <h3>Notifications</h3>
         <p className="muted small">
-          Tells you when something in <em>your library</em> arrives: a new episode, a season premiere, a movie
-          reaching cinemas, or a movie becoming available at home. Nothing else is ever announced — there are no
-          recommendations here, and a title you have not added can never trigger one.
+          Tells you when something in <em>your library</em> arrives, as soon as it does. Nothing else is ever
+          announced — there are no recommendations here, and a title you have not added can never trigger one.
         </p>
 
         <div className="field-row">
@@ -141,34 +176,43 @@ export default function NotificationSettings() {
       </div>
 
       {enabled && (
-        <div className="settings-block">
-          <h3>What to be told about</h3>
-          {KINDS.map((kind) => (
-            <label key={kind} className="field-row" style={{ gap: 10, marginBottom: 6 }}>
-              <input type="checkbox" checked={kinds[kind]} onChange={() => toggleKind(kind)} />
-              <span>{NOTIFICATION_KIND_LABELS[kind]}</span>
-            </label>
+        <div className="notif-groups">
+          {GROUPS.map((group) => (
+            <section key={group.title} className="notif-group">
+              <h3 className="notif-group-title">{group.title}</h3>
+              <div className="notif-list">
+                {group.rows.map((row) => {
+                  const Icon = row.icon;
+                  const on = kinds[row.kind];
+                  return (
+                    <button
+                      key={row.kind}
+                      type="button"
+                      // role="switch" rather than a checkbox: the whole row is
+                      // the target, which is what makes this comfortable to hit
+                      // on a phone, and aria-checked keeps the on/off state
+                      // announced rather than merely drawn.
+                      role="switch"
+                      aria-checked={on}
+                      className={`notif-row ${on ? "on" : ""}`}
+                      onClick={() => toggleKind(row.kind)}
+                    >
+                      <span className="notif-row-icon" aria-hidden="true">
+                        <Icon size={18} />
+                      </span>
+                      <span className="notif-row-text">
+                        <span className="notif-row-label">{row.label}</span>
+                        <span className="notif-row-detail">{row.detail}</span>
+                      </span>
+                      <span className="notif-switch" aria-hidden="true">
+                        <span className="notif-switch-knob" />
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
           ))}
-
-          <div className="field-row" style={{ marginTop: 12 }}>
-            <label htmlFor="notification-hour">Deliver at</label>
-            <select
-              id="notification-hour"
-              value={hour}
-              onChange={(e) => changeHour(Number(e.target.value))}
-              style={{ minWidth: 120 }}
-            >
-              {Array.from({ length: 24 }, (_, h) => (
-                <option key={h} value={h}>
-                  {formatHour(h)}
-                </option>
-              ))}
-            </select>
-          </div>
-          <p className="muted small">
-            Everything releasing on a given day is announced at this time, rather than at whatever minute a
-            broadcaster happens to air. Default is {formatHour(DEFAULT_NOTIFICATION_HOUR)}.
-          </p>
         </div>
       )}
     </>

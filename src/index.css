@@ -2727,3 +2727,127 @@ select,
   height: 44px;
   transform: translate(-50%, -50%);
 }
+
+/* ============================================================
+   NOTIFICATION SETTINGS (components/NotificationSettings.tsx)
+
+   The four categories were a bare <input type="checkbox"> list — the one
+   place in the app still rendering an unstyled browser control, next to a
+   time <select> that no longer exists. They are rows now: icon, label, what
+   turning it on actually does, and a switch.
+
+   Everything here is assembled from patterns already in this file rather
+   than invented: the card is .settings-block's surface and border, the group
+   headings are the uppercase micro-label .filter-group-title uses, the row
+   press is the same scale the tactile-feedback block gives every button, and
+   the "on" fill is --accent, the colour that already means "this one is
+   yours" on .rail-owned and .card-in-library.
+   ============================================================ */
+
+.notif-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.notif-group-title {
+  margin: 0 0 8px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.notif-list {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden; /* so the first and last rows inherit the rounded corners */
+}
+
+/* A row is one control, not a label beside one: the whole strip toggles, which
+   on a phone is the difference between a 44px target and a 20px one. */
+.notif-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  background: none;
+  border: none;
+  border-radius: 0;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.notif-row + .notif-row { border-top: 1px solid var(--border); }
+.notif-row:hover:not(:disabled) { border-color: transparent; background: var(--surface-raised); }
+/* Rows are wide, so the app's press-scale would read as the whole card
+   lurching; the dim it uses for .watch-next-row is the right weight here. */
+.notif-row:active { transform: none; opacity: 0.75; }
+
+.notif-row-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  transition: color 200ms ease, background-color 200ms ease;
+}
+/* The icon picks up the accent when the row is on, so the state reads from
+   the left edge as well as the right and does not depend on one small control. */
+.notif-row.on .notif-row-icon {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.notif-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.notif-row-label { font-size: 0.95rem; font-weight: 600; line-height: 1.3; }
+.notif-row-detail { font-size: 0.8rem; line-height: 1.35; color: var(--muted); }
+
+/* ---- The switch ------------------------------------------------------- */
+
+.notif-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  transition: background-color 200ms ease, border-color 200ms ease;
+}
+.notif-row.on .notif-switch {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.notif-switch-knob {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--muted);
+  /* translateY carries the centring, so the transition below must animate
+     translate rather than `left` — a layout property would be re-laying out
+     the row on every frame of a toggle. */
+  transform: translate(0, -50%);
+  transition: transform 200ms cubic-bezier(0.2, 0, 0, 1), background-color 200ms ease;
+}
+.notif-row.on .notif-switch-knob {
+  background: var(--bg);
+  transform: translate(18px, -50%);
+}

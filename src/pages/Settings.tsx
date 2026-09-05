@@ -501,7 +501,12 @@ export default function Settings() {
     <div className="panel">
       <h1>Settings</h1>
 
-      <details open>
+      {/* Deliberately NOT `open`. Backup & Restore used to expand itself on
+          every visit to Settings, which made the page open mid-scroll into a
+          section most visits are not about and left every other section
+          looking secondary to it. All eight are collapsed now, so the page
+          opens as a list of destinations. */}
+      <details>
         <summary>
           <span className="settings-row-text">
             <h2>Backup &amp; Restore</h2>

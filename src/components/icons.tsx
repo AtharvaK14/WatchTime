@@ -66,6 +66,33 @@ export function SettingsIcon({ size = 20, className }: IconProps) {
   );
 }
 /**
+ * A season: episodes stacked into one thing.
+ *
+ * Distinct from ShowsIcon (a single TV set) on purpose — the two sit next to
+ * each other in the notification settings, where the whole point is that one
+ * row is about one episode arriving and the other is about a season's worth.
+ */
+export function SeasonsIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <rect x="3" y="9" width="18" height="12" rx="2" />
+      <path d="M6 6h12" />
+      <path d="M8 3h8" />
+    </svg>
+  );
+}
+
+/** A cinema ticket: a film reaching theatres, as opposed to reaching a sofa. */
+export function TicketIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <path d="M4 7.5a1.5 1.5 0 0 1 1.5-1.5h13A1.5 1.5 0 0 1 20 7.5V10a2 2 0 0 0 0 4v2.5a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 16.5V14a2 2 0 0 0 0-4z" />
+      <path d="M14 6.5v11" strokeDasharray="2 2.5" />
+    </svg>
+  );
+}
+
+/**
  * "In your library", on Discover cards.
  *
  * A bookmark, filled, because the thing it replaced was a tick — and a tick on

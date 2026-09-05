@@ -19,7 +19,6 @@ import { requestDeepLink, parseDeepLinkTarget } from "../deepLink";
 import { buildNotificationEvents, notificationId, todayIso, type NotificationEvent } from "./events";
 import { clearSchedule, pushSchedule, toScheduledNotification } from "./bridge";
 import {
-  getNotificationHour,
   kindEnabled,
   markPermissionRequested,
   notificationsEnabled,
@@ -153,10 +152,19 @@ async function backfillDigitalReleaseDates(limit = 12): Promise<void> {
   }
 }
 
-function scheduleTimeFor(event: NotificationEvent, hour: number): Date {
-  const at = new Date(`${event.date}T00:00:00`);
-  at.setHours(hour, 0, 0, 0);
-  return at;
+/**
+ * The moment a release actually becomes available.
+ *
+ * Midnight local on its date, because that IS the moment at the precision the
+ * data has: TMDB's air_date and release dates carry no time of day, so a
+ * calendar day is all anyone knows. Anything later would be a delay this app
+ * invented, which is exactly what the removed "deliver at" preference was.
+ *
+ * Local, not UTC, for the same reason todayIso() is: a release on the 10th
+ * should announce itself when the user's own 10th starts.
+ */
+function releaseMomentFor(event: NotificationEvent): Date {
+  return new Date(`${event.date}T00:00:00`);
 }
 
 /**
@@ -183,19 +191,19 @@ export async function syncScheduledNotifications(): Promise<number> {
     db.movies.toArray(),
   ]);
 
-  const hour = getNotificationHour();
   const now = Date.now();
   const wanted = buildNotificationEvents(shows, episodes, movies)
     .filter((e) => kindEnabled(e.kind))
-    // An event whose fire time has already passed today would be delivered
-    // immediately, which is wrong: the user would get a burst of "available
-    // today" alerts every time they opened the app after 9am.
-    .filter((e) => scheduleTimeFor(e, hour).getTime() > now)
+    // Belt and braces. buildNotificationEvents already emits only strictly
+    // future dates, so every release moment here is ahead of now; this keeps
+    // a clock change or a date-boundary race from queueing something the
+    // native side would then fire the instant it was stored.
+    .filter((e) => releaseMomentFor(e).getTime() > now)
     .slice(0, MAX_SCHEDULED);
 
   await pushSchedule(
     wanted.map((event) =>
-      toScheduledNotification(event, scheduleTimeFor(event, hour), notificationId(event.eventId))
+      toScheduledNotification(event, releaseMomentFor(event), notificationId(event.eventId))
     )
   );
 
