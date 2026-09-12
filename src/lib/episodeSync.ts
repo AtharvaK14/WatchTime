@@ -1,6 +1,7 @@
 import { db, episodeKey, type Episode } from "../db";
 import { getTvShowDetails, getSeasonDetails, type TvShowDetails } from "../tmdb";
 import { getTvmazeRuntimesByTvdbId } from "../tvmaze";
+import { daysAgoIso, todayIso } from "./releaseState";
 
 /**
  * Sum of episode_count across real seasons (season_number > 0, excluding
@@ -61,23 +62,94 @@ async function toEpisodeRecords(
 }
 
 /**
- * Makes sure every season's episode list for a show is cached locally.
- * Skips seasons we already have, so repeated calls are cheap. Used by Home,
- * which needs to know the "next unwatched episode" across every followed
- * show without the user having opened each show page first.
+ * Seasons already refreshed in this browser session because they were
+ * mid-run, keyed `${tmdbId}:${season}`.
+ *
+ * A season that is currently airing has to be re-read occasionally even when
+ * nothing about it looks wrong locally, because TMDB revises air dates during
+ * a run. Once per session is the right frequency for that: it is the same
+ * order of cost as the first sync, and a date correction that arrives a few
+ * hours late changes nothing the user can act on. Deliberately in memory
+ * only - persisting it would buy a handful of requests and cost a schema
+ * field that means nothing outside a single run of the app.
  */
-export async function ensureEpisodesCached(tmdbId: number): Promise<number[]> {
+const refreshedInFlightSeasons = new Set<string>();
+
+/** How far back a season still counts as "mid-run" for the refresh above. */
+const IN_FLIGHT_LOOKBACK_DAYS = 21;
+
+/**
+ * Whether a cached season still looks live: an episode still to come, or one
+ * that landed within the last few weeks. Those are the seasons whose episode
+ * list can still change under us.
+ */
+function seasonIsInFlight(cached: Episode[], now: Date): boolean {
+  const today = todayIso(now);
+  const recent = daysAgoIso(IN_FLIGHT_LOOKBACK_DAYS, now);
+  return cached.some((ep) => ep.airDate !== null && (ep.airDate > today || ep.airDate >= recent));
+}
+
+/** Replaces one season's cached episodes with a freshly fetched list. */
+async function fetchSeasonInto(tmdbId: number, seasonNumber: number, cached: Episode[]): Promise<void> {
+  const season = await getSeasonDetails(tmdbId, seasonNumber);
+  const records = await toEpisodeRecords(tmdbId, seasonNumber, season.episodes);
+  const fresh = new Set(records.map((r) => r.key));
+  // Rows TMDB no longer lists (a renumbered or withdrawn episode) are dropped
+  // rather than left behind. Without this, a season that shrinks upstream
+  // would fail the count check on every single sync and re-fetch forever.
+  const removed = cached.filter((ep) => !fresh.has(ep.key)).map((ep) => ep.key);
+  if (removed.length > 0) await db.episodes.bulkDelete(removed);
+  await db.episodes.bulkPut(records);
+}
+
+/**
+ * Makes sure every season's episode list for a show is cached locally, and
+ * that the ones which can still change are up to date.
+ *
+ * Used by Home, which needs the "next unwatched episode" across every
+ * followed show without the user having opened each show page first.
+ *
+ * It used to fetch only seasons it held NOTHING for, which was the quiet half
+ * of the returning-shows bug. A season first cached while TMDB listed one
+ * dated episode stayed a one-episode season locally forever: the rest of the
+ * run never appeared in Watch Next, and the notification scheduler - which
+ * reads these same rows - never saw an episode to announce. A season is now
+ * re-read when either
+ *
+ *   - TMDB's episode_count disagrees with what is cached (episodes were added
+ *     or removed upstream since the first fetch), or
+ *   - it is still in flight and has not been refreshed yet this session.
+ *
+ * Neither costs a request when nothing has changed: episode_count arrives in
+ * the show details response this function already fetches, and a finished
+ * season is never in flight.
+ */
+export async function ensureEpisodesCached(tmdbId: number, now = new Date()): Promise<number[]> {
   const details = await getTvShowDetails(tmdbId);
-  const seasonNumbers = details.seasons.map((s) => s.season_number).filter((n) => n > 0);
+  const realSeasons = details.seasons.filter((s) => s.season_number > 0);
+  const seasonNumbers = realSeasons.map((s) => s.season_number);
 
   const existing = await db.episodes.where("showId").equals(tmdbId).toArray();
-  const haveSeasons = new Set(existing.map((e) => e.seasonNumber));
-  const missing = seasonNumbers.filter((s) => !haveSeasons.has(s));
+  const cachedBySeason = new Map<number, Episode[]>();
+  for (const ep of existing) {
+    const list = cachedBySeason.get(ep.seasonNumber);
+    if (list) list.push(ep);
+    else cachedBySeason.set(ep.seasonNumber, [ep]);
+  }
 
-  for (const seasonNumber of missing) {
-    const season = await getSeasonDetails(tmdbId, seasonNumber);
-    const records = await toEpisodeRecords(tmdbId, seasonNumber, season.episodes);
-    await db.episodes.bulkPut(records);
+  for (const season of realSeasons) {
+    const cached = cachedBySeason.get(season.season_number) ?? [];
+    const inFlightKey = `${tmdbId}:${season.season_number}`;
+    const countChanged = cached.length !== season.episode_count;
+    const inFlight =
+      cached.length > 0 && !refreshedInFlightSeasons.has(inFlightKey) && seasonIsInFlight(cached, now);
+    if (!countChanged && !inFlight) continue;
+
+    // Marked before the request, not after: a season whose fetch fails should
+    // not be retried on every re-render for the rest of the session. The
+    // count check above still catches it on the next app launch.
+    if (inFlight) refreshedInFlightSeasons.add(inFlightKey);
+    await fetchSeasonInto(tmdbId, season.season_number, cached);
   }
 
   return seasonNumbers;

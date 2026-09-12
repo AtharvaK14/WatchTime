@@ -21,6 +21,15 @@ import {
   API_KEYS_CHANGED_EVENT,
 } from "../lib/persistence";
 import { getStaleDaysThreshold, setStaleDaysThreshold, DEFAULT_STALE_DAYS_THRESHOLD } from "../lib/showStatus";
+import { RELEASE_ACTIVATION_DAYS } from "../lib/releaseState";
+import { getWatchProviderRegions, type TmdbWatchRegion } from "../tmdb";
+import {
+  clearStreamingCache,
+  deviceRegion,
+  getWatchRegion,
+  setWatchRegion,
+  watchRegionIsAutomatic,
+} from "../lib/streaming/providers";
 import ImportWizard from "./ImportWizard";
 import Diagnostics from "./Diagnostics";
 import About from "../components/About";
@@ -427,6 +436,17 @@ function WatchNextPreferences() {
           two lists never overlap; watching the next episode moves the show straight back. Default:{" "}
           {DEFAULT_STALE_DAYS_THRESHOLD} days.
         </p>
+        <p className="muted small">
+          A new release wins over this for a show you were keeping up with. If an episode arrived in the last{" "}
+          {RELEASE_ACTIVATION_DAYS} days and you had watched everything released before it, the show stays in Watch
+          Next however long ago that was — so a series returning after a couple of years off does not arrive filed
+          as something you abandoned. It still offers the next episode in order, not the new season's premiere.
+        </p>
+        <p className="muted small">
+          A show with older episodes still unwatched is not brought back this way: new episodes landing on top of a
+          backlog you never worked through say you stopped, not that you were waiting. Those stay here until you
+          watch something, and anything you mark as stopped watching leaves both lists entirely.
+        </p>
         <div className="field-row">
           <input
             type="number"
@@ -444,6 +464,112 @@ function WatchNextPreferences() {
         </div>
         {saved && <p className="status-ok">Saved. Takes effect next time Home loads.</p>}
         {!valid && days !== "" && <p className="status-error">Enter a number of days, 1 or higher.</p>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Which country's streaming availability the details panels answer for.
+ *
+ * A setting at all because availability genuinely differs by region - the same
+ * series is on different services in different countries, and on none in some -
+ * so there is no single correct answer to bake in. The device's own locale is
+ * the default and is right for most people; this is for the rest, and for
+ * anyone whose subscriptions do not match where their phone thinks it is.
+ */
+function StreamingPreferences() {
+  const [region, setRegion] = useState(() => getWatchRegion());
+  const [automatic, setAutomatic] = useState(() => watchRegionIsAutomatic());
+  const [regions, setRegions] = useState<TmdbWatchRegion[] | null>(null);
+  const [refreshed, setRefreshed] = useState(false);
+
+  // One request, on the one screen that needs it, and entirely optional: if it
+  // fails the picker falls back to a plain two-letter entry rather than
+  // blocking the setting behind a network call.
+  useEffect(() => {
+    let cancelled = false;
+    getWatchProviderRegions()
+      .then((list) => {
+        if (!cancelled) {
+          setRegions([...list].sort((a, b) => a.english_name.localeCompare(b.english_name)));
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRegions([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function apply(next: string) {
+    // "" is the automatic option: clearing the stored value puts the device
+    // back in charge rather than freezing today's locale as a choice.
+    if (next === "") {
+      setWatchRegion(null);
+      setAutomatic(true);
+      setRegion(deviceRegion());
+    } else {
+      setWatchRegion(next);
+      setAutomatic(false);
+      setRegion(next);
+    }
+    setRefreshed(false);
+  }
+
+  async function refresh() {
+    await clearStreamingCache();
+    setRefreshed(true);
+  }
+
+  return (
+    <div className="panel">
+      <div className="settings-block">
+        <h3>Region</h3>
+        <p className="muted small">
+          Where "Available on" checks. Streaming rights are sold by country, so a show on one service here can be
+          on another, or on none, somewhere else. Availability comes from TMDB, which sources it from JustWatch.
+        </p>
+        <div className="field-row">
+          {regions === null || regions.length === 0 ? (
+            <input
+              type="text"
+              value={automatic ? "" : region}
+              placeholder={`Auto (${deviceRegion()})`}
+              maxLength={2}
+              onChange={(e) => apply(e.target.value.toUpperCase())}
+              style={{ minWidth: 120, width: 120 }}
+              aria-label="Two-letter country code"
+            />
+          ) : (
+            <select value={automatic ? "" : region} onChange={(e) => apply(e.target.value)} aria-label="Region">
+              <option value="">Auto ({deviceRegion()})</option>
+              {regions.map((r) => (
+                <option key={r.iso_3166_1} value={r.iso_3166_1}>
+                  {r.english_name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+        <p className="muted small">
+          Currently checking {region}
+          {automatic ? ", from this device's language settings" : ""}.
+        </p>
+      </div>
+
+      <div className="settings-block">
+        <h3>Refresh availability</h3>
+        <p className="muted small">
+          Availability is cached for a week so that opening a details panel twice does not spend two TMDB requests
+          on something that changes at the pace of licensing deals. Clear it if a service has just picked up or
+          dropped something and you want the panels to catch up now. Nothing in your library is affected.
+        </p>
+        <div className="field-row">
+          <button onClick={refresh}>Clear cached availability</button>
+        </div>
+        {refreshed && <p className="status-ok">Cleared. Panels will re-check as you open them.</p>}
       </div>
     </div>
   );
@@ -563,6 +689,18 @@ export default function Settings() {
         </summary>
         <div style={{ marginTop: 14 }}>
           <WatchNextPreferences />
+        </div>
+      </details>
+
+      <details>
+        <summary>
+          <span className="settings-row-text">
+            <h2>Streaming</h2>
+            <p className="muted small settings-row-sub">Which region "Available on" answers for</p>
+          </span>
+        </summary>
+        <div style={{ marginTop: 14 }}>
+          <StreamingPreferences />
         </div>
       </details>
 

@@ -1316,7 +1316,35 @@ details[open] > summary::after { transform: rotate(90deg); }
   flex-shrink: 0;
   background: var(--surface-raised);
 }
-.up-row-body { flex: 1; min-width: 0; }
+/* A tight two-line column, deliberately shorter than the 48px poster beside
+   it so the row's align-items: center has something sensible to centre.
+
+   The margin reset is the load-bearing part. .show-name sets margin: 0, but
+   the second line in these rows is a plain <p class="muted small"> — .muted
+   and .small only set colour and size — so it kept the browser's default 1em
+   top and bottom. That made the text block ~59px against a 48px poster AND
+   pushed the two lines apart, so the title floated above the poster's top
+   edge while the season/episode sat below its bottom and the poster lined up
+   with neither. Affects both columns, since "Releasing this month" uses the
+   same markup.
+
+   Single-line title for the same reason .mtw-name has one: it keeps every row
+   exactly one poster tall however long the title is, instead of a series with
+   a long name wrapping to two lines and reintroducing the mismatch. */
+.up-row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+}
+.up-row-body p { margin: 0; }
+.up-row-body .show-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .up-row-date {
   font-size: 0.8rem;
   color: var(--muted);
@@ -2851,3 +2879,173 @@ select,
   background: var(--bg);
   transform: translate(18px, -50%);
 }
+
+/* ============================================================
+   NEW tag (pages/Home.tsx)
+
+   Sits alongside PREMIERE on a Watch Next row and answers a different
+   question. PREMIERE is about the EPISODE being offered — it opens a season.
+   NEW is about the SHOW — something has been released that the user has not
+   seen, which for a series returning after years away is the only thing on
+   the row explaining why it is back in this list at all.
+
+   Filled accent rather than PREMIERE's dim pill because the two have to be
+   distinguishable at a glance when they appear together, and this is the
+   rarer and more actionable of the two. --bg on --accent measures 5.77:1,
+   the same pairing .wizard-primary uses.
+   ============================================================ */
+
+.new-tag {
+  display: inline-block;
+  margin-top: 4px;
+  margin-right: 6px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+/* ============================================================
+   STREAMING AVAILABILITY (components/StreamingCapsules.tsx)
+
+   One row, one design, in all three detail panels — show, movie and episode.
+   It is the last block of the panel body on purpose: the hierarchy stays
+   artwork, title and metadata, synopsis, availability, actions, and nothing
+   above it moved to make room.
+
+   Assembled from patterns already in this file rather than invented. The
+   capsule is .show-pill's rounded chip with a logo in front of it, the label
+   is the same muted micro-label the Coming Up columns use, and the touch
+   sizing comes from the global (pointer: coarse) rule rather than a private
+   exception — deliberately, since these wrap onto two rows on a narrow
+   screen and the invisible hit areas the small circular controls use would
+   overlap each other there, which is the one thing a row of adjacent links
+   must not do.
+   ============================================================ */
+
+.stream-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.stream-row-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stream-capsules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Sized by its contents, not stretched: a row of services is a row of names
+   of different lengths, and forcing them to a common width would read as a
+   button bar and pull attention off the title above it. */
+.stream-capsule {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 100%;
+  padding: 5px 12px 5px 6px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.stream-capsule:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--surface);
+}
+
+/* A service with nowhere to send the user (no registry entry AND no
+   JustWatch link from TMDB) still SHOWS — the availability itself is the
+   information — it just is not a control. */
+.stream-capsule:disabled {
+  cursor: default;
+  opacity: 0.85;
+  border-color: var(--border);
+}
+
+/* Small, square, and rounded to match the services' own app icons, which is
+   what TMDB serves here. object-fit covers the handful of logos that are not
+   perfectly square rather than letting them squash. */
+.stream-capsule-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: var(--surface);
+}
+
+.stream-capsule-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "Rent" / "Buy". Shown only when the title is not included with any
+   subscription, so the capsule never implies access the user does not have. */
+.stream-capsule-note {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* The overflow control. Reads as one of the row rather than as a separate
+   affordance, since tapping it just finishes the row it is part of. */
+.stream-capsule-more {
+  padding-left: 12px;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+/* ============================================================
+   STOPPED WATCHING (pages/Home.tsx, fourth Up Next tab)
+
+   The tab itself needs no CSS — .pill-tabs already scrolls sideways for the
+   three labels that do not fit a phone, so a fourth joins them. These are the
+   two things a stopped row has that the other three do not.
+   ============================================================ */
+
+/* Replaces the watched tick on a stopped row. Sized and aligned to the tick
+   it stands in for (36px tall, never shrinking) so the list keeps one column
+   of controls down its right edge rather than two widths of them.
+
+   Outlined, not filled: resuming is the obvious action on this tab but it is
+   still a state change, and the filled treatment in this app is reserved for
+   the primary action of a panel (.ep-action-primary, .pill-tab.active). */
+.wn-resume-btn {
+  flex-shrink: 0;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+}
+.wn-resume-btn:hover { border-color: var(--accent); }
+
+/* Why a show with new episodes is not in Watch Next. Wraps under the episode
+   line rather than sitting beside the tags, because it is a sentence and the
+   tags are labels. */
+.wn-behind-note { margin: 6px 0 0; line-height: 1.4; }

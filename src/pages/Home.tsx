@@ -25,19 +25,24 @@ import {
   type MoodFilter,
 } from "../lib/moodSearch/search";
 import { buildWatchNextRows, byAddedAt, byRecency, type WatchNextRow as Row } from "../lib/watchNext";
+import { resumeWatchingShow } from "../lib/stoppedWatching";
 
 function EpisodeRow({
   row,
   onOpenShow,
   onOpenEpisode,
   onMarkWatched,
+  onResume,
 }: {
   row: Row;
   onOpenShow: (id: number) => void;
   onOpenEpisode: (row: Row) => void;
   onMarkWatched: (row: Row) => void;
+  /** Stopped rows only: puts the show back into the automatic categories. */
+  onResume: (row: Row) => void;
 }) {
   const isPremiere = row.nextEpisode?.episodeNumber === 1;
+  const stopped = row.category === "stopped";
   return (
     <div className="watch-next-row">
       {row.posterPath ? (
@@ -63,7 +68,30 @@ function EpisodeRow({
               <span className="muted small wn-episode-name">{row.nextEpisode.name}</span>
               <span className="sr-only">Episode details</span>
             </button>
-            {isPremiere && <span className="premiere-tag">PREMIERE</span>}
+            {/* Two different claims, so two different tags, and a row can
+                carry both. PREMIERE describes the episode being offered (it
+                opens a season); NEW describes the SHOW (something has been
+                released that the user has not seen). They coincide on a
+                premiere that just dropped and diverge on a returning series
+                the user had not finished — where the row still offers the
+                next episode in progression and NEW is the only thing
+                explaining why the show is back in this list at all. */}
+            {row.newlyAvailable && (
+              <span className="new-tag" title={`Latest release: ${row.newlyAvailableAt}`}>
+                NEW
+              </span>
+            )}
+            {isPremiere && !stopped && <span className="premiere-tag">PREMIERE</span>}
+            {/* Why a show with new episodes is not in Watch Next. Without
+                this the categorisation looks exactly like the bug it used to
+                be — the honest reason is that the user never finished what was
+                already out, and the row is pointing at that, not at the new
+                episode. */}
+            {row.releasedButBehind && (
+              <p className="muted small wn-behind-note">
+                New episodes have aired, but there are earlier ones you haven't watched.
+              </p>
+            )}
           </>
         ) : (
           <p className="muted small">
@@ -73,20 +101,35 @@ function EpisodeRow({
           </p>
         )}
       </div>
-      <button
-        className="watch-toggle-circle"
-        onClick={() => onMarkWatched(row)}
-        aria-label={row.category === "not-started" ? "Start watching" : "Mark watched"}
-        disabled={!row.nextEpisode}
-      >
-        &#10003;
-      </button>
+      {/* A stopped show's row offers the one action that makes sense for it.
+          Marking an episode watched from here would be resuming it by a side
+          effect, which is exactly the kind of state change this state exists
+          to stop happening on its own. */}
+      {stopped ? (
+        <button className="wn-resume-btn" onClick={() => onResume(row)}>
+          Resume
+        </button>
+      ) : (
+        <button
+          className="watch-toggle-circle"
+          onClick={() => onMarkWatched(row)}
+          aria-label={row.category === "not-started" ? "Start watching" : "Mark watched"}
+          disabled={!row.nextEpisode}
+        >
+          &#10003;
+        </button>
+      )}
     </div>
   );
 }
 
 function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => void; filter: MoodFilter | null }) {
-  const shows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(), []);
+  // Archived shows are deliberately INCLUDED now. They are the Stopped
+  // Watching tab, and a state the user set is one they have to be able to see
+  // and undo; filtering them out of the query was what made stopping a show a
+  // one-way door. categorize() puts them in their own category before any
+  // other rule runs, so they cannot leak into the other three lists.
+  const shows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed).toArray(), []);
   // Deliberately simple, single-table, whole-table live queries. Each one is
   // independently and unambiguously reactive to writes on its own table.
   // Combining them in a plain synchronous useMemo below (no async, no
@@ -97,7 +140,7 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
   const allWatched = useLiveQuery(() => db.watchedEpisodes.toArray(), []);
   const [syncing, setSyncing] = useState(false);
   const [syncErrors, setSyncErrors] = useState<string[]>([]);
-  const [tab, setTab] = useState<"next" | "stale" | "not-started">("next");
+  const [tab, setTab] = useState<"next" | "stale" | "not-started" | "stopped">("next");
   // The episode panel opened from a Watch Next row. Only the show/episode
   // identity is stored; watched state is derived live from allWatched below,
   // so ticking the episode updates the open panel in place rather than
@@ -156,6 +199,14 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
   const openEpisodeShow = openEpisode ? shows?.find((sh) => sh.tmdbId === openEpisode.showId) : undefined;
   const openEpisodeWatch = openEpisode ? allWatched?.find((w) => w.key === openEpisode.episode.key) : undefined;
 
+  async function resume(row: Row) {
+    // Nothing is recalculated by hand: the live queries re-run, categorize()
+    // sees a show that is no longer stopped, and it lands wherever its history
+    // and release state now put it — which for a show whose new season arrived
+    // while it was stopped is Watch Next.
+    await resumeWatchingShow(row.showId);
+  }
+
   async function markWatched(row: Row) {
     if (!row.nextEpisode) return;
     // Marks the next UNSEEN episode watched (starts a not-started show, or
@@ -172,7 +223,11 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
   const watchNext = rows.filter((r) => r.category === "watch-next").sort(byRecency);
   const stale = rows.filter((r) => r.category === "stale").sort(byRecency);
   const notStarted = rows.filter((r) => r.category === "not-started").sort(byAddedAt);
-  const activeList = tab === "next" ? watchNext : tab === "stale" ? stale : notStarted;
+  // Stopped sorts by last progression like the other history-bearing lists:
+  // the most recently abandoned is the one most likely to be resumed.
+  const stopped = rows.filter((r) => r.category === "stopped").sort(byRecency);
+  const activeList =
+    tab === "next" ? watchNext : tab === "stale" ? stale : tab === "not-started" ? notStarted : stopped;
 
   return (
     <>
@@ -194,6 +249,16 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
           onClick={() => setTab("not-started")}
         >
           Haven't Yet Started{notStarted.length > 0 ? ` (${notStarted.length})` : ""}
+        </button>
+        {/* The fourth state, in the same control as the other three rather
+            than off in a menu of its own: these are four answers to one
+            question, and the row already scrolls sideways for the three that
+            do not fit a phone. */}
+        <button
+          className={`pill-tab ${tab === "stopped" ? "active" : ""}`}
+          onClick={() => setTab("stopped")}
+        >
+          Stopped Watching{stopped.length > 0 ? ` (${stopped.length})` : ""}
         </button>
       </div>
 
@@ -220,7 +285,9 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
             ? "Nothing queued up. If you're sure some shows should be here, check Diagnostics in Settings, or re-import using the newer TV Time export format."
             : tab === "stale"
               ? "Nothing here, everything you've started has been watched recently."
-              : "Nothing here, every show in your library has been started."}
+              : tab === "not-started"
+                ? "Nothing here, every show in your library has been started."
+                : "Nothing here. Shows you mark as stopped watching appear in this tab, and can be resumed from it."}
         </p>
       )}
 
@@ -232,6 +299,7 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
             onOpenShow={onOpenShow}
             onOpenEpisode={(r) => r.nextEpisode && setOpenEpisode({ showId: r.showId, episode: r.nextEpisode })}
             onMarkWatched={markWatched}
+            onResume={resume}
           />
         ))}
       </div>
@@ -242,6 +310,13 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
           episode={openEpisode.episode}
           watched={openEpisodeWatch !== undefined}
           watchCount={openEpisodeWatch?.watchCount ?? 0}
+          // The show-title capsule, same control the widget overlay renders.
+          // Here it swaps this layer for the show's own panel; the panel plays
+          // its exit on the way out (dismissOnOpenSeries) so the two cross
+          // over instead of stacking.
+          onOpenSeries={() => onOpenShow(openEpisode.showId)}
+          dismissOnOpenSeries
+          streamingShowId={openEpisode.showId}
           // Deliberately stays open on toggle, matching the season browser:
           // the panel re-renders from live data so the tick and the rewatch
           // count update in place.
@@ -274,6 +349,10 @@ function ComingUp() {
   // widget. It used to open the show's panel, which made the user hunt for the
   // episode they had just pointed at.
   const [openEpisode, setOpenEpisode] = useState<UpcomingEpisodeRow | null>(null);
+  // Where the episode panel's show-title capsule goes. Local to this section
+  // rather than lifted to Home: the movie panel below is already opened the
+  // same way, and a section that owns its own overlays stays movable.
+  const [openShow, setOpenShow] = useState<number | null>(null);
 
   const upcomingEpisodes = useMemo<UpcomingEpisodeRow[]>(
     () => (!shows || !allEpisodes ? [] : buildUpcomingEpisodeRows(shows, allEpisodes)),
@@ -354,6 +433,7 @@ function ComingUp() {
         </div>
       </div>
       {openMovie !== null && <DetailsPanel kind="movie" tmdbId={openMovie} onClose={() => setOpenMovie(null)} />}
+      {openShow !== null && <DetailsPanel kind="show" tmdbId={openShow} onClose={() => setOpenShow(null)} />}
 
       {/* The app's own episode panel, same as Watch Next opens. canToggleWatched
           is false because these episodes have not aired: there is nothing to
@@ -369,6 +449,9 @@ function ComingUp() {
           watchCount={0}
           canToggleWatched={false}
           onToggleWatched={() => {}}
+          onOpenSeries={() => setOpenShow(openEpisode.showId)}
+          dismissOnOpenSeries
+          streamingShowId={openEpisode.showId}
           onClose={() => setOpenEpisode(null)}
         />
       )}
@@ -520,10 +603,10 @@ export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void 
   // assembled here rather than inside either child. Shows are restricted to
   // the followed/unarchived set that ShowsHome itself renders, so the model
   // never ranks titles that could not appear in the results anyway.
-  const searchableShows = useLiveQuery(
-    () => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(),
-    []
-  );
+  // Matches what ShowsHome actually renders, stopped shows included: they are
+  // a visible tab now, so excluding them here would make the "N results" line
+  // undercount rows the user can see.
+  const searchableShows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed).toArray(), []);
   const searchableMovies = useLiveQuery(
     () => db.movies.filter((m) => !m.watched && m.wantsToWatch).toArray(),
     []

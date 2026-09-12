@@ -10,6 +10,14 @@
 
 import type { Episode, Movie, Show } from "../../db";
 import { TMDB_IMAGE_BASE } from "../../tmdb";
+import { hasConfirmedAirDate, todayIso } from "../releaseState";
+
+// Re-exported rather than redefined: release state now has one home
+// (lib/releaseState.ts) so a notification and Home's Watch Next cannot end up
+// with different ideas of what day it is or of what counts as a real air
+// date - which is exactly how "Season 2 is now available" and "Haven't
+// Watched For a While" managed to be true of the same show at the same time.
+export { todayIso };
 
 export type NotificationKind = "episode" | "season-premiere" | "movie-theatrical" | "movie-digital";
 
@@ -49,13 +57,6 @@ export interface NotificationEvent {
  * up by a later run — the scheduler re-runs on every app resume.
  */
 export const HORIZON_DAYS = 45;
-
-export function todayIso(now = new Date()): string {
-  // Local calendar day, not UTC: an episode airing "today" must read as today
-  // for a user in UTC-5 at 9pm, which toISOString() would call tomorrow.
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
-  return local.toISOString().slice(0, 10);
-}
 
 function addDays(iso: string, days: number): string {
   const d = new Date(`${iso}T00:00:00`);
@@ -120,7 +121,7 @@ function clusterEpisodeReleases(
     const show = followed.get(ep.showId);
     if (!show) continue; // not in the library, or archived — never notify
     if (ep.seasonNumber <= 0) continue; // specials aren't part of the run
-    if (!ep.airDate) continue; // unknown is not "upcoming"
+    if (!hasConfirmedAirDate(ep)) continue; // unknown is not "upcoming"
     // Strictly future only. This is what stops a freshly synced back
     // catalogue from announcing episodes that came out years ago: newly
     // CACHED is not newly AVAILABLE.
