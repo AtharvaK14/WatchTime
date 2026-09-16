@@ -4,6 +4,7 @@ import { db } from "../db";
 import { TMDB_IMAGE_BASE, getMovieGenres, type Genre } from "../tmdb";
 import { useMovieStats, toDurationParts } from "../lib/stats";
 import DetailsPanel from "../components/DetailsPanel";
+import PosterCaption from "../components/PosterCaption";
 import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
@@ -229,11 +230,7 @@ export default function Movies({
                 >
                   &#10003;
                 </button>
-                <div className="show-card-body">
-                  <p className="show-name">
-                    {m.title} {m.releaseYear ? `(${m.releaseYear})` : ""}
-                  </p>
-                </div>
+                <PosterCaption title={m.title} year={m.releaseYear} />
               </div>
             ))}
           </div>

@@ -4,8 +4,15 @@ import { db, episodeKey, type Episode, type Show, type WatchedEpisode } from "..
 import { ensureEpisodesCached, findNextUnwatched } from "../lib/episodeSync";
 import { daysSince, getStaleDaysThreshold } from "../lib/showStatus";
 import { lastProgressionAt } from "../lib/watchEvents";
+import { reactivationState, RELEASE_ACTIVATION_DAYS } from "../lib/releaseState";
+import { isStoppedWatching } from "../lib/stoppedWatching";
 
-export type HomeCategory = "Watch Next" | "Haven't Watched For a While" | "Haven't Yet Started" | null;
+export type HomeCategory =
+  | "Watch Next"
+  | "Haven't Watched For a While"
+  | "Haven't Yet Started"
+  | "Stopped Watching"
+  | null;
 
 /**
  * Replicates Home.tsx's categorize() EXACTLY, so the verdict printed here is
@@ -13,14 +20,24 @@ export type HomeCategory = "Watch Next" | "Haven't Watched For a While" | "Haven
  * lands in (or none). If Home's logic changes, this must change with it —
  * that coupling is the entire point of the tool.
  *
+ * - Stopped Watching: the user said so (Show.isArchived). Beats everything.
  * - Haven't Yet Started: zero watch activity ever.
  * - (else, has activity) no next unseen episode -> null (caught up /
  *   finished; rewatches never resurface it).
- * - (else) next unseen episode exists -> Watch Next if last PROGRESSION is
- *   within the threshold, otherwise Haven't Watched For a While. The split
- *   uses progression (max watchedAt = last time an unseen episode was
- *   first-watched), NOT last activity, so a rewatch can't drag a stalled
- *   show back into Watch Next.
+ * - (else) next unseen episode exists -> Watch Next if a release REACTIVATES
+ *   the show, OR if last PROGRESSION is within the threshold; otherwise
+ *   Haven't Watched For a While.
+ *
+ * The release check comes before the staleness one and is the reason this tool
+ * exists in its current form: a returning series used to be filed as stale
+ * purely because the user's history was old, while the notification system
+ * announced its new season on the same day. But a release only reactivates a
+ * show the user was CAUGHT UP on - an episode landing on top of a backlog they
+ * never worked through says they stopped, not that they are waiting - so the
+ * report below prints both halves of that test. The split still uses
+ * progression (max watchedAt = last time an unseen episode was first-watched)
+ * rather than last activity, so a rewatch cannot drag a stalled show back into
+ * Watch Next.
  */
 function watchNextVerdict(
   show: Show,
@@ -33,10 +50,12 @@ function watchNextVerdict(
   const today = new Date().toISOString().slice(0, 10);
   const releasedUnwatched = episodes.filter((e) => (!e.airDate || e.airDate <= today) && !watchedKeys.has(e.key));
 
-  const clauseFollowed = show.isFollowed && !show.isArchived;
   const activityDs = daysSince(show.lastWatchedAt); // last activity of any kind (rewatch bumps this)
   const progressedAt = lastProgressionAt(watched); // last first-watch of an unseen episode
   const progressionDs = daysSince(progressedAt);
+  // Release state: what has just come out, and whether the user was caught up
+  // when it did. Only the pair of them outranks the inactivity rules below.
+  const release = reactivationState(episodes, watchedKeys);
 
   const lines: string[] = [];
   lines.push(`isFollowed=${show.isFollowed}, isArchived=${show.isArchived}, tvTimeStatus=${show.tvTimeStatus ?? "(none: CSV import or manual add)"}`);
@@ -46,10 +65,35 @@ function watchNextVerdict(
   lines.push(
     `Next unseen per cache: ${next ? `S${next.seasonNumber}E${next.episodeNumber} "${next.name}" (air_date=${next.airDate ?? "unknown"})` : "none"}`
   );
+  const summarise = (list: Episode[]) =>
+    list.length === 0
+      ? "none"
+      : list
+          .slice(0, 5)
+          .map((ep) => `S${ep.seasonNumber}E${ep.episodeNumber} (${ep.airDate ?? "no date"})`)
+          .join(", ") + (list.length > 5 ? `, +${list.length - 5} more` : "");
+
+  lines.push(
+    `Newly available (unwatched, released in the last ${RELEASE_ACTIVATION_DAYS} days): ${summarise(release.newlyAvailable)}`
+  );
+  lines.push(
+    `Unwatched backlog released BEFORE those: ${summarise(release.backlog)} — empty means the user was caught up ` +
+      "when the new content arrived, which is what separates a returning show from an abandoned one"
+  );
+  lines.push(
+    `Reactivates: ${release.reactivates} (needs newly-available AND an empty backlog; beats the staleness rule when true)`
+  );
 
   let category: HomeCategory = null;
-  if (!clauseFollowed) {
-    lines.push("EXCLUDED from all sections: not followed, or archived.");
+  if (isStoppedWatching(show)) {
+    category = "Stopped Watching";
+    lines.push(
+      'CATEGORY: "Stopped Watching" — set explicitly by the user (or imported from TV Time\'s own "stopped" ' +
+        "status). Checked before every rule below, so no release reactivates it and it appears in neither Watch " +
+        "Next nor Haven't Watched For a While until it is resumed. History is untouched either way."
+    );
+  } else if (!show.isFollowed) {
+    lines.push("EXCLUDED from all sections: not followed.");
   } else if (watched.length === 0) {
     category = "Haven't Yet Started";
     lines.push('CATEGORY: "Haven\'t Yet Started" — in the library, zero watch activity ever.');
@@ -58,12 +102,28 @@ function watchNextVerdict(
       "CATEGORY: none — every released episode is watched (caught up / finished), or nothing is cached yet. " +
         "Rewatching an old episode updates history/time/recency but never resurfaces the show here."
     );
+  } else if (release.reactivates) {
+    category = "Watch Next";
+    lines.push(
+      `CATEGORY: "Watch Next" — ${release.newlyAvailable.length} unwatched episode(s) became available within the ` +
+        `last ${RELEASE_ACTIVATION_DAYS} days AND nothing older was left unwatched, so this is a show the user was ` +
+        `keeping up with. That outranks the ${threshold}-day staleness rule entirely: last progression was ` +
+        `${progressionDs === null ? "never" : `${progressionDs} days ago`}, which is not evidence about content ` +
+        `that did not exist when they stopped. The episode OFFERED is still the next one in order (above), not the ` +
+        `newest release.`
+    );
   } else {
     const days = progressionDs ?? 0;
     category = days < threshold ? "Watch Next" : "Haven't Watched For a While";
     lines.push(
-      `CATEGORY: "${category}" — started, next unseen episode exists; last progression ` +
-        `${progressionDs === null ? "never (counts as 0 days)" : `${progressionDs} days ago`} vs ${threshold}-day threshold (configurable in Settings). ` +
+      `CATEGORY: "${category}" — started, next unseen episode exists, no release reactivated it` +
+        (release.newlyAvailable.length > 0
+          ? ` (${release.newlyAvailable.length} episode(s) DID come out recently, but ${release.backlog.length} ` +
+            "older released episode(s) are still unwatched, so this reads as a show that was stopped rather than " +
+            "one being kept up with)"
+          : " (nothing newly available)") +
+        `; last progression ${progressionDs === null ? "never (counts as 0 days)" : `${progressionDs} days ago`} vs ` +
+        `${threshold}-day threshold (configurable in Settings). ` +
         `(Last activity was ${activityDs ?? "?"} days ago — deliberately NOT used, so rewatches don't move the show.)`
     );
   }
@@ -187,11 +247,20 @@ export default function Diagnostics() {
       else watchedByShow.set(w.showId, [w]);
     }
 
-    const followed = shows.filter((s) => s.isFollowed && !s.isArchived);
+    // Archived shows are INCLUDED now: they are Home's fourth tab rather than
+    // a hidden state, so a summary that dropped them would under-report the
+    // library by exactly the shows the user had put somewhere on purpose.
+    const followed = shows.filter((s) => s.isFollowed);
     const statusCounts = new Map<string, number>();
     let inWatchNext = 0;
     let inStale = 0;
     let inNotStarted = 0;
+    let inStopped = 0;
+    // Shows a release DID reach but did not reactivate, because older released
+    // episodes are still unwatched. Listed by name: this is the answer to "why
+    // is my show not in Watch Next when I just got a notification for it", and
+    // it is the one verdict a user is most likely to want to argue with.
+    const releasedButBehind: string[] = [];
     const excludedFinished: string[] = [];
 
     for (const s of followed) {
@@ -204,20 +273,39 @@ export default function Diagnostics() {
       if (category === "Watch Next") inWatchNext++;
       else if (category === "Haven't Watched For a While") inStale++;
       else if (category === "Haven't Yet Started") inNotStarted++;
+      else if (category === "Stopped Watching") inStopped++;
       else excludedFinished.push(s.name);
+
+      if (category !== "Watch Next" && category !== "Stopped Watching") {
+        const release = reactivationState(eps, new Set(w.map((x) => x.key)));
+        if (release.newlyAvailable.length > 0 && !release.reactivates) {
+          releasedButBehind.push(`${s.name} (${release.backlog.length} older unwatched)`);
+        }
+      }
     }
 
     const lines: string[] = [];
-    lines.push(`Followed & not archived: ${followed.length} of ${shows.length} shows`);
+    lines.push(`Followed: ${followed.length} of ${shows.length} shows`);
     lines.push(`tvTimeStatus distribution: ${[...statusCounts.entries()].map(([k, v]) => `${k}=${v}`).join(", ")}`);
     lines.push("");
-    lines.push(`"Watch Next" (started, next unseen episode, active within ${getStaleDaysThreshold()} days): ${inWatchNext}`);
+    lines.push(`"Watch Next" (started, next unseen episode, active within ${getStaleDaysThreshold()} days or newly reactivated): ${inWatchNext}`);
     lines.push(`"Haven't Watched For a While" (started, next unseen episode, stopped for a while): ${inStale}`);
     lines.push(`"Haven't Yet Started" (in library, never watched an episode): ${inNotStarted}`);
+    lines.push(`"Stopped Watching" (explicitly stopped; no release reactivates these): ${inStopped}`);
     lines.push(`Not shown, finished/caught up (all released episodes watched; rewatches don't resurface): ${excludedFinished.length}`);
     if (excludedFinished.length > 0) lines.push(`  ${excludedFinished.slice(0, 15).join(", ")}${excludedFinished.length > 15 ? ", ..." : ""}`);
     lines.push("");
-    lines.push(`(The three sections are mutually exclusive: ${inWatchNext} + ${inStale} + ${inNotStarted} = ${inWatchNext + inStale + inNotStarted} shows on Home, plus ${excludedFinished.length} finished.)`);
+    lines.push(
+      `Had new episodes but were NOT reactivated (older released episodes still unwatched): ${releasedButBehind.length}`
+    );
+    if (releasedButBehind.length > 0) {
+      lines.push(`  ${releasedButBehind.slice(0, 15).join(", ")}${releasedButBehind.length > 15 ? ", ..." : ""}`);
+    }
+    lines.push("");
+    lines.push(
+      `(The four sections are mutually exclusive: ${inWatchNext} + ${inStale} + ${inNotStarted} + ${inStopped} = ` +
+        `${inWatchNext + inStale + inNotStarted + inStopped} shows on Home, plus ${excludedFinished.length} finished.)`
+    );
 
     setReport(lines.join("\n"));
     setLoading(false);

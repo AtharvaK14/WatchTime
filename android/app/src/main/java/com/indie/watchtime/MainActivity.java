@@ -6,6 +6,7 @@ import android.os.Bundle;
 import com.getcapacitor.BridgeActivity;
 import com.indie.watchtime.notify.NotificationBridgePlugin;
 import com.indie.watchtime.notify.ReleaseNotifier;
+import com.indie.watchtime.stream.StreamingLauncherPlugin;
 import com.indie.watchtime.widget.WidgetBridgePlugin;
 
 public class MainActivity extends BridgeActivity {
@@ -15,6 +16,7 @@ public class MainActivity extends BridgeActivity {
         // builds its plugin registry; registering afterwards is too late.
         registerPlugin(WidgetBridgePlugin.class);
         registerPlugin(NotificationBridgePlugin.class);
+        registerPlugin(StreamingLauncherPlugin.class);
         super.onCreate(savedInstanceState);
         // A tap that cold-started the app. The target is parked now and the
         // web layer drains it as soon as it mounts.

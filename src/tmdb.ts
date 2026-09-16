@@ -22,6 +22,17 @@ export const TMDB_BACKDROP_BASE = "https://image.tmdb.org/t/p/w780";
 // screen for no visible gain.
 export const TMDB_STILL_BASE = "https://image.tmdb.org/t/p/w780";
 
+// Streaming-provider logos. TMDB serves these from a separate size ladder to
+// posters and backdrops (w45/w92/w154/w185/w300/w500/original); w92 is the
+// smallest that still looks clean on a 3x phone at the ~16px the capsules
+// render them, and the assets themselves are tiny square marks.
+//
+// Using TMDB's copy of each provider's logo is deliberate: it is the mark the
+// provider supplies to TMDB for exactly this purpose, so nothing
+// trademark-bearing is checked into this repo or re-drawn by hand, and a
+// provider that rebrands does so here without an app update.
+export const TMDB_LOGO_BASE = "https://image.tmdb.org/t/p/w92";
+
 // Exported so Settings and the backup/restore code reference the same
 // storage key instead of re-typing the literal.
 export const TMDB_API_KEY_STORAGE = "tmdb_api_key";
@@ -354,6 +365,86 @@ export async function getMovieRecommendations(tmdbId: number): Promise<MovieSear
 export interface FindResults {
   movie_results: MovieSearchResult[];
   tv_results: TvSearchResult[];
+}
+
+// ---- Watch providers (streaming availability) -----------------------------
+//
+// TMDB fronts JustWatch's availability data on /watch/providers, per media
+// type, broken down BY COUNTRY - a title on Netflix in one region can be on a
+// different service, or nowhere, in another, so a region is part of the
+// question rather than a detail. See lib/streaming/providers.ts for how one is
+// chosen.
+//
+// Two things this endpoint does NOT return, which shapes everything built on
+// it: there is no per-provider URL for the title (the `link` it gives is a
+// TMDB/JustWatch page, not a Netflix or Apple TV one), and no app identifiers.
+// Turning a provider into something tappable is therefore the registry's job
+// in lib/streaming/registry.ts, not this module's.
+//
+// TMDB's terms require attribution to JustWatch wherever this data is used;
+// the notice lives in components/About.tsx alongside the TMDB one.
+
+export interface TmdbWatchProvider {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string | null;
+  /** TMDB's own ordering hint within a region, lowest first. */
+  display_priority?: number;
+}
+
+export interface TmdbWatchProviderRegion {
+  /** JustWatch's page for this title and region. The only link TMDB supplies. */
+  link?: string;
+  /** Included with a subscription. */
+  flatrate?: TmdbWatchProvider[];
+  /** Free, no subscription. */
+  free?: TmdbWatchProvider[];
+  /** Free with advertising. */
+  ads?: TmdbWatchProvider[];
+  rent?: TmdbWatchProvider[];
+  buy?: TmdbWatchProvider[];
+}
+
+export interface TmdbWatchProviderResponse {
+  id: number;
+  /** Keyed by ISO 3166-1 country code. */
+  results: Record<string, TmdbWatchProviderRegion>;
+}
+
+/**
+ * Raw availability for one title, every region TMDB has.
+ *
+ * Returns every region rather than one because the response is a single
+ * document either way: filtering here would mean re-requesting the same
+ * document when the user changes region, and the cache in
+ * lib/streaming/providers.ts stores it whole for that reason.
+ */
+export async function getWatchProviders(
+  kind: "show" | "movie",
+  tmdbId: number
+): Promise<TmdbWatchProviderResponse> {
+  const path = kind === "show" ? `/tv/${tmdbId}/watch/providers` : `/movie/${tmdbId}/watch/providers`;
+  return tmdbGet<TmdbWatchProviderResponse>(path);
+}
+
+export interface TmdbWatchRegion {
+  iso_3166_1: string;
+  english_name: string;
+  native_name?: string;
+}
+
+/**
+ * Every region TMDB has availability data for, for the Settings picker.
+ *
+ * Fetched rather than hard-coded so the list cannot go stale, and because a
+ * hand-written list of countries would be a much larger thing to maintain
+ * than one request made on the one screen that needs it. Callers fall back to
+ * a plain text entry if this fails - being unable to reach TMDB should not
+ * stop someone typing "GB".
+ */
+export async function getWatchProviderRegions(): Promise<TmdbWatchRegion[]> {
+  const data = await tmdbGet<{ results: TmdbWatchRegion[] }>("/watch/providers/regions");
+  return data.results ?? [];
 }
 
 export async function findByExternalId(

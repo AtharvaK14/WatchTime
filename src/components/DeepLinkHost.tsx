@@ -77,6 +77,17 @@ export default function DeepLinkHost() {
       episode={episode}
       watched={watch !== undefined}
       watchCount={watch?.watchCount ?? 0}
+      // The show-title capsule swaps this layer for the show's own panel, by
+      // re-pointing the deep link at it — the same target a "Season 3 is now
+      // available" notification carries, so the two routes land identically.
+      //
+      // Deliberately WITHOUT dismissOnOpenSeries, unlike every other in-app
+      // call site. One `target` drives both panels here, so re-pointing it
+      // unmounts this layer by itself; asking the panel to play its exit as
+      // well would fire its onClose a moment later and clear the target it
+      // had just been given, closing the show panel the user asked for.
+      onOpenSeries={() => setTarget({ kind: "show", tmdbId: show.tmdbId })}
+      streamingShowId={show.tmdbId}
       // Stays open on toggle, exactly as it does when opened from Watch Next.
       onToggleWatched={async () => {
         if (watch) await db.watchedEpisodes.delete(episode.key);

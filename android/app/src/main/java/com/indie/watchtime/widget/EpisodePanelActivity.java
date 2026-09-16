@@ -16,6 +16,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.webkit.WebViewAssetLoader;
 
 import com.getcapacitor.CapConfig;
+import com.indie.watchtime.stream.StreamingLauncher;
 
 /**
  * The episode detail overlay a widget row opens.
@@ -129,7 +130,7 @@ public class EpisodePanelActivity extends AppCompatActivity {
     }
 
     /**
-     * The page's channel back to native. Three methods, matching
+     * The page's channel back to native. Four methods, matching
      * src/lib/widget/panelHost.ts.
      *
      * All are called on a WebView JavaScript thread, so anything touching the
@@ -193,6 +194,33 @@ public class EpisodePanelActivity extends AppCompatActivity {
                 finish();
                 overridePendingTransition(0, android.R.anim.fade_out);
             });
+        }
+
+        /**
+         * Opens a streaming service from a tapped "Available on" capsule.
+         *
+         * The overlay cannot do this for itself in any form: shouldOverrideUrlLoading
+         * above refuses every navigation by design, and this activity is not a
+         * BridgeActivity, so the Capacitor plugin the app uses is unreachable
+         * from this WebView. Without this method the capsules would have to be
+         * inert here, which is the opposite of useful - the overlay is exactly
+         * where someone is about to go and watch the thing.
+         *
+         * It calls the same StreamingLauncher the app's plugin calls, so which
+         * app opens, whether the Play Store is offered, and what comes back are
+         * identical on both surfaces.
+         *
+         * Deliberately NOT posted to the main thread, unlike its neighbours:
+         * this one has a return value the page reads synchronously, and
+         * startActivity from the JavaScript thread is fine (it touches no view
+         * and no window). Nothing here calls finish() either - launching the
+         * service stops this activity, and android:noHistory in the manifest
+         * already tears the overlay down when that happens.
+         */
+        @JavascriptInterface
+        public String openExternal(String request) {
+            if (request == null || request.isEmpty()) return StreamingLauncher.OUTCOME_FAILED;
+            return StreamingLauncher.launchFromJson(getApplicationContext(), request);
         }
     }
 

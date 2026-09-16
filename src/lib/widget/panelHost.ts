@@ -24,6 +24,22 @@ interface PanelHost {
    * a method that is not there and throw inside the panel.
    */
   openInApp?(target: string): void;
+  /**
+   * Opens a streaming service outside the overlay, returning which rung of the
+   * launch ladder it reached (see StreamingLauncherPlugin / StreamingLauncher
+   * on the native side - both run the identical code).
+   *
+   * The overlay cannot do this for itself in any form. Its WebViewClient
+   * refuses every navigation by design (it is one page showing one episode),
+   * and it is not a Capacitor activity, so the plugin the app uses is not
+   * reachable from here either. Without this method a capsule in the overlay
+   * would be a control that silently does nothing, which is why the UI asks
+   * whether it exists before offering one.
+   *
+   * Optional for the same reason openInApp is: an installed APK older than the
+   * web build would not have it.
+   */
+  openExternal?(request: string): string;
 }
 
 declare global {
@@ -90,4 +106,30 @@ export function openEpisodeInApp(showId: number, episodeKey: string): void {
 /** The show capsule's destination: the series panel, no season pre-expanded. */
 export function openSeriesInApp(showId: number): void {
   openInApp({ kind: "show", showId });
+}
+
+/**
+ * Whether this overlay can hand a streaming link to the system.
+ *
+ * Separate from canOpenInApp(): they are different methods added at different
+ * times, and an APK carrying one need not carry the other.
+ */
+export function canOpenExternal(): boolean {
+  return typeof panelHost()?.openExternal === "function";
+}
+
+/**
+ * Opens a streaming service from the overlay. Returns the outcome native
+ * reports, or "failed" if the call itself could not be made - the caller
+ * treats both the same way, and neither is allowed to throw into a panel the
+ * user is still looking at.
+ */
+export function openExternalFromPanel(request: { url: string; packageName?: string }): string {
+  const host = panelHost();
+  if (!host?.openExternal) return "failed";
+  try {
+    return host.openExternal(JSON.stringify(request)) ?? "failed";
+  } catch {
+    return "failed";
+  }
 }

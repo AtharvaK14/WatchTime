@@ -3,8 +3,10 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db";
 import { TMDB_IMAGE_BASE, getTvGenres, type Genre } from "../tmdb";
 import { computeWatchStatus, type ShowWatchStatus } from "../lib/showWatchStatus";
+import { isStoppedWatching } from "../lib/stoppedWatching";
 import { useShowStats, toDurationParts } from "../lib/stats";
 import DetailsPanel from "../components/DetailsPanel";
+import PosterCaption from "../components/PosterCaption";
 import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
@@ -13,11 +15,14 @@ import { useIsMobile } from "../lib/useIsMobile";
 type SortKey = "name" | "mostWatched" | "recentlyWatched" | "recentlyAdded";
 type FilterKey = "all" | "following" | "stopped" | "currentlyWatching";
 
+// "Stopped Watching" rather than the previous bare "Stopped", so this filter
+// and Home's fourth tab are visibly the same state rather than two similar
+// words for it. The control wraps, so the longer label costs no layout.
 const STATUS_OPTIONS: { value: FilterKey; label: string }[] = [
   { value: "all", label: "All" },
   { value: "following", label: "Following" },
   { value: "currentlyWatching", label: "Currently Watching" },
-  { value: "stopped", label: "Stopped" },
+  { value: "stopped", label: "Stopped Watching" },
 ];
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
@@ -93,9 +98,15 @@ export default function Library() {
     if (!shows) return [];
     let list = shows;
 
-    if (filterKey === "following") list = list.filter((s) => s.isFollowed && !s.isArchived);
-    if (filterKey === "stopped") list = list.filter((s) => s.isArchived);
-    if (filterKey === "currentlyWatching") list = list.filter((s) => statusByShow.get(s.tmdbId) === "currently-watching");
+    if (filterKey === "following") list = list.filter((s) => s.isFollowed && !isStoppedWatching(s));
+    if (filterKey === "stopped") list = list.filter(isStoppedWatching);
+    // Stopped shows are excluded rather than merely not-preferred: computeWatchStatus
+    // only knows about episodes, so a stopped show with a backlog looks exactly
+    // like one in progress to it, and two filters claiming the same show say
+    // different things about what the user is doing.
+    if (filterKey === "currentlyWatching") {
+      list = list.filter((s) => !isStoppedWatching(s) && statusByShow.get(s.tmdbId) === "currently-watching");
+    }
 
     if (genreFilter !== null) list = list.filter((s) => s.genreIds?.includes(genreFilter));
 
@@ -235,6 +246,11 @@ export default function Library() {
                 ) : (
                   <div className="poster-placeholder" />
                 )}
+                {/* The progress bar is the card's only statement of progress.
+                    The "N episodes watched" line that used to sit in the
+                    caption said the same thing again in words; the count
+                    behind both is unchanged and still drives this bar and the
+                    Most watched sort. */}
                 {show.numberOfEpisodes ? (
                   <div className="poster-progress">
                     <span
@@ -244,11 +260,11 @@ export default function Library() {
                     />
                   </div>
                 ) : null}
-                <div className="show-card-body">
-                  <p className="show-name">{show.name}</p>
-                  <p className="muted small">{watchedCounts?.get(show.tmdbId) ?? 0} episodes watched</p>
-                  {show.isArchived && <p className="muted small">Stopped</p>}
-                </div>
+                <PosterCaption title={show.name} year={show.firstAirYear}>
+                  {/* Kept: under "All" it is the only thing telling a stopped
+                      show apart from one in progress. */}
+                  {isStoppedWatching(show) && <p className="card-meta">Stopped watching</p>}
+                </PosterCaption>
               </div>
             ))}
           </div>

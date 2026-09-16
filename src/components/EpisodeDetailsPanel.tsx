@@ -5,6 +5,7 @@ import { getOmdbEpisodeRating, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbEpi
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useBackHandler } from "../lib/backHandler";
 import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
+import StreamingCapsules from "./StreamingCapsules";
 
 /**
  * How long the panel's own exit animation runs. Must match the
@@ -47,14 +48,45 @@ interface Props {
    */
   onOpenEpisodeInApp?: () => void;
   /**
-   * Widget overlay only. Opens the SERIES detail panel in the main app — the
-   * show as a whole, which is the one thing the episode title does not go to.
+   * Opens the SERIES detail panel — the show as a whole, which is the one
+   * thing the episode title does not go to.
    *
-   * Supplied alongside onOpenEpisodeInApp and hidden in the app for the
-   * same reason. When it is absent the show title is not rendered as a
-   * capsule at all, so the app's own panel is untouched.
+   * Supplied in BOTH contexts, unlike onOpenEpisodeInApp above. The capsule
+   * is the show-title element of this design and it navigates somewhere real
+   * from either side: out of the overlay and into the app's show panel from
+   * the widget, and from this layer to the show's panel inside the app. Only
+   * where there is genuinely nowhere to go is it omitted, and then the show
+   * name simply is not rendered as a capsule.
    */
   onOpenSeries?: () => void;
+  /**
+   * Whether this panel should play its own exit after handing off to
+   * onOpenSeries.
+   *
+   * True in the app, where the capsule swaps this layer for the show's panel
+   * and leaving it stacked on top would bury what the user just asked for.
+   * False (the default) in the widget overlay, where the handoff closes the
+   * whole window natively and an exit animation would only delay it.
+   */
+  dismissOnOpenSeries?: boolean;
+  /**
+   * The SHOW's TMDB id, which turns on the "Available on" row.
+   *
+   * An episode is not licensed separately from its series, so the row asks
+   * about the show and the episode inherits the answer — the same data the
+   * show's own panel displays, normalised the same way, not a second lookup
+   * with its own opinion.
+   *
+   * Supplied at every call site, the widget overlay included: "where can I
+   * watch this" is at its most useful in the overlay, which is the surface
+   * someone reaches from their home screen when they are about to watch
+   * something. The overlay gets the identical component and the identical
+   * data — it has no list of its own — and the capsules degrade to plain
+   * information there if its host cannot launch apps (see canLaunchStreaming).
+   *
+   * Optional only because a panel with no show id has nothing to ask about.
+   */
+  streamingShowId?: number;
   /** See EpisodePanelTransition. Undefined = the panel animates itself. */
   transition?: EpisodePanelTransition;
   onClose: () => void;
@@ -70,6 +102,8 @@ export default function EpisodeDetailsPanel({
   onWatchAgain,
   onOpenEpisodeInApp,
   onOpenSeries,
+  dismissOnOpenSeries = false,
+  streamingShowId,
   transition,
   onClose,
 }: Props) {
@@ -120,6 +154,17 @@ export default function EpisodeDetailsPanel({
   // user tapped in the widget reads identically in the panel it opened.
   const seasonEp = `S${String(episode.seasonNumber).padStart(2, "0")} | E${String(episode.episodeNumber).padStart(2, "0")}`;
   const openEpisodeLabel = `Open ${episode.name} in the app`;
+  // "in the app" only when that is what actually happens. From inside the app
+  // the capsule opens a panel, and saying otherwise would mislead exactly the
+  // users who depend on the label.
+  const openSeriesLabel = dismissOnOpenSeries ? `Open ${show.name}` : `Open ${show.name} in the app`;
+
+  function handleOpenSeries() {
+    onOpenSeries?.();
+    // The destination is already opening; this layer follows it out so the two
+    // cross over rather than stacking. See dismissOnOpenSeries in Props.
+    if (dismissOnOpenSeries) requestClose();
+  }
 
   // An explicit dismissal always wins: whatever the parent is orchestrating,
   // a user who asks to close should see the panel close. Otherwise the
@@ -156,15 +201,17 @@ export default function EpisodeDetailsPanel({
             <div className="poster-placeholder episode-hero-img" />
           )}
           <div className="episode-hero-capsules">
-            {/* Widget overlay only. In the app this is absent and the row
-                holds just the S/E capsule, sitting bottom-left exactly where
-                it always did — the app's episode panel is unchanged by this. */}
+            {/* The show-title capsule, in both contexts. Where it goes differs
+                (out to the app from the overlay, down to the show's panel from
+                inside it) but what it means does not, which is the whole point
+                of the app and the widget sharing this component rather than
+                each drawing an episode card of its own. */}
             {onOpenSeries && (
               <button
                 type="button"
                 className="episode-hero-badge episode-show-badge episode-open-list"
-                onClick={onOpenSeries}
-                aria-label={`Open ${show.name} in the app`}
+                onClick={handleOpenSeries}
+                aria-label={openSeriesLabel}
               >
                 <span className="episode-show-badge-name">{show.name}</span>
                 <span aria-hidden="true">&rsaquo;</span>
@@ -175,7 +222,14 @@ export default function EpisodeDetailsPanel({
         </div>
 
         <div className="episode-detail-body">
-          {/* 3: title, also a route to the full episode list in the overlay. */}
+          {/* 3: title. A CONTROL only in the widget overlay, where it is the
+              route into the app's own episode page. Inside the app this panel
+              IS that page, so the title is plain text: there is nowhere for it
+              to go, and a tappable heading that re-opened what is already on
+              screen was navigation for its own sake. onOpenEpisodeInApp is
+              undefined at every in-app call site, which is what enforces
+              that — the app cannot accidentally acquire the behaviour by
+              rendering this panel somewhere new. */}
           <h2 className="episode-detail-title">
             {onOpenEpisodeInApp ? (
               <button
@@ -219,7 +273,13 @@ export default function EpisodeDetailsPanel({
             {episode.overview || (rating !== "loading" && rating?.plot) || "No summary available."}
           </p>
 
-          {/* 7: actions. Separate "Mark watched" toggle and "Watch again",
+          {/* 7: where to watch it. Below the synopsis and above the actions,
+              the same position it takes in the show and movie panels. */}
+          {streamingShowId !== undefined && (
+            <StreamingCapsules kind="show" tmdbId={streamingShowId} title={show.name} />
+          )}
+
+          {/* 8: actions. Separate "Mark watched" toggle and "Watch again",
               the latter shown only once watched. Deliberately plain buttons,
               not a <label>+checkbox (that pattern once caused opening the
               panel to silently toggle watched state).

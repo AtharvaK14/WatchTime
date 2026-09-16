@@ -126,6 +126,45 @@
         </provider>
     </application>
 
+    <!-- Package visibility (Android 11+ / API 30).
+
+         Without this, getPackageInfo() reports every one of these as absent
+         however installed it is, and StreamingLauncherPlugin would send a
+         Netflix subscriber to Netflix's Play Store listing instead of opening
+         the app. Declaring them is the documented way to ask, and is
+         deliberately a NAMED LIST rather than QUERY_ALL_PACKAGES: the app has
+         no business enumerating what else is on the device, and Play restricts
+         that permission to apps that genuinely need it, which this is not.
+
+         This list mirrors the androidPackage entries in
+         src/lib/streaming/registry.ts and must be kept in step with it - a
+         service added there but not here still works, but always via the
+         store or the browser rather than its app. -->
+    <queries>
+        <package android:name="com.netflix.mediaclient" />
+        <package android:name="com.amazon.avod.thirdpartyclient" />
+        <package android:name="com.disney.disneyplus" />
+        <package android:name="com.wbd.stream" />
+        <package android:name="com.hulu.plus" />
+        <package android:name="com.cbs.app" />
+        <package android:name="com.peacocktv.peacockandroid" />
+        <package android:name="com.crunchyroll.crunchyroid" />
+        <package android:name="in.startv.hotstar" />
+        <package android:name="com.sonyliv" />
+        <package android:name="com.graymatrix.did" />
+        <package android:name="com.google.android.youtube" />
+        <package android:name="com.google.android.videos" />
+        <package android:name="com.mubi" />
+
+        <!-- So an ordinary web link can still be handed to whatever handles
+             it. Browsers are visible by default on most builds; declaring the
+             intent makes that explicit rather than assumed. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />

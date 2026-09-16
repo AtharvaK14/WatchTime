@@ -5,12 +5,14 @@ import { getOmdbRatings, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbRatings }
 import { averageRuntime } from "../lib/runtime";
 import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount } from "../lib/episodeSync";
 import { ensureEpisodesWatched, recordEpisodeRewatch, recordMovieRewatch } from "../lib/watchEvents";
+import { isStoppedWatching, resumeWatchingShow, stopWatchingShow } from "../lib/stoppedWatching";
 import { useDraggableSheet, DISMISS_ANIMATION_MS } from "../lib/useDraggableSheet";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useBackHandler } from "../lib/backHandler";
 import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
+import StreamingCapsules from "./StreamingCapsules";
 
 /** Matches the reverse of the desktop-modal-in keyframes in index.css. */
 const DESKTOP_MODAL_EXIT_MS = 180;
@@ -98,6 +100,9 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   const [details, setDetails] = useState<CoreDetails | null>(null);
   const [ratings, setRatings] = useState<OmdbRatings | null | "loading">("loading");
   const [inLibrary, setInLibrary] = useState(false);
+  // Shows only. The viewing state, not a library state: a stopped show is
+  // still in the library with all of its history.
+  const [stopped, setStopped] = useState(false);
   const [movieWatched, setMovieWatched] = useState(false); // movies only
   const [movieRewatchCount, setMovieRewatchCount] = useState(0); // movies only, extra watches beyond the first
   const [added, setAdded] = useState(false);
@@ -159,6 +164,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
           });
           const existing = await db.shows.get(tmdbId);
           setInLibrary(!!existing);
+          setStopped(!!existing && isStoppedWatching(existing));
           const nums = await getSeasonNumbers(tmdbId);
           if (!cancelled) setSeasonNumbers(nums);
           if (existing) {
@@ -383,6 +389,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
         imdbId: details.imdbId ?? null,
       });
       await refreshWatchedAndEpisodes();
+      setStopped(false);
     } else {
       await db.movies.put(buildMovieRecord(false, details));
     }
@@ -413,6 +420,24 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
       await db.movies.update(tmdbId, { watched: true, watchedAt: new Date().toISOString(), wantsToWatch: false });
       setMovieWatched(true);
     }
+  }
+
+  /**
+   * "I'm done with this" / "I'm watching it again", as an explicit state.
+   *
+   * The one thing a user could not previously tell the app. Without it the
+   * only ways to stop a long-running show reappearing were to delete it (and
+   * its history with it) or to keep dismissing it, and the automatic rules had
+   * to guess — which is precisely the guessing that put a show someone gave up
+   * on years ago back in front of them every time a new episode aired.
+   *
+   * Neither direction touches watch history, ratings or library membership.
+   */
+  async function toggleStopped() {
+    if (kind !== "show" || !inLibrary) return;
+    if (stopped) await resumeWatchingShow(tmdbId);
+    else await stopWatchingShow(tmdbId);
+    setStopped(!stopped);
   }
 
   async function handleRemove() {
@@ -472,9 +497,24 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                 : " Marked as watched."
               : ""}
           </p>
+          {/* Says what the state actually does, because "stopped" could
+              otherwise be read as something that removed or hid the show. */}
+          {kind === "show" && stopped && (
+            <p className="muted small">
+              Stopped watching. It stays in your library with all of its history, and new episodes won't bring it
+              back to Watch Next until you resume.
+            </p>
+          )}
           <div className="field-row">
             {kind === "movie" && (
               <button onClick={toggleMovieWatched}>{movieWatched ? "Mark unwatched" : "Mark watched"}</button>
+            )}
+            {/* Beside Remove rather than among the season controls: both are
+                decisions about the show as a whole, and this is the gentler of
+                the two — which is the point of it sitting there, next to the
+                one that deletes history. */}
+            {kind === "show" && (
+              <button onClick={toggleStopped}>{stopped ? "Resume watching" : "Stop watching"}</button>
             )}
             {kind === "movie" && movieWatched && (
               <button
@@ -519,6 +559,12 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     </p>
   );
 
+  // Where to watch it. Composed once here, like the three blocks above it, so
+  // the mobile sheet and the desktop dialog place the same element rather than
+  // each rendering their own. Shows and movies both get it; the episode panel
+  // renders the identical component from the show's id.
+  const streamingContent = details && <StreamingCapsules kind={kind} tmdbId={tmdbId} title={details.name} />;
+
   // Mobile keeps the original single-column composition: ratings, then the
   // add/remove action, then overview. Desktop (below) recomposes the same
   // three pieces into its own header/sidebar/main-column layout instead of
@@ -528,6 +574,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
       {ratingsRowContent}
       {addRemoveContent}
       {overviewContent}
+      {streamingContent}
     </>
   );
 
@@ -684,6 +731,16 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
       watched={watchedKeys.has(openEpisode.key)}
       watchCount={watchCountByKey.get(openEpisode.key) ?? 0}
       canToggleWatched={inLibrary}
+      // The show-title capsule. This panel IS the show's detail panel, sitting
+      // directly beneath the episode layer, so "open the show" is simply
+      // getting out of the way — done through the episode panel's own exit
+      // (dismissOnOpenSeries) rather than by yanking it off screen.
+      onOpenSeries={() => {}}
+      dismissOnOpenSeries
+      // Shows only: a movie panel has no episode layer to open in the first
+      // place, and kind is checked rather than assumed because this JSX is
+      // shared by both.
+      streamingShowId={kind === "show" ? tmdbId : undefined}
       // Deliberately do NOT close on these: the panel stays open so the
       // watched toggle and the live rewatch count (+N) update in place.
       onToggleWatched={() => toggleEpisodeWatched(openEpisode)}
@@ -843,6 +900,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
               {ratingsRowContent}
               {addRemoveContent}
               {overviewContent}
+              {streamingContent}
             </div>
 
             {seasonBrowserBlock}

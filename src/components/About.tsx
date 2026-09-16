@@ -9,8 +9,9 @@ const PRIVACY_POLICY_URL = "https://atharvak14.github.io/tv-time-replacement/pri
 
 /**
  * About / Credits screen (Play Store prep, Phase 2). Carries the
- * attribution required to keep TMDB API access, plus OMDb and TVmaze
- * credits and a privacy-policy link. Reachable from Settings.
+ * attribution required to keep TMDB API access, the JustWatch credit TMDB
+ * requires for watch-provider data, plus OMDb and TVmaze credits and a
+ * privacy-policy link. Reachable from Settings.
  *
  * The TMDB notice text below MUST stay verbatim — it is the exact wording
  * TMDB's API Terms of Use require. Do not paraphrase it.
@@ -36,6 +37,24 @@ export default function About() {
             The Movie Database (TMDB)
           </a>
           .
+        </p>
+      </div>
+
+      {/* --- JustWatch: attribution required for TMDB's watch-provider data.
+
+           Separate from the TMDB block above because it is a separate
+           obligation: TMDB serves the availability shown by "Available on",
+           but the data behind it is JustWatch's and TMDB's terms require them
+           to be credited wherever it is used. --- */}
+      <div className="settings-block about-source">
+        <p className="muted small">
+          Streaming availability ("Available on") from{" "}
+          <a href="https://www.justwatch.com" target="_blank" rel="noreferrer">
+            JustWatch
+          </a>
+          , supplied through the TMDB API. Service names and logos are the trademarks of their respective owners;
+          this app is not affiliated with, endorsed by, or certified by any of them, and shows where a title is
+          listed rather than granting any access to it.
         </p>
       </div>
 

@@ -169,6 +169,31 @@ export interface TitleEmbedding {
   sourceHash: string;
 }
 
+/**
+ * Cached streaming availability for one title (TMDB /watch/providers, which
+ * fronts JustWatch data).
+ *
+ * A cache rather than a field on Show/Movie for two reasons. Availability is
+ * the one piece of title metadata that genuinely expires - a series leaves
+ * Netflix and appears on Prime with nothing about the title itself changing -
+ * so it needs a fetchedAt and a TTL, which a plain column would have nowhere
+ * to put. And the response is per-REGION, so it is keyed by region too: a
+ * user who changes region gets the other region's answer without either one
+ * evicting the other.
+ *
+ * Same standing as omdbCache: purely derived, re-fetchable, and deliberately
+ * NOT part of the backup format.
+ */
+export interface WatchProviderCacheEntry {
+  /** `${kind}:${tmdbId}` — show and movie TMDB IDs are separate spaces and do collide. */
+  cacheKey: string;
+  kind: "show" | "movie";
+  tmdbId: number;
+  fetchedAt: string; // ISO
+  /** The whole TmdbWatchProviderResponse.results map, every region TMDB returned. */
+  regions: unknown;
+}
+
 // ---- Database -----------------------------------------------------------
 
 class TrackerDB extends Dexie {
@@ -180,6 +205,7 @@ class TrackerDB extends Dexie {
   settings!: Table<Setting, string>;
   omdbCache!: Table<OmdbCacheEntry, string>;
   titleEmbeddings!: Table<TitleEmbedding, string>;
+  watchProviders!: Table<WatchProviderCacheEntry, string>;
 
   constructor() {
     super("tv-tracker");
@@ -379,6 +405,22 @@ class TrackerDB extends Dexie {
       settings: "key",
       omdbCache: "cacheKey, kind",
       titleEmbeddings: "cacheKey, kind",
+    });
+    // v15: added the watchProviders table (streaming availability). Purely
+    // additive in exactly the shape v11 used for omdbCache: a new
+    // re-derivable cache table, every existing table untouched, nothing
+    // cleared. It exists so opening a details panel twice does not spend two
+    // TMDB requests on data that changes at the pace of licensing deals.
+    this.version(15).stores({
+      shows: "tmdbId, name, isFollowed, lastWatchedAt, tvdbId",
+      episodes: "key, showId, [showId+seasonNumber]",
+      watchedEpisodes: "key, showId, watchedAt",
+      movies: "tmdbId, title, watched, wantsToWatch",
+      titleMatches: "rawTitle, kind",
+      settings: "key",
+      omdbCache: "cacheKey, kind",
+      titleEmbeddings: "cacheKey, kind",
+      watchProviders: "cacheKey, kind",
     });
   }
 }

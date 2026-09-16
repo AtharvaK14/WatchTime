@@ -239,6 +239,12 @@ export default function EpisodePanelApp({
       watched={watch !== undefined}
       watchCount={watch?.watchCount ?? 0}
       canToggleWatched={canToggleWatched}
+      // The same "Available on" row the app's panels show, from the same
+      // normalised data. The overlay is where it matters most - this is the
+      // panel someone opens from their home screen when they are about to
+      // watch something - and the capsules launch through the panel host's
+      // openExternal, since this WebView refuses navigations of its own.
+      streamingShowId={show.tmdbId}
       transition={transition}
       // The two deliberate routes out of the overlay and into the app: the
       // episode title goes to this episode's own panel, the show capsule to

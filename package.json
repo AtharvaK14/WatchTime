@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "build:mood-vocabulary": "tsx scripts/build-mood-vocabulary.ts",
+    "check:watch-next": "tsx scripts/check-watch-next.ts",
+    "check:streaming": "tsx scripts/check-streaming.ts",
     "preview": "vite preview",
     "cap:sync": "npm run build && npx cap sync android",
     "cap:open": "npx cap open android"
