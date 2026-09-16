@@ -1,8 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { SetupPhase } from "../lib/moodSearch/useMoodSearch";
 import type { MoodFilter } from "../lib/moodSearch/search";
-
-const EXAMPLE = "something slow burn and unsettling, not found footage, under 90 minutes";
+import SearchField from "./SearchField";
 
 function setupMessage(setup: SetupPhase): string | null {
   switch (setup.state) {
@@ -66,21 +65,21 @@ export default function MoodSearch({
           one button. Clear moved inside the field so the row is always
           exactly two items and can stay on a single line at any width. */}
       <form className="mood-search-row" onSubmit={submit} role="search">
-        <div className="search-field">
-          <input
-            type="text"
-            className="mood-search-input"
-            value={text}
-            placeholder={`Describe what you're in the mood for, e.g. "${EXAMPLE}"`}
-            aria-label="Search by mood"
-            onChange={(e) => setText(e.target.value)}
-          />
-          {(text || filter) && (
-            <button type="button" className="search-clear" onClick={clear} aria-label="Clear search">
-              &times;
-            </button>
-          )}
-        </div>
+        {/* The placeholder says what this box searches, and only that. It used
+            to open with "Describe what you're in the mood for", which read as
+            a recommendations box; recommendations are For You. What it
+            actually searches is the shows and movies on this page (Up Next and
+            Movies to Watch), by title or by description. It does not search
+            episodes, so it does not claim to. */}
+        <SearchField
+          className="mood-search-input"
+          value={text}
+          placeholder="Search shows & movies"
+          aria-label="Search shows and movies"
+          onChange={(e) => setText(e.target.value)}
+          clearable={Boolean(text || filter)}
+          onClear={clear}
+        />
         <button type="submit" disabled={searching || !text.trim()}>
           {searching ? "Searching..." : "Search"}
         </button>

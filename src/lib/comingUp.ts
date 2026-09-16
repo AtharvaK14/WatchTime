@@ -62,6 +62,22 @@ export function buildReleasingThisMonth(movies: Movie[], now = new Date(), limit
 }
 
 /**
+ * The status line under a movie in "Releasing this month", or null for none.
+ *
+ * Watched wins. The two flags are independent in the data and a watched movie
+ * can still carry wantsToWatch: the Movies grid's tick sets only `watched`, and
+ * a TV Time import can bring both. A film the user has already seen is not one
+ * they still want to see, so it never says both — and it reads the same
+ * `watched` flag the Movies page's Watched filter does, rather than any
+ * separate record of its own.
+ */
+export function releaseStatusLabel(movie: Pick<Movie, "watched" | "wantsToWatch">): string | null {
+  if (movie.watched) return "Already Watched";
+  if (movie.wantsToWatch) return "Want to watch";
+  return null;
+}
+
+/**
  * "Today" / "Tomorrow" / "Mar 4" for an air or release date.
  *
  * Exported because the widget shows the same relative wording as the app;

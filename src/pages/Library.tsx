@@ -6,6 +6,7 @@ import { computeWatchStatus, type ShowWatchStatus } from "../lib/showWatchStatus
 import { isStoppedWatching } from "../lib/stoppedWatching";
 import { useShowStats, toDurationParts } from "../lib/stats";
 import DetailsPanel from "../components/DetailsPanel";
+import PosterCaption from "../components/PosterCaption";
 import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
@@ -245,6 +246,11 @@ export default function Library() {
                 ) : (
                   <div className="poster-placeholder" />
                 )}
+                {/* The progress bar is the card's only statement of progress.
+                    The "N episodes watched" line that used to sit in the
+                    caption said the same thing again in words; the count
+                    behind both is unchanged and still drives this bar and the
+                    Most watched sort. */}
                 {show.numberOfEpisodes ? (
                   <div className="poster-progress">
                     <span
@@ -254,11 +260,11 @@ export default function Library() {
                     />
                   </div>
                 ) : null}
-                <div className="show-card-body">
-                  <p className="show-name">{show.name}</p>
-                  <p className="muted small">{watchedCounts?.get(show.tmdbId) ?? 0} episodes watched</p>
-                  {isStoppedWatching(show) && <p className="muted small">Stopped watching</p>}
-                </div>
+                <PosterCaption title={show.name} year={show.firstAirYear}>
+                  {/* Kept: under "All" it is the only thing telling a stopped
+                      show apart from one in progress. */}
+                  {isStoppedWatching(show) && <p className="card-meta">Stopped watching</p>}
+                </PosterCaption>
               </div>
             ))}
           </div>

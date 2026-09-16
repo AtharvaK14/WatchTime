@@ -16,7 +16,7 @@
  */
 
 import type { Episode, Show, WatchedEpisode } from "../src/db";
-import { buildWatchNextRows } from "../src/lib/watchNext";
+import { buildWatchNextRows, hasNextAfterWatching } from "../src/lib/watchNext";
 
 /** Fixed "now", so a scenario cannot pass one week and fail the next. */
 const NOW = new Date("2026-09-11T12:00:00Z");
@@ -299,6 +299,61 @@ for (const returning of ["Batch Return", "Weekly Return"]) {
       `Watch Next order: "${returning}" returned more recently than "Slow Burn" was watched, but sorts below it ` +
         `(${watchNextOrder.join(" > ")})`
     );
+  }
+}
+
+// The Up Next card's confirmation: a tick when marking this episode leaves
+// something to watch, "That's all folks!" when it does not. Asked before the
+// write lands, so it has to agree with what the rebuilt list will then do.
+//
+// Air dates here are years either side of today rather than relative to NOW:
+// findNextUnwatched() judges availability against the real clock, and a date
+// a week out would flip these answers the day it passed.
+const markCases: { name: string; showId: number; marking: string; expected: boolean }[] = [];
+const markEpisodes: Episode[] = [];
+const markHistory: WatchedEpisode[] = [];
+
+// Mid-season: the rest of the season is waiting.
+for (let e = 1; e <= 6; e++) markEpisodes.push(ep(101, 1, e, 2000));
+for (let e = 1; e <= 2; e++) markHistory.push(watched(101, 1, e, 30));
+markCases.push({ name: "Mid-season", showId: 101, marking: "101-1-3", expected: true });
+
+// Season finale with the next season already out: the next episode is the premiere.
+for (let e = 1; e <= 3; e++) {
+  markEpisodes.push(ep(102, 1, e, 2000));
+  markEpisodes.push(ep(102, 2, e, 1500));
+}
+for (let e = 1; e <= 2; e++) markHistory.push(watched(102, 1, e, 30));
+markCases.push({ name: "Finale, next season out", showId: 102, marking: "102-1-3", expected: true });
+
+// Last released episode, with the next one announced but years away.
+for (let e = 1; e <= 3; e++) markEpisodes.push(ep(103, 1, e, 2000));
+markEpisodes.push(ep(103, 1, 4, -3650));
+for (let e = 1; e <= 2; e++) markHistory.push(watched(103, 1, e, 30));
+markCases.push({ name: "Caught up, more announced", showId: 103, marking: "103-1-3", expected: false });
+
+// Last episode of a finished series. The other shows in these arrays still
+// have unwatched episodes, so this also fails if one show's episodes leak into
+// another's answer.
+for (let e = 1; e <= 3; e++) markEpisodes.push(ep(104, 1, e, 2000));
+for (let e = 1; e <= 2; e++) markHistory.push(watched(104, 1, e, 30));
+markCases.push({ name: "Series finale", showId: 104, marking: "104-1-3", expected: false });
+
+// Starting a show from Haven't Yet Started.
+for (let e = 1; e <= 2; e++) markEpisodes.push(ep(105, 1, e, 2000));
+markCases.push({ name: "Starting a show", showId: 105, marking: "105-1-1", expected: true });
+
+// Starting a one-episode show: the first watch is also the last.
+markEpisodes.push(ep(106, 1, 1, 2000));
+markCases.push({ name: "One-episode show", showId: 106, marking: "106-1-1", expected: false });
+
+console.log();
+for (const c of markCases) {
+  const actual = hasNextAfterWatching(markEpisodes, markHistory, c.showId, c.marking);
+  const label = actual ? "tick" : "That's all folks!";
+  console.log(`${c.name.padEnd(28)} marking ${c.marking.padEnd(8)} -> ${label}`);
+  if (actual !== c.expected) {
+    failures.push(`${c.name}: expected ${c.expected ? "a tick" : "That's all folks!"}, got ${label}`);
   }
 }
 

@@ -63,6 +63,10 @@
   --watched: #3FB950;
   --watched-dim: #1A4D21;
   --watched-tint: rgba(63, 185, 80, 0.08);
+  /* --watched at 80%, for the Up Next card that has just been marked watched.
+     Translucent on purpose: the card behind stays faintly visible, so it reads
+     as THAT card acknowledging the tap rather than a green block replacing it. */
+  --watched-veil: rgba(63, 185, 80, 0.8);
   --font-display: "Geist", -apple-system, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   /* Geist Mono replaces the bare system stack. The mono face is not
      decorative here — it sets every "S02 | E04" episode number — and the
@@ -308,7 +312,9 @@ hr { border: none; border-top: 1px solid var(--border); }
 /* Watch Next / Home */
 .watch-next-list { display: flex; flex-direction: column; gap: 10px; }
 
+/* position: relative anchors the watched overlay (.wn-watched-overlay). */
 .watch-next-row {
+  position: relative;
   display: flex; align-items: center; gap: 12px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px;
 }
@@ -1271,7 +1277,9 @@ details[open] > summary::after { transform: rotate(90deg); }
     flex-wrap: wrap;
     gap: 14px;
   }
-  .watch-next-row {
+  /* On the slot, which is the list's direct child now; the card fills it
+     (see .wn-slot further down). */
+  .wn-slot {
     flex: 0 1 380px;
     max-width: 380px;
   }
@@ -2724,9 +2732,14 @@ select,
    season being expanded, and the Up Next rows. Deliberately NOT applied to
    .show-grid: a library of a few hundred posters would animate every tile on
    every visit to the tab, which is a lot of simultaneous work for no
-   information. Those grids arrive with the .tab-view transition instead. */
+   information. Those grids arrive with the .tab-view transition instead.
+
+   An Up Next slot plays it ONCE. The browser restarts a CSS animation whenever
+   its element moves in the DOM, and a re-sort moves rows, so without
+   [data-entered] (set by markEntered in pages/Home.tsx) every row shuffled by a
+   watch faded in again as if the list had been rebuilt. */
 .episode-list > .episode-row,
-.watch-next-list > .watch-next-row {
+.watch-next-list > .wn-slot:not([data-entered]) {
   animation: list-item-in 220ms ease-out both;
 }
 @keyframes list-item-in {
@@ -3049,3 +3062,218 @@ select,
    line rather than sitting beside the tags, because it is a sentence and the
    tags are labels. */
 .wn-behind-note { margin: 6px 0 0; line-height: 1.4; }
+
+/* ============================================================
+   UP NEXT: MARKED WATCHED (pages/Home.tsx, lib/useWatchedTransitions.ts)
+
+   Tapping a card's tick used to rebuild the list in the same frame: the card
+   vanished or jumped to the top, and every card between moved at once. It is
+   a sequence on the card now, in three steps:
+
+     1. the card holds its place, turns translucent green, and shows a tick —
+        or "That's all folks!" when the show has nothing left to watch;
+     2. it flips away, edge-on;
+     3. the show's next episode flips in where it was, or, when there is none
+        in this list, the gap closes and the cards below glide up.
+
+   Then the list glides into its real order (lib/useFlipLayout.ts).
+
+   Durations are mirrored by the constants in lib/useWatchedTransitions.ts,
+   which time each step against them. The flips use the motion pass's own
+   curves: ease-in for something leaving, (0.2, 0, 0, 1) for something
+   arriving. prefers-reduced-motion skips the whole sequence in JS and the
+   list simply updates, as it always did.
+   ============================================================ */
+
+/* The list's direct child. It owns layout (the desktop column width is set on
+   it above) and the glide while other cards make room; the card inside owns
+   the flip. Two elements, so the two transforms can never overwrite each
+   other when both happen at once. */
+.wn-slot {
+  display: flex;
+  min-width: 0;
+}
+.wn-slot > .watch-next-row {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Nothing on a card mid-sequence takes a tap: a second tap on the tick would
+   otherwise mark the NEXT episode watched before the user has even seen it. */
+.watch-next-row.is-confirm,
+.watch-next-row.is-flip-out,
+.watch-next-row.is-flip-in {
+  pointer-events: none;
+}
+
+/* ---- Step 1: the acknowledgement --------------------------------------- */
+
+/* Covers the border as well (inset: -1px), so the whole card reads as green
+   rather than a green panel inside a grey outline. */
+.wn-watched-overlay {
+  position: absolute;
+  inset: -1px;
+  z-index: 1;
+  border-radius: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16px;
+  background: var(--watched-veil);
+  pointer-events: none;
+  animation: watched-flash-in 160ms ease-out both;
+}
+
+/* The white fill of .watch-toggle-circle, the control that was just pressed,
+   grown into the middle of the card. The tick in --watched-dim on --text
+   measures 8.7:1. The pop is the same one the widget overlay's confirmation
+   uses (watched-mark-pop), a single small overshoot rather than a bounce. */
+.wn-watched-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--text);
+  color: var(--watched-dim);
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+  animation: watched-mark-pop 320ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+}
+
+/* The end-of-the-line variant: the same white mark, stretched to a capsule to
+   hold the words. Same fill, colours and entrance as the tick, so "there is
+   more" and "that was the last one" read as one interaction with two endings. */
+.wn-watched-folks {
+  width: auto;
+  height: auto;
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: 1rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+/* ---- Step 2: flipping away --------------------------------------------- */
+
+/* rotateX around the card's middle, so a wide phone row turns like a
+   split-flap display instead of swinging out sideways. forwards holds it
+   edge-on until step 3 swaps in what comes next. perspective() lives in the
+   keyframes rather than on the slot, so no ancestor carries a 3D context once
+   the flip is over. */
+.watch-next-row.is-flip-out {
+  animation: wn-flip-out 200ms ease-in forwards;
+}
+@keyframes wn-flip-out {
+  from { transform: perspective(900px) rotateX(0deg); opacity: 1; }
+  to { transform: perspective(900px) rotateX(90deg); opacity: 0.5; }
+}
+
+/* ---- Step 3: the next episode arriving ---------------------------------- */
+
+/* Picks the rotation up from the far side (-90deg), so out and in read as one
+   continuous turn of the same card. The end state is written with the same
+   function list as the start, rather than `none`, so only the angle is
+   interpolated. */
+.watch-next-row.is-flip-in {
+  animation: wn-flip-in 260ms cubic-bezier(0.2, 0, 0, 1) both;
+}
+@keyframes wn-flip-in {
+  from { transform: perspective(900px) rotateX(-90deg); opacity: 0.5; }
+  to { transform: perspective(900px) rotateX(0deg); opacity: 1; }
+}
+
+/* ============================================================
+   SEARCH FIELD (components/SearchField.tsx)
+
+   The field Home's and Discover's search bars share. A magnifier says what
+   the box is before a word of the placeholder has been read, and focus eases
+   in rather than snapping on: the app's usual accent ring, arriving over
+   160ms while the icon lifts to full brightness.
+   ============================================================ */
+
+.search-field-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  color: var(--muted);
+  pointer-events: none;
+  transition: color 160ms ease;
+}
+.search-field:focus-within .search-field-icon { color: var(--text); }
+
+/* The right padding only while the clear button is showing. It used to be
+   reserved permanently, which on a narrow phone cut the placeholder — the one
+   line that explains what this box searches — short for a button that was
+   not there. */
+.search-field input[type="text"] {
+  padding-left: 36px;
+  padding-right: 12px;
+  outline: 2px solid transparent;
+  outline-offset: 0;
+  transition:
+    outline-color 160ms ease,
+    outline-offset 160ms cubic-bezier(0.2, 0, 0, 1);
+}
+.search-field.is-clearable input[type="text"] { padding-right: 38px; }
+
+/* Same ring as the global :focus-visible rule, which this field's own outline
+   above would otherwise override. */
+.search-field input[type="text"]:focus-visible {
+  outline-color: var(--accent);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   POSTER CAPTION (components/PosterCaption.tsx)
+
+   Release year, then the title beneath it, bottom-left on the artwork, on
+   every poster grid: Shows, Movies and Discover. It keeps .show-card-body's
+   position and hover reveal and .show-name's type; what it adds is the year
+   line, a title that never wraps, and enough scrim behind both (below).
+   ============================================================ */
+
+/* Quieter than the title by weight and colour rather than by size: 0.75rem is
+   already the floor this app holds UI text to (see the bottom-nav labels).
+   Tabular figures so a column of years sits evenly. */
+.card-meta {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.3;
+  color: rgba(242, 241, 239, 0.75);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* One line, then an ellipsis. A long title used to wrap across the artwork
+   and make its card's caption taller than its neighbours'. */
+.card-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Two lines need more scrim than one. Most posters print their own title art
+   along the bottom edge, exactly where the caption sits, and the year line is
+   the higher of the two, where the old gradient was still nearly transparent.
+   On phones it had almost no gradient at all: the 640px rule near the top of
+   this file pads the caption 6px all round, so the ramp was only as tall as
+   the text. The gradient now darkens sooner, the phone caption gets room above
+   its first line for the ramp to happen in, and a soft shadow separates the
+   letters from busy artwork. Applied to every poster card, Movies included,
+   so the three grids stay identical. */
+.show-card-body {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.6) 45%, rgba(0, 0, 0, 0.88));
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+@media (max-width: 640px) {
+  .show-card-body { padding-top: 22px; }
+}

@@ -230,6 +230,31 @@ export function buildWatchNextRows(
   return result;
 }
 
+/**
+ * Whether marking `justWatchedKey` watched still leaves the show with an
+ * episode to watch: the next season, or the rest of this one. False when it
+ * was the last released episode, including when later ones are announced but
+ * have not aired.
+ *
+ * This is what the Up Next card shows the moment its tick is tapped (a tick
+ * when there is more, "That's all folks!" when there is not), so it is asked
+ * before the write lands, from the rows as they stand plus the one episode
+ * being marked. It walks findNextUnwatched() exactly as buildWatchNextRows()
+ * does, so the card can never promise an episode the rebuilt list will not
+ * then offer, or announce the end of a show the list keeps.
+ */
+export function hasNextAfterWatching(
+  allEpisodes: Episode[],
+  allWatched: WatchedEpisode[],
+  showId: number,
+  justWatchedKey: string
+): boolean {
+  const episodes = allEpisodes.filter((ep) => ep.showId === showId);
+  const watchedKeys = new Set(allWatched.filter((w) => w.showId === showId).map((w) => w.key));
+  watchedKeys.add(justWatchedKey);
+  return findNextUnwatched(episodes, watchedKeys) !== null;
+}
+
 /** The later of two ISO instants, tolerating nulls on either side. */
 function mostRecent(a: string | null, b: string | null | undefined): string | null {
   if (!a) return b || null;

@@ -9,6 +9,7 @@ import {
 import { looksDescriptive } from "../lib/moodSearch/constraints";
 import { discoverByMood, type DiscoveryItem } from "../lib/moodSearch/discover";
 import type { IndexProgress } from "../lib/moodSearch/titleIndex";
+import SearchField from "./SearchField";
 
 /**
  * One search box replaces what used to be three (title search, mood
@@ -223,29 +224,23 @@ export default function UniversalSearch({
   return (
     <div className="usearch" ref={boxRef}>
       <form className="usearch-form" onSubmit={submit} role="search">
-        <div className="search-field">
-          <input
-            type="text"
-            className="usearch-input"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={onKeyDown}
-            onFocus={() => suggestions.length > 0 && setOpen(true)}
-            placeholder="Search titles, or describe what you're in the mood for"
-            aria-label="Search shows and movies, or describe a mood"
-            role="combobox"
-            aria-expanded={open}
-            aria-controls="usearch-suggestions"
-            aria-autocomplete="list"
-            aria-activedescendant={activeIndex >= 0 ? `usearch-option-${activeIndex}` : undefined}
-            autoComplete="off"
-          />
-          {query && (
-            <button type="button" className="search-clear" onClick={clear} aria-label="Clear search">
-              &times;
-            </button>
-          )}
-        </div>
+        <SearchField
+          className="usearch-input"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onKeyDown}
+          onFocus={() => suggestions.length > 0 && setOpen(true)}
+          placeholder="Search titles, or describe what you're in the mood for"
+          aria-label="Search shows and movies, or describe a mood"
+          role="combobox"
+          aria-expanded={open}
+          aria-controls="usearch-suggestions"
+          aria-autocomplete="list"
+          aria-activedescendant={activeIndex >= 0 ? `usearch-option-${activeIndex}` : undefined}
+          autoComplete="off"
+          clearable={Boolean(query)}
+          onClear={clear}
+        />
         <button type="submit" disabled={busy || !query.trim()}>
           {busy ? "Searching..." : "Search"}
         </button>

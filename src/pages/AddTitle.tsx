@@ -12,6 +12,7 @@ import {
   type MovieSearchResult,
 } from "../tmdb";
 import DetailsPanel from "../components/DetailsPanel";
+import PosterCaption from "../components/PosterCaption";
 import UniversalSearch, { type SearchResults } from "../components/UniversalSearch";
 import { BookmarkIcon } from "../components/icons";
 
@@ -64,6 +65,55 @@ function InLibraryBadge() {
   );
 }
 
+/** "2026-03-14" -> 2026. Null for a missing or empty TMDB date. */
+function yearOf(date: string | null | undefined): number | null {
+  return Number(date?.slice(0, 4)) || null;
+}
+
+/**
+ * One Discover card. Every grid on this page — the rails and both kinds of
+ * search result — renders through this, so they cannot drift apart.
+ *
+ * The same card the Shows and Movies grids use (artwork, and PosterCaption's
+ * year-over-title in the bottom-left corner), plus the two markers only
+ * Discover needs: the library bookmark, and the TV/Film tag wherever a grid
+ * mixes the two. No watched control: marking something watched happens in the
+ * details panel the card opens.
+ */
+function TitleCard({
+  name,
+  year,
+  posterPath,
+  kindTag,
+  inLibrary,
+  onOpen,
+}: {
+  name: string;
+  year: number | null;
+  posterPath: string | null;
+  /** "TV" or "Film", only where the grid's heading does not already say which. */
+  kindTag?: "TV" | "Film";
+  inLibrary: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button className="show-card" onClick={onOpen}>
+      {posterPath ? (
+        <img src={`${TMDB_IMAGE_BASE}${posterPath}`} alt={name} />
+      ) : (
+        <div className="poster-placeholder" />
+      )}
+      {/* Sits on the artwork rather than in .show-card-body, because that
+          caption is hidden until hover on pointer:fine devices — a type
+          label there would be invisible at rest on desktop. */}
+      {kindTag && <span className="card-kind">{kindTag}</span>}
+      {inLibrary && <InLibraryBadge />}
+      <PosterCaption title={name} year={year} />
+      {inLibrary && <span className="sr-only">In your library</span>}
+    </button>
+  );
+}
+
 function ShowRow({
   items,
   onOpen,
@@ -79,23 +129,15 @@ function ShowRow({
   return (
     <div className="show-grid">
       {items.map((r) => (
-        <button key={r.id} className="show-card" onClick={() => onOpen(r.id)}>
-          {r.poster_path ? (
-            <img src={`${TMDB_IMAGE_BASE}${r.poster_path}`} alt={r.name} />
-          ) : (
-            <div className="poster-placeholder" />
-          )}
-          {/* Sits on the artwork rather than in .show-card-body, because that
-              caption is hidden until hover on pointer:fine devices — a type
-              label there would be invisible at rest on desktop. */}
-          {showTypeTag && <span className="card-kind">TV</span>}
-          {inLibrary.has(r.id) && <InLibraryBadge />}
-          <div className="show-card-body">
-            <p className="show-name">{r.name}</p>
-            <p className="muted small">{r.first_air_date?.slice(0, 4) ?? "?"}</p>
-          </div>
-          {inLibrary.has(r.id) && <span className="sr-only">In your library</span>}
-        </button>
+        <TitleCard
+          key={r.id}
+          name={r.name}
+          year={yearOf(r.first_air_date)}
+          posterPath={r.poster_path}
+          kindTag={showTypeTag ? "TV" : undefined}
+          inLibrary={inLibrary.has(r.id)}
+          onOpen={() => onOpen(r.id)}
+        />
       ))}
     </div>
   );
@@ -115,21 +157,15 @@ function MovieRow({
   return (
     <div className="show-grid">
       {items.map((r) => (
-        <button key={r.id} className="show-card" onClick={() => onOpen(r.id)}>
-          {r.poster_path ? (
-            <img src={`${TMDB_IMAGE_BASE}${r.poster_path}`} alt={r.title} />
-          ) : (
-            <div className="poster-placeholder" />
-          )}
-          {/* See ShowRow. */}
-          {showTypeTag && <span className="card-kind">Film</span>}
-          {inLibrary.has(r.id) && <InLibraryBadge />}
-          <div className="show-card-body">
-            <p className="show-name">{r.title}</p>
-            <p className="muted small">{r.release_date?.slice(0, 4) ?? "?"}</p>
-          </div>
-          {inLibrary.has(r.id) && <span className="sr-only">In your library</span>}
-        </button>
+        <TitleCard
+          key={r.id}
+          name={r.title}
+          year={yearOf(r.release_date)}
+          posterPath={r.poster_path}
+          kindTag={showTypeTag ? "Film" : undefined}
+          inLibrary={inLibrary.has(r.id)}
+          onOpen={() => onOpen(r.id)}
+        />
       ))}
     </div>
   );
@@ -148,6 +184,12 @@ function Results({
   const nothing = results.titles.length === 0 && results.mood.length === 0;
   const owned = (kind: "show" | "movie", tmdbId: number) =>
     (kind === "show" ? library.shows : library.movies).has(tmdbId);
+  // Search mixes shows and films under one heading, so every result carries
+  // the type, exactly as Trending does. It used to be written into the caption
+  // ("TV · 2024"); it is the tag on the artwork now, which leaves the caption
+  // to the year and title every other card shows and keeps the type visible at
+  // rest on desktop, where the caption only appears on hover.
+  const kindTag = (kind: "show" | "movie") => (kind === "show" ? "TV" : "Film");
   return (
     <>
       {results.titles.length > 0 && (
@@ -155,29 +197,15 @@ function Results({
           <h2 className="section-title">Titles</h2>
           <div className="show-grid">
             {results.titles.map((t) => (
-              <button
+              <TitleCard
                 key={`${t.kind}:${t.tmdbId}`}
-                className="show-card"
-                onClick={() => onOpen(t.kind, t.tmdbId)}
-              >
-                {t.posterPath ? (
-                  <img src={`${TMDB_IMAGE_BASE}${t.posterPath}`} alt={t.name} />
-                ) : (
-                  <div className="poster-placeholder" />
-                )}
-                {owned(t.kind, t.tmdbId) && <InLibraryBadge />}
-                <div className="show-card-body">
-                  <p className="show-name">{t.name}</p>
-                  {/* Search mixes shows and films under one heading, so the
-                      type stays in this caption for the same reason it stays
-                      on Trending. */}
-                  <p className="muted small">
-                    {t.kind === "show" ? "TV" : "Film"}
-                    {t.year ? ` · ${t.year}` : ""}
-                  </p>
-                </div>
-                {owned(t.kind, t.tmdbId) && <span className="sr-only">In your library</span>}
-              </button>
+                name={t.name}
+                year={t.year}
+                posterPath={t.posterPath}
+                kindTag={kindTag(t.kind)}
+                inLibrary={owned(t.kind, t.tmdbId)}
+                onOpen={() => onOpen(t.kind, t.tmdbId)}
+              />
             ))}
           </div>
         </>
@@ -193,36 +221,18 @@ function Results({
           {results.mood.length > 0 && (
             <div className="show-grid">
               {results.mood.map((m) => (
-                <button
+                <TitleCard
                   key={`${m.kind}:${m.tmdbId}`}
-                  className="show-card"
-                  onClick={() => onOpen(m.kind, m.tmdbId)}
-                >
-                  {m.posterPath ? (
-                    <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.name} />
-                  ) : (
-                    <div className="poster-placeholder" />
-                  )}
-                  {/* m.inLibrary is the search index's own answer; the live
-                      sets are authoritative once a title is added or removed
-                      through the panel this page opens on top of itself. */}
-                  {(m.inLibrary || owned(m.kind, m.tmdbId)) && <InLibraryBadge />}
-                  <div className="show-card-body">
-                    <p className="show-name">{m.name}</p>
-                    <p className="muted small">
-                      {m.kind === "show" ? "TV" : "Film"}
-                      {m.year ? ` · ${m.year}` : ""}
-                    </p>
-                    {/* The worded badge that used to sit here is gone: the
-                        bookmark on the artwork above says the same thing, and
-                        Discover should say it one way everywhere. It keeps
-                        reaching screen readers below, same as every other
-                        card on this page. */}
-                  </div>
-                  {(m.inLibrary || owned(m.kind, m.tmdbId)) && (
-                    <span className="sr-only">In your library</span>
-                  )}
-                </button>
+                  name={m.name}
+                  year={m.year}
+                  posterPath={m.posterPath}
+                  kindTag={kindTag(m.kind)}
+                  // m.inLibrary is the search index's own answer; the live
+                  // sets are authoritative once a title is added or removed
+                  // through the panel this page opens on top of itself.
+                  inLibrary={m.inLibrary || owned(m.kind, m.tmdbId)}
+                  onOpen={() => onOpen(m.kind, m.tmdbId)}
+                />
               ))}
             </div>
           )}

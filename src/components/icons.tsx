@@ -113,6 +113,16 @@ export function BookmarkIcon({ size = 20, className }: IconProps) {
   );
 }
 
+/** A magnifier, at the start of the search fields on Home and Discover. */
+export function SearchIcon({ size = 20, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M20 20l-4-4" />
+    </svg>
+  );
+}
+
 // For You: a sparkle, the common shorthand for "personalised / picked for
 // you". Deliberately not a heart (that reads as favourites/likes, which this
 // app has no concept of) and not a star (too close to ratings).

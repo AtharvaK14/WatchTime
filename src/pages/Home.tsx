@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type AnimationEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Episode } from "../db";
 import { TMDB_IMAGE_BASE } from "../tmdb";
@@ -7,6 +7,7 @@ import {
   buildReleasingThisMonth,
   buildUpcomingEpisodeRows,
   formatUpcomingDate,
+  releaseStatusLabel,
   type UpcomingEpisodeRow,
 } from "../lib/comingUp";
 import { getStaleDaysThreshold } from "../lib/showStatus";
@@ -24,17 +25,59 @@ import {
   type MoodCandidate,
   type MoodFilter,
 } from "../lib/moodSearch/search";
-import { buildWatchNextRows, byAddedAt, byRecency, type WatchNextRow as Row } from "../lib/watchNext";
+import {
+  buildWatchNextRows,
+  byAddedAt,
+  byRecency,
+  hasNextAfterWatching,
+  type WatchNextRow as Row,
+} from "../lib/watchNext";
 import { resumeWatchingShow } from "../lib/stoppedWatching";
+import { useFlipLayout } from "../lib/useFlipLayout";
+import { useWatchedTransitions, type WatchedTransition } from "../lib/useWatchedTransitions";
+
+type UpNextTab = "next" | "stale" | "not-started" | "stopped";
+
+/**
+ * The confirmation a card shows while its watched sequence plays: the card
+ * turns translucent green (see .wn-watched-overlay) with a tick in the middle,
+ * or with "That's all folks!" when the show has nothing left to watch.
+ *
+ * Both marks share one shape and one entrance, the white fill of the tick
+ * control the user just pressed, so the two outcomes read as one interaction
+ * with two endings. role="status" so the outcome is announced as well as drawn.
+ */
+function WatchedOverlay({ hasNext }: { hasNext: boolean }) {
+  return (
+    <div className="wn-watched-overlay" role="status">
+      {hasNext ? (
+        <>
+          <span className="wn-watched-mark" aria-hidden="true">
+            &#10003;
+          </span>
+          <span className="sr-only">Marked as watched</span>
+        </>
+      ) : (
+        <>
+          <span className="sr-only">Marked as watched. </span>
+          <span className="wn-watched-mark wn-watched-folks">That's all folks!</span>
+        </>
+      )}
+    </div>
+  );
+}
 
 function EpisodeRow({
   row,
+  transition,
   onOpenShow,
   onOpenEpisode,
   onMarkWatched,
   onResume,
 }: {
   row: Row;
+  /** Set while this card's watched sequence plays. See useWatchedTransitions. */
+  transition?: WatchedTransition;
   onOpenShow: (id: number) => void;
   onOpenEpisode: (row: Row) => void;
   onMarkWatched: (row: Row) => void;
@@ -44,7 +87,7 @@ function EpisodeRow({
   const isPremiere = row.nextEpisode?.episodeNumber === 1;
   const stopped = row.category === "stopped";
   return (
-    <div className="watch-next-row">
+    <div className={`watch-next-row${transition ? ` is-${transition.phase}` : ""}`}>
       {row.posterPath ? (
         <img src={`${TMDB_IMAGE_BASE}${row.posterPath}`} alt={row.showName} onClick={() => onOpenShow(row.showId)} />
       ) : (
@@ -119,8 +162,24 @@ function EpisodeRow({
           &#10003;
         </button>
       )}
+      {/* Over the card for the green state and while it flips away. Gone by
+          the time the next episode flips in: that side is a fresh card. */}
+      {transition && transition.phase !== "flip-in" && <WatchedOverlay hasNext={transition.hasNext} />}
     </div>
   );
+}
+
+/**
+ * Marks a slot as having played its entrance, so it never plays it again.
+ *
+ * Needed because the browser restarts a CSS animation whenever its element is
+ * moved in the DOM, and reordering keyed rows is exactly that: React moves the
+ * nodes around the one that changed. Every row shuffled by a re-sort used to
+ * fade in again from nothing, which read as the whole list being rebuilt.
+ * A DOM attribute rather than state, because nothing needs to re-render for it.
+ */
+function markEntered(e: AnimationEvent<HTMLDivElement>) {
+  if (e.target === e.currentTarget) e.currentTarget.dataset.entered = "";
 }
 
 function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => void; filter: MoodFilter | null }) {
@@ -140,7 +199,7 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
   const allWatched = useLiveQuery(() => db.watchedEpisodes.toArray(), []);
   const [syncing, setSyncing] = useState(false);
   const [syncErrors, setSyncErrors] = useState<string[]>([]);
-  const [tab, setTab] = useState<"next" | "stale" | "not-started" | "stopped">("next");
+  const [tab, setTab] = useState<UpNextTab>("next");
   // The episode panel opened from a Watch Next row. Only the show/episode
   // identity is stored; watched state is derived live from allWatched below,
   // so ticking the episode updates the open panel in place rather than
@@ -160,14 +219,27 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
   // shows imported at once it meant most of the list could go permanently
   // unsynced from one bad show. Failures are now collected and surfaced
   // instead of aborting the whole batch.
+  //
+  // Keyed on WHICH shows are followed, not on the shows array itself. The
+  // array is a new object after every write to the shows table, and marking
+  // an episode watched is one (it bumps Show.lastWatchedAt). Keyed on the
+  // array, every tick threw away the sync in progress and restarted a full
+  // TMDB walk of the library from the first show, and the "Syncing..." line
+  // appearing and disappearing above the list shoved every card down and back
+  // up again. A watch changes nothing this sync fetches; following or
+  // unfollowing a show does, and still restarts it.
+  const followedIds = shows?.map((s) => s.tmdbId).join(",");
+  const showsForSync = useRef(shows);
+  showsForSync.current = shows;
   useEffect(() => {
-    if (!shows) return;
+    const toSync = showsForSync.current;
+    if (!toSync) return;
     let cancelled = false;
     async function sync() {
       setSyncing(true);
       setSyncErrors([]);
       const failures: string[] = [];
-      for (const show of shows!) {
+      for (const show of toSync!) {
         if (cancelled) return;
         try {
           await ensureEpisodesCached(show.tmdbId);
@@ -184,7 +256,7 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
     return () => {
       cancelled = true;
     };
-  }, [shows]);
+  }, [followedIds]);
 
   const rows = useMemo<Row[]>(
     () =>
@@ -207,27 +279,59 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
     await resumeWatchingShow(row.showId);
   }
 
-  async function markWatched(row: Row) {
-    if (!row.nextEpisode) return;
+  // Four MUTUALLY EXCLUSIVE lists (see categorize() in lib/watchNext.ts).
+  // Watch Next and the stale list sort by most recent PROGRESSION (rewatches
+  // don't reorder them); Haven't Yet Started sorts by most recently added.
+  // Stopped sorts by last progression like the other history-bearing lists:
+  // the most recently abandoned is the one most likely to be resumed.
+  //
+  // Memoised, and above the loading return, because the watched sequence
+  // below is a hook that takes the active list and reacts to it changing.
+  const lists = useMemo<Record<UpNextTab, Row[]>>(
+    () => ({
+      next: rows.filter((r) => r.category === "watch-next").sort(byRecency),
+      stale: rows.filter((r) => r.category === "stale").sort(byRecency),
+      "not-started": rows.filter((r) => r.category === "not-started").sort(byAddedAt),
+      stopped: rows.filter((r) => r.category === "stopped").sort(byRecency),
+    }),
+    [rows]
+  );
+
+  // Marking an episode watched plays out on the card instead of the list
+  // rebuilding under the user's thumb: see useWatchedTransitions for the
+  // sequence, and useFlipLayout for how the other cards make room.
+  const listRef = useRef<HTMLDivElement>(null);
+  const captureLayout = useFlipLayout(listRef);
+  const {
+    display,
+    start: startWatchedSequence,
+    reset: resetWatchedSequences,
+  } = useWatchedTransitions({ list: tab, rows: lists[tab], beforeLayoutChange: captureLayout });
+
+  function selectTab(next: UpNextTab) {
+    if (next === tab) return;
+    // A card mid-sequence belongs to the list it was tapped in. Its watch is
+    // already recorded, so the new tab simply shows the result.
+    resetWatchedSequences();
+    setTab(next);
+  }
+
+  function markWatched(row: Row) {
+    const episode = row.nextEpisode;
+    if (!episode || !allEpisodes || !allWatched) return;
+    // Worked out now, from the library as it stands, so the card can say
+    // whether there is more to watch before the write has even landed.
+    const hasNext = hasNextAfterWatching(allEpisodes, allWatched, row.showId, episode.key);
     // Marks the next UNSEEN episode watched (starts a not-started show, or
     // advances an in-progress one). Never a rewatch: Watch Next only ever
     // points at unseen episodes now, so this always creates a fresh record.
-    await markNextEpisodeWatched(row.showId, row.nextEpisode);
+    // It is written immediately; only the card's exit waits.
+    startWatchedSequence(row, hasNext, () => markNextEpisodeWatched(row.showId, episode));
   }
 
   if (!shows || !allEpisodes || !allWatched) return <p className="muted">Loading...</p>;
 
-  // Three MUTUALLY EXCLUSIVE lists (see categorize() in lib/watchNext.ts).
-  // Watch Next and the stale list sort by most recent PROGRESSION (rewatches
-  // don't reorder them); Haven't Yet Started sorts by most recently added.
-  const watchNext = rows.filter((r) => r.category === "watch-next").sort(byRecency);
-  const stale = rows.filter((r) => r.category === "stale").sort(byRecency);
-  const notStarted = rows.filter((r) => r.category === "not-started").sort(byAddedAt);
-  // Stopped sorts by last progression like the other history-bearing lists:
-  // the most recently abandoned is the one most likely to be resumed.
-  const stopped = rows.filter((r) => r.category === "stopped").sort(byRecency);
-  const activeList =
-    tab === "next" ? watchNext : tab === "stale" ? stale : tab === "not-started" ? notStarted : stopped;
+  const { next: watchNext, stale, "not-started": notStarted, stopped } = lists;
 
   return (
     <>
@@ -238,15 +342,15 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
       <h2 className="section-title">Up Next</h2>
 
       <div className="pill-tabs">
-        <button className={`pill-tab ${tab === "next" ? "active" : ""}`} onClick={() => setTab("next")}>
+        <button className={`pill-tab ${tab === "next" ? "active" : ""}`} onClick={() => selectTab("next")}>
           Watch Next{watchNext.length > 0 ? ` (${watchNext.length})` : ""}
         </button>
-        <button className={`pill-tab ${tab === "stale" ? "active" : ""}`} onClick={() => setTab("stale")}>
+        <button className={`pill-tab ${tab === "stale" ? "active" : ""}`} onClick={() => selectTab("stale")}>
           Haven't Watched For a While{stale.length > 0 ? ` (${stale.length})` : ""}
         </button>
         <button
           className={`pill-tab ${tab === "not-started" ? "active" : ""}`}
-          onClick={() => setTab("not-started")}
+          onClick={() => selectTab("not-started")}
         >
           Haven't Yet Started{notStarted.length > 0 ? ` (${notStarted.length})` : ""}
         </button>
@@ -256,7 +360,7 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
             do not fit a phone. */}
         <button
           className={`pill-tab ${tab === "stopped" ? "active" : ""}`}
-          onClick={() => setTab("stopped")}
+          onClick={() => selectTab("stopped")}
         >
           Stopped Watching{stopped.length > 0 ? ` (${stopped.length})` : ""}
         </button>
@@ -275,11 +379,14 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
         </details>
       )}
 
-      {activeList.length === 0 && !syncing && filter && (
+      {/* Counted off what is on screen rather than the live list, so the last
+          card in a list does not have "Nothing here" printed above it while it
+          is still playing its exit. */}
+      {display.length === 0 && !syncing && filter && (
         <p className="muted">Nothing in this list matches that search. Clear it to see everything again.</p>
       )}
 
-      {activeList.length === 0 && !syncing && !filter && (
+      {display.length === 0 && !syncing && !filter && (
         <p className="muted">
           {tab === "next"
             ? "Nothing queued up. If you're sure some shows should be here, check Diagnostics in Settings, or re-import using the newer TV Time export format."
@@ -291,16 +398,21 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
         </p>
       )}
 
-      <div className="watch-next-list">
-        {activeList.map((row) => (
-          <EpisodeRow
-            key={row.showId}
-            row={row}
-            onOpenShow={onOpenShow}
-            onOpenEpisode={(r) => r.nextEpisode && setOpenEpisode({ showId: r.showId, episode: r.nextEpisode })}
-            onMarkWatched={markWatched}
-            onResume={resume}
-          />
+      <div className="watch-next-list" ref={listRef}>
+        {display.map(({ row, transition }) => (
+          // The slot is what the list lays out and glides (data-flip-key); the
+          // card inside it is what flips. Split so the two motions are on
+          // different elements and can never overwrite each other's transform.
+          <div key={row.showId} className="wn-slot" data-flip-key={row.showId} onAnimationEnd={markEntered}>
+            <EpisodeRow
+              row={row}
+              transition={transition}
+              onOpenShow={onOpenShow}
+              onOpenEpisode={(r) => r.nextEpisode && setOpenEpisode({ showId: r.showId, episode: r.nextEpisode })}
+              onMarkWatched={markWatched}
+              onResume={resume}
+            />
+          </div>
         ))}
       </div>
 
@@ -425,7 +537,10 @@ function ComingUp() {
               )}
               <div className="up-row-body">
                 <p className="show-name">{m.title}</p>
-                <p className="muted small">{m.wantsToWatch ? "Want to watch" : "\u00a0"}</p>
+                {/* Already Watched takes precedence over Want to watch; see
+                    releaseStatusLabel. The non-breaking space keeps rows with
+                    neither the same height as the rest. */}
+                <p className="muted small">{releaseStatusLabel(m) ?? "\u00a0"}</p>
               </div>
               <span className="up-row-date">{formatUpcomingDate(m.releaseDate ?? null)}</span>
             </div>
