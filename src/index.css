@@ -67,6 +67,14 @@
      Translucent on purpose: the card behind stays faintly visible, so it reads
      as THAT card acknowledging the tap rather than a green block replacing it. */
   --watched-veil: rgba(63, 185, 80, 0.8);
+  /* A card leaving the library (lib/libraryRemoval.ts). --danger, because it
+     is the colour of the Remove button that caused it, at reduced alpha so
+     the mark is a tint and a ring rather than a red block: the user is being
+     shown WHICH card, not warned about anything. Written out for the same
+     reason as --watched-tint. */
+  --removal-ring: rgba(255, 68, 51, 0.85);
+  --removal-glow: rgba(255, 68, 51, 0.3);
+  --removal-tint: rgba(255, 68, 51, 0.12);
   --font-display: "Geist", -apple-system, "Segoe UI", ui-sans-serif, system-ui, sans-serif;
   /* Geist Mono replaces the bare system stack. The mono face is not
      decorative here — it sets every "S02 | E04" episode number — and the
@@ -3276,4 +3284,205 @@ select,
 }
 @media (max-width: 640px) {
   .show-card-body { padding-top: 22px; }
+}
+
+/* ============================================================
+   REMOVED FROM THE LIBRARY (lib/libraryRemoval.ts)
+
+   A removed title's card waits under the details panel, then, once the panel
+   has closed:
+
+     highlight  a --danger ring and tint arrive on the card - this one
+     exit       it shrinks and fades out of its list
+     (gone)     the cards around it glide into the gap (useFlipLayout)
+
+   Durations are mirrored by REMOVAL_HIGHLIGHT_MS and REMOVAL_EXIT_MS, which
+   time the steps against them. The same three classes serve every list -
+   the Shows and Movies grids, Up Next, Coming Up, the Movies to Watch rail
+   and For You - so a title on several of them leaves all of them alike.
+   Reduced motion skips the sequence in JS and the card simply goes.
+   ============================================================ */
+
+/* A leaving card takes no taps: it would open a panel on a title that is no
+   longer in the library, from a list it is about to leave. */
+.is-removal-held,
+.is-removal-highlight,
+.is-removal-exit {
+  pointer-events: none;
+}
+
+/* ---- Step 1: which card ------------------------------------------------- */
+
+/* The ring goes on the artwork where a card is artwork plus a caption below
+   it (the rail cards), and on the card itself where the card IS the poster or
+   the row. */
+.show-card.is-removal-highlight,
+.watch-next-row.is-removal-highlight,
+.mtw-card.is-removal-highlight .mtw-poster,
+.rail-card.is-removal-highlight .rail-poster {
+  animation: removal-highlight 560ms ease-out both;
+}
+.show-card.is-removal-exit,
+.watch-next-row.is-removal-exit,
+.mtw-card.is-removal-exit .mtw-poster,
+.rail-card.is-removal-exit .rail-poster {
+  box-shadow: 0 0 0 2px var(--removal-ring), 0 0 20px 2px var(--removal-glow);
+}
+@keyframes removal-highlight {
+  from { box-shadow: 0 0 0 0 transparent, 0 0 0 0 transparent; }
+  30%,
+  to { box-shadow: 0 0 0 2px var(--removal-ring), 0 0 20px 2px var(--removal-glow); }
+}
+
+/* The tint. Over the artwork on a poster card (z-index 3 keeps it above the
+   caption and badges, which sit at 2), and as a second background layer on
+   an Up Next row so the row's own surface colour stays underneath it. */
+.show-card.is-removal-highlight::after,
+.show-card.is-removal-exit::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: inherit;
+  background: var(--removal-tint);
+  pointer-events: none;
+  animation: watched-flash-in 160ms ease-out both;
+}
+.watch-next-row.is-removal-highlight,
+.watch-next-row.is-removal-exit {
+  background-image: linear-gradient(var(--removal-tint), var(--removal-tint));
+}
+
+/* Coming Up rows have no box of their own - a poster thumbnail and text on a
+   divider - so the highlight draws one: the tint spread a few pixels past the
+   row's edges by box-shadow, which marks it without moving anything. */
+.up-row.is-removal-highlight,
+.up-row.is-removal-exit {
+  border-radius: 6px;
+  background: var(--removal-tint);
+  box-shadow: 0 0 0 6px var(--removal-tint), 0 0 0 7px var(--removal-ring);
+}
+.up-row.is-removal-highlight {
+  animation: removal-highlight-row 560ms ease-out both;
+}
+@keyframes removal-highlight-row {
+  from { background: transparent; box-shadow: 0 0 0 6px transparent, 0 0 0 7px transparent; }
+  30%,
+  to { background: var(--removal-tint); box-shadow: 0 0 0 6px var(--removal-tint), 0 0 0 7px var(--removal-ring); }
+}
+
+/* ---- Step 2: out of the list --------------------------------------------- */
+
+/* forwards holds it invisible for the instant between the animation ending
+   and the list dropping the card, so it cannot flash back in. Posters shrink
+   further than rows: a full-width row scaled as hard reads as a lurch. */
+.show-card.is-removal-exit,
+.mtw-card.is-removal-exit,
+.rail-card.is-removal-exit {
+  animation: removal-exit-card 240ms ease-in forwards;
+}
+.watch-next-row.is-removal-exit,
+.up-row.is-removal-exit {
+  animation: removal-exit-row 240ms ease-in forwards;
+}
+@keyframes removal-exit-card {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(0.9); }
+}
+@keyframes removal-exit-row {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: scale(0.97); }
+}
+
+/* ============================================================
+   REMOVE CONFIRMATION (components/DetailsPanel.tsx)
+
+   Replaces the action row in place - buttons first, where the finger already
+   is - instead of appearing as a second row underneath it.
+   ============================================================ */
+
+.remove-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.remove-confirm .status-error { margin: 0; }
+
+/* ============================================================
+   EXPANDABLE DESCRIPTION (components/ExpandableText.tsx)
+
+   The details panel's synopsis, clamped to a few lines with Read more /
+   Show less. The paragraph keeps .overview's own type; the clamp is the only
+   difference at rest, and the line count is set inline from
+   COLLAPSED_LINES so the CSS and the collapse animation cannot disagree.
+   ============================================================ */
+
+.expandable-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.overview.is-clamped {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+/* Pulled up into the paragraph's bottom margin so it reads as part of the
+   text it controls, not as a separate control floating between blocks. Text
+   colour rather than .link-button's muted grey: it is the only way to the
+   rest of the synopsis, so it has to be found. The invisible box below gives
+   it the 44px touch height the (pointer: coarse) pass deliberately does not
+   apply to inline text buttons, without moving anything around it. */
+.expandable-text-toggle {
+  position: relative;
+  margin-top: -0.5em;
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+.expandable-text-toggle:hover { color: var(--accent); }
+.expandable-text-toggle::after {
+  content: "";
+  position: absolute;
+  left: -8px;
+  right: -8px;
+  top: 50%;
+  height: 44px;
+  transform: translateY(-50%);
+}
+
+/* ============================================================
+   RELEASE TYPE (Home -> Releasing this month)
+
+   "In Theaters" / "Digital Release", on the row's status line. The capsule
+   is .card-kind's micro-label (uppercase, tracked, pill) at the size of the
+   PREMIERE and NEW tags, on the raised surface rather than translucent black
+   because it sits on the page, not on artwork. The status text beside it
+   gives way first on a narrow row, so the tag is never cut.
+   ============================================================ */
+
+.up-row-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.up-row-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.release-tag {
+  flex-shrink: 0;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 7px;
+  color: var(--text);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.5;
 }

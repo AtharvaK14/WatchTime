@@ -15,7 +15,7 @@
 
 import type { Episode, Show, WatchedEpisode } from "../db";
 import { countAdditionalUnwatched, findNextUnwatched } from "./episodeSync";
-import { airDateAsTimestamp, reactivationState } from "./releaseState";
+import { airDateAsTimestamp, reactivationState, type ReactivationState } from "./releaseState";
 import { isStoppedWatching } from "./stoppedWatching";
 import { daysSince } from "./showStatus";
 import { lastProgressionAt } from "./watchEvents";
@@ -136,13 +136,109 @@ export function categorize(
   lastProgressedAt: string | null,
   threshold: number,
   reactivates = false,
-  stopped = false
+  stopped = false,
+  now = new Date()
 ): Category | null {
   if (stopped) return "stopped"; // explicit, and beats every automatic rule below
   if (watchedCount === 0) return "not-started";
   if (next === null) return null; // caught up / finished; rewatches don't bring it back
   if (reactivates) return "watch-next"; // a release, to someone who was keeping up
-  return (daysSince(lastProgressedAt) ?? 0) < threshold ? "watch-next" : "stale";
+  return (daysSince(lastProgressedAt, now) ?? 0) < threshold ? "watch-next" : "stale";
+}
+
+/**
+ * Where a show stands with the user: one of the four Home categories, or
+ * "caught-up" - started, not stopped, and every released episode watched.
+ *
+ * categorize() reports caught-up as null because, for the Home lists, it means
+ * "on none of them". Anything asking a different question about the same
+ * show - is the user following it? - needs it as a state of its own, since
+ * caught-up is the most engaged a viewer can be, not an absence of a state.
+ */
+export type ViewingState = Category | "caught-up";
+
+export interface ShowClassification {
+  state: ViewingState;
+  /** The first UNSEEN released episode in original progression; null when caught up or nothing is cached. */
+  next: Episode | null;
+  watchedKeys: Set<string>;
+  lastProgressedAt: string | null;
+  release: ReactivationState;
+}
+
+/**
+ * The one place a show's viewing state is worked out, for every caller that
+ * needs one: the Home lists (buildWatchNextRows), Upcoming Episodes
+ * (lib/comingUp.ts) and the widget built from both. They read the same
+ * history and release state through the same rules, so a show cannot be
+ * "Haven't Watched For a While" in one place and active in another.
+ *
+ * `episodes` and `watched` are this show's rows only.
+ */
+export function classifyShow(
+  show: Show,
+  episodes: Episode[],
+  watched: WatchedEpisode[],
+  staleThreshold: number,
+  now = new Date()
+): ShowClassification {
+  const watchedKeys = new Set(watched.map((w) => w.key));
+  // next = the first UNSEEN released episode in original progression.
+  // For a never-started show this is the first episode (the one to
+  // begin with); for an in-progress show it's the genuine next up.
+  // Rewatches never enter this: watched episodes stay in watchedKeys,
+  // so "next" only ever moves forward through unseen episodes.
+  const next = findNextUnwatched(episodes, watchedKeys);
+  // Split by last PROGRESSION, not last activity: a rewatch never
+  // changes watchedAt, so rewatching a stalled show leaves this stuck
+  // in the past and the show stays under "Haven't Watched For a While".
+  const lastProgressedAt = lastProgressionAt(watched);
+  // Release state, read from the same db.episodes rows the notification
+  // scheduler reads: what has just come out, and whether the user was caught
+  // up when it did.
+  const release = reactivationState(episodes, watchedKeys, now);
+  const category = categorize(
+    next,
+    watchedKeys.size,
+    lastProgressedAt,
+    staleThreshold,
+    release.reactivates,
+    isStoppedWatching(show),
+    now
+  );
+  return { state: category ?? "caught-up", next, watchedKeys, lastProgressedAt, release };
+}
+
+/**
+ * Whether the user is actively following a show: watching it now, or caught
+ * up and waiting for more.
+ *
+ * Everything else is excluded, each for a reason that the release schedule
+ * cannot override:
+ *   - "stopped": the user said so, and it beats every automatic rule.
+ *   - "not-started": nothing has been watched, so there is nothing being
+ *     followed; a scheduled episode does not change that.
+ *   - "stale": released episodes have sat unwatched past the threshold, and a
+ *     release only reactivates a show for someone who was caught up (see
+ *     reactivationState), which is already folded into "watch-next".
+ *
+ * Caught-up is deliberately IN. Having watched everything out so far is not
+ * inactivity, however long the break before the next episode - a show waiting
+ * months for its next season is exactly what Upcoming Episodes is for.
+ */
+export function isActivelyFollowing(state: ViewingState): boolean {
+  return state === "watch-next" || state === "caught-up";
+}
+
+/** Groups episode or watch rows by show, for callers that classify many shows at once. */
+export function groupByShow<T extends { showId: number }>(rows: T[]): Map<number, T[]> {
+  const byShow = new Map<number, T[]>();
+  for (const row of rows) {
+    const list = byShow.get(row.showId);
+    if (list) list.push(row);
+    else byShow.set(row.showId, [row]);
+  }
+  return byShow;
 }
 
 /**
@@ -161,49 +257,23 @@ export function buildWatchNextRows(
   filter?: MoodFilter | null,
   now = new Date()
 ): WatchNextRow[] {
-  const episodesByShow = new Map<number, Episode[]>();
-  for (const ep of allEpisodes) {
-    const list = episodesByShow.get(ep.showId);
-    if (list) list.push(ep);
-    else episodesByShow.set(ep.showId, [ep]);
-  }
-  const watchedByShow = new Map<number, WatchedEpisode[]>();
-  for (const w of allWatched) {
-    const list = watchedByShow.get(w.showId);
-    if (list) list.push(w);
-    else watchedByShow.set(w.showId, [w]);
-  }
+  const episodesByShow = groupByShow(allEpisodes);
+  const watchedByShow = groupByShow(allWatched);
 
   const result: WatchNextRow[] = [];
   for (const show of shows) {
     if (filter && !matchesMoodFilter(showToMoodCandidate(show), filter)) continue;
 
     const episodes = episodesByShow.get(show.tmdbId) ?? [];
-    const watched = watchedByShow.get(show.tmdbId) ?? [];
-    const watchedKeys = new Set(watched.map((w) => w.key));
-    // next = the first UNSEEN released episode in original progression.
-    // For a never-started show this is the first episode (the one to
-    // begin with); for an in-progress show it's the genuine next up.
-    // Rewatches never enter this: watched episodes stay in watchedKeys,
-    // so "next" only ever moves forward through unseen episodes.
-    const next = findNextUnwatched(episodes, watchedKeys);
-    // Split by last PROGRESSION, not last activity: a rewatch never
-    // changes watchedAt, so rewatching a stalled show leaves this stuck
-    // in the past and the show stays under "Haven't Watched For a While".
-    const lastProgressedAt = lastProgressionAt(watched);
-    // Release state, read from the same db.episodes rows the notification
-    // scheduler reads: what has just come out, and whether the user was caught
-    // up when it did.
-    const release = reactivationState(episodes, watchedKeys, now);
-    const category = categorize(
-      next,
-      watchedKeys.size,
-      lastProgressedAt,
+    const { state, next, watchedKeys, lastProgressedAt, release } = classifyShow(
+      show,
+      episodes,
+      watchedByShow.get(show.tmdbId) ?? [],
       staleThreshold,
-      release.reactivates,
-      isStoppedWatching(show)
+      now
     );
-    if (category === null) continue; // caught up / finished
+    if (state === "caught-up") continue; // caught up / finished: on none of the lists
+    const category = state;
 
     result.push({
       showId: show.tmdbId,

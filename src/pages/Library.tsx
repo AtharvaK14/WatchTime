@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../db";
+import { db, type Show } from "../db";
 import { TMDB_IMAGE_BASE, getTvGenres, type Genre } from "../tmdb";
 import { computeWatchStatus, type ShowWatchStatus } from "../lib/showWatchStatus";
 import { isStoppedWatching } from "../lib/stoppedWatching";
 import { useShowStats, toDurationParts } from "../lib/stats";
+import { libraryKey, removalClass, useRemovalExit } from "../lib/libraryRemoval";
+import { useFlipLayout } from "../lib/useFlipLayout";
 import DetailsPanel from "../components/DetailsPanel";
 import PosterCaption from "../components/PosterCaption";
 import FilterSheet, { FilterGroup } from "../components/FilterSheet";
@@ -31,6 +33,8 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "recentlyWatched", label: "Recently watched" },
   { value: "recentlyAdded", label: "Recently added" },
 ];
+
+const showKey = (show: Show) => libraryKey("show", show.tmdbId);
 
 export default function Library() {
   const isMobile = useIsMobile();
@@ -133,6 +137,13 @@ export default function Library() {
     return sorted;
   }, [shows, query, sortKey, filterKey, genreFilter, watchedCounts, statusByShow]);
 
+  // A show removed through the panel this page opens keeps its card until the
+  // panel closes; the card is then highlighted, leaves, and the grid closes
+  // the gap. See lib/libraryRemoval.ts.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const captureGrid = useFlipLayout(gridRef);
+  const display = useRemovalExit(visible, showKey, captureGrid);
+
   if (!shows) return <p className="muted">Loading...</p>;
 
   const duration = toDurationParts(stats.totalMinutes);
@@ -162,7 +173,7 @@ export default function Library() {
         </p>
       )}
 
-      {shows.length === 0 ? (
+      {shows.length === 0 && display.length === 0 ? (
         <p className="muted">No shows yet. Import your TV Time export, or search TMDB from Add.</p>
       ) : (
         <>
@@ -219,18 +230,19 @@ export default function Library() {
             </FilterSheet>
           </div>
 
-          {visible.length === 0 &&
+          {display.length === 0 &&
             (filterKey === "currentlyWatching" && !statusesReady ? (
               <p className="muted">Working out which shows you're currently watching...</p>
             ) : (
               <p className="muted">No shows match that search/filter.</p>
             ))}
 
-          <div className="show-grid">
-            {visible.map((show) => (
+          <div className="show-grid" ref={gridRef}>
+            {display.map(({ item: show, removal }) => (
               <div
                 key={show.tmdbId}
-                className="show-card"
+                data-flip-key={show.tmdbId}
+                className={`show-card${removalClass(removal)}`}
                 role="button"
                 tabIndex={0}
                 onClick={() => setOpenDetails(show.tmdbId)}

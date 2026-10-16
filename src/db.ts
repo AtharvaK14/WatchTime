@@ -110,8 +110,15 @@ export interface Movie {
   // endpoint, so it needs its own persisted field rather than being derivable
   // from anything already stored. Same undefined/null convention as overview:
   // undefined means "never looked up", null means "looked up and TMDB has no
-  // digital date". See lib/notifications/releaseDates.ts.
+  // digital date". See lib/releaseDates.ts.
   digitalReleaseDate?: string | null;
+  // First THEATRICAL release date (TMDB release_dates type 3), from the same
+  // lookup that fills digitalReleaseDate. releaseDate cannot stand in for it:
+  // TMDB's primary date is the streaming premiere for a film that never
+  // played in cinemas, so "In Theaters" on Home's Releasing this month is only
+  // ever claimed from this field. Same undefined/null convention as
+  // digitalReleaseDate. See lib/releaseDates.ts.
+  theatricalReleaseDate?: string | null;
 }
 
 // Remembers how a raw TV Time title string was resolved, so re-running an
@@ -412,6 +419,21 @@ class TrackerDB extends Dexie {
     // cleared. It exists so opening a details panel twice does not spend two
     // TMDB requests on data that changes at the pace of licensing deals.
     this.version(15).stores({
+      shows: "tmdbId, name, isFollowed, lastWatchedAt, tvdbId",
+      episodes: "key, showId, [showId+seasonNumber]",
+      watchedEpisodes: "key, showId, watchedAt",
+      movies: "tmdbId, title, watched, wantsToWatch",
+      titleMatches: "rawTitle, kind",
+      settings: "key",
+      omdbCache: "cacheKey, kind",
+      titleEmbeddings: "cacheKey, kind",
+      watchProviders: "cacheKey, kind",
+    });
+    // v16: added Movie.theatricalReleaseDate for the release-type tags on
+    // Home's Releasing this month. Purely additive, exactly like v14: no
+    // index, nothing cleared, filled lazily by lib/releaseDates.ts for the
+    // handful of movies whose release could fall in the current month.
+    this.version(16).stores({
       shows: "tmdbId, name, isFollowed, lastWatchedAt, tvdbId",
       episodes: "key, showId, [showId+seasonNumber]",
       watchedEpisodes: "key, showId, watchedAt",

@@ -6,12 +6,14 @@ import { averageRuntime } from "../lib/runtime";
 import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount } from "../lib/episodeSync";
 import { ensureEpisodesWatched, recordEpisodeRewatch, recordMovieRewatch } from "../lib/watchEvents";
 import { isStoppedWatching, resumeWatchingShow, stopWatchingShow } from "../lib/stoppedWatching";
+import { cancelRemoval, holdRemoval, playRemoval, removeFromLibrary } from "../lib/libraryRemoval";
 import { useDraggableSheet, DISMISS_ANIMATION_MS } from "../lib/useDraggableSheet";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useBackHandler } from "../lib/backHandler";
-import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
+import { prefersReducedMotion, useAnimatedDismiss } from "../lib/useAnimatedDismiss";
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
+import ExpandableText from "./ExpandableText";
 import StreamingCapsules from "./StreamingCapsules";
 
 /** Matches the reverse of the desktop-modal-in keyframes in index.css. */
@@ -107,6 +109,11 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   const [movieRewatchCount, setMovieRewatchCount] = useState(0); // movies only, extra watches beyond the first
   const [added, setAdded] = useState(false);
   const [removeConfirming, setRemoveConfirming] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  // Removed from the library while this panel was open. Drives the
+  // confirmation line, and the card's exit once the panel closes.
+  const [justRemoved, setJustRemoved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [seasonNumbers, setSeasonNumbers] = useState<number[] | null>(null);
@@ -129,6 +136,47 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   useEffect(() => {
     if (!sheetExpanded && scrollAreaRef.current) scrollAreaRef.current.scrollTop = 0;
   }, [sheetExpanded]);
+
+  // The removed card's highlight and exit play when this panel goes away, not
+  // when the delete lands: until then the card is underneath the panel, and
+  // an animation nobody can see is not feedback. Unmount is the one point
+  // every close path shares - X, backdrop, drag, Escape, Android back, and a
+  // tab switch that takes the panel with it - so it is hooked here rather
+  // than on each of them.
+  const removedHere = useRef(false);
+  useEffect(() => {
+    return () => {
+      if (removedHere.current) playRemoval(kind, tmdbId);
+      removedHere.current = false;
+    };
+  }, [kind, tmdbId]);
+
+  // Brings the removal confirmation into view. It replaces the action row in
+  // place, so it normally appears right under the finger; this is for when
+  // that row sat at the very edge of what is visible. The half-open sheet does
+  // not scroll by design (see .sheet-scroll-area.is-collapsed), so there the
+  // sheet expands first - otherwise Remove would appear to do nothing, which
+  // is exactly how this bug presented: the confirmation rendered below the
+  // fold of a sheet that cannot be scrolled, and nothing was ever removed.
+  const removeConfirmRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!removeConfirming) return;
+    const el = removeConfirmRef.current;
+    if (!el) return;
+    // Focus follows the replaced button into the confirmation, onto Cancel:
+    // the safe default for a step that deletes history.
+    el.querySelector<HTMLButtonElement>("[data-remove-cancel]")?.focus({ preventScroll: true });
+    const behavior: ScrollBehavior = prefersReducedMotion() ? "auto" : "smooth";
+    if (isMobile && !sheetExpanded && el.getBoundingClientRect().bottom > window.innerHeight - 8) {
+      setSheetExpanded(true);
+      // After the sheet's own snap transition, so the scroller exists to scroll.
+      const timer = window.setTimeout(() => el.scrollIntoView({ block: "nearest", behavior }), DISMISS_ANIMATION_MS);
+      return () => window.clearTimeout(timer);
+    }
+    el.scrollIntoView({ block: "nearest", behavior });
+    // Only on entering the confirmation; sheet state changing after that is the user's.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [removeConfirming]);
 
   // Escape closes this panel, unless the episode panel is stacked on top
   // of it (openEpisode set), in which case that panel's own Escape
@@ -395,6 +443,14 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     }
     setInLibrary(true);
     setAdded(true);
+    keepInLibrary();
+  }
+
+  /** Added back after being removed in this same panel: the card it was leaving is staying after all. */
+  function keepInLibrary() {
+    removedHere.current = false;
+    setJustRemoved(false);
+    cancelRemoval(kind, tmdbId);
   }
 
   /**
@@ -411,6 +467,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
       setInLibrary(true);
       setAdded(true);
       setMovieWatched(true);
+      keepInLibrary();
       return;
     }
     if (movieWatched) {
@@ -440,17 +497,49 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     setStopped(!stopped);
   }
 
+  /**
+   * The confirmed removal. See lib/libraryRemoval.ts for what is deleted and
+   * how the card leaves its list.
+   *
+   * Nothing here claims success until the write has actually landed: a
+   * failure leaves the library exactly as it was (the delete is one
+   * transaction), keeps the confirmation open with the reason, and releases
+   * the card it was holding, so no list animates a removal that did not
+   * happen.
+   */
   async function handleRemove() {
-    if (kind === "show") {
-      await db.watchedEpisodes.where("showId").equals(tmdbId).delete();
-      await db.episodes.where("showId").equals(tmdbId).delete();
-      await db.shows.delete(tmdbId);
-    } else {
-      await db.movies.delete(tmdbId);
+    if (removing) return;
+    setRemoving(true);
+    setRemoveError(null);
+    holdRemoval(kind, tmdbId);
+    try {
+      await removeFromLibrary(kind, tmdbId);
+    } catch (e) {
+      cancelRemoval(kind, tmdbId);
+      setRemoveError(e instanceof Error ? e.message : String(e));
+      setRemoving(false);
+      return;
     }
+    removedHere.current = true;
+    setJustRemoved(true);
     setInLibrary(false);
     setAdded(false);
     setRemoveConfirming(false);
+    setRemoving(false);
+    // The panel stays open on the title, now as a preview, so nothing on it may
+    // still describe it as tracked: the stopped note and the episode ticks
+    // belonged to history that no longer exists.
+    setStopped(false);
+    setMovieWatched(false);
+    setMovieRewatchCount(0);
+    setWatchedKeys(new Set());
+    setWatchCountByKey(new Map());
+    setCatchUpOffer(null);
+  }
+
+  function cancelRemove() {
+    setRemoveConfirming(false);
+    setRemoveError(null);
   }
 
   const episodesBySeason = new Map<number, Episode[]>();
@@ -505,58 +594,84 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
               back to Watch Next until you resume.
             </p>
           )}
-          <div className="field-row">
-            {kind === "movie" && (
-              <button onClick={toggleMovieWatched}>{movieWatched ? "Mark unwatched" : "Mark watched"}</button>
-            )}
-            {/* Beside Remove rather than among the season controls: both are
-                decisions about the show as a whole, and this is the gentler of
-                the two — which is the point of it sitting there, next to the
-                one that deletes history. */}
-            {kind === "show" && (
-              <button onClick={toggleStopped}>{stopped ? "Resume watching" : "Stop watching"}</button>
-            )}
-            {kind === "movie" && movieWatched && (
-              <button
-                onClick={async () => {
-                  await recordMovieRewatch(tmdbId);
-                  setMovieRewatchCount((c) => c + 1);
-                }}
-              >
-                Watch again
-              </button>
-            )}
-            {!removeConfirming && (
-              <button className="danger-button" onClick={() => setRemoveConfirming(true)}>
-                Remove from {kind === "show" ? "Shows" : "Movies"}
-              </button>
-            )}
-          </div>
-          {removeConfirming && (
-            <div className="field-row">
+          {/* The confirmation takes the action row's place rather than
+              appearing under it, with its buttons first: they land where the
+              finger already is. It used to render as a second row below,
+              which on a phone sat past the bottom of the half-open sheet,
+              where it could be neither seen nor scrolled to. */}
+          {removeConfirming ? (
+            <div className="remove-confirm" ref={removeConfirmRef}>
+              <div className="field-row">
+                <button className="danger-button" onClick={handleRemove} disabled={removing}>
+                  {removing ? "Removing..." : "Confirm remove"}
+                </button>
+                <button data-remove-cancel onClick={cancelRemove} disabled={removing}>
+                  Cancel
+                </button>
+              </div>
               <span className="muted small">
                 Also deletes {kind === "show" ? "its watch history" : "its watched status"}. No undo.
               </span>
-              <button className="danger-button" onClick={handleRemove}>
-                Confirm remove
+              {removeError && (
+                <p className="status-error small" role="alert">
+                  Couldn't remove it, so nothing in your library has changed. ({removeError})
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="field-row">
+              {kind === "movie" && (
+                <button onClick={toggleMovieWatched}>{movieWatched ? "Mark unwatched" : "Mark watched"}</button>
+              )}
+              {/* Beside Remove rather than among the season controls: both are
+                  decisions about the show as a whole, and this is the gentler of
+                  the two — which is the point of it sitting there, next to the
+                  one that deletes history. */}
+              {kind === "show" && (
+                <button onClick={toggleStopped}>{stopped ? "Resume watching" : "Stop watching"}</button>
+              )}
+              {kind === "movie" && movieWatched && (
+                <button
+                  onClick={async () => {
+                    await recordMovieRewatch(tmdbId);
+                    setMovieRewatchCount((c) => c + 1);
+                  }}
+                >
+                  Watch again
+                </button>
+              )}
+              <button className="danger-button" onClick={() => setRemoveConfirming(true)}>
+                Remove from {kind === "show" ? "Shows" : "Movies"}
               </button>
-              <button onClick={() => setRemoveConfirming(false)}>Cancel</button>
             </div>
           )}
         </>
       ) : (
-        <div className="field-row">
-          <button onClick={handleAdd}>{kind === "show" ? "Add to Shows" : "Add to Movies"}</button>
-          {kind === "movie" && <button onClick={toggleMovieWatched}>Add &amp; mark watched</button>}
-        </div>
+        <>
+          {/* Said in words as well as by the Add button reappearing, since the
+              list the card is leaving is still behind this panel. */}
+          {justRemoved && (
+            <p className="muted small" role="status">
+              Removed from your {kind === "show" ? "Shows" : "Movies"}.
+            </p>
+          )}
+          <div className="field-row">
+            <button onClick={handleAdd}>{kind === "show" ? "Add to Shows" : "Add to Movies"}</button>
+            {kind === "movie" && <button onClick={toggleMovieWatched}>Add &amp; mark watched</button>}
+          </div>
+        </>
       )}
     </>
   );
 
+  // Clamped to a few lines with Read more / Show less: a long synopsis used to
+  // push the streaming row and the season list a screen further down. The
+  // text itself is untouched; this is presentation only.
   const overviewContent = details && (
-    <p className="overview">
-      {details.overview || (ratings !== "loading" && ratings?.plot) || "No summary available."}
-    </p>
+    <ExpandableText
+      className="overview"
+      text={details.overview || (ratings !== "loading" && ratings?.plot) || "No summary available."}
+    />
   );
 
   // Where to watch it. Composed once here, like the three blocks above it, so

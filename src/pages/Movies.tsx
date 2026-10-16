@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../db";
+import { db, type Movie } from "../db";
 import { TMDB_IMAGE_BASE, getMovieGenres, type Genre } from "../tmdb";
 import { useMovieStats, toDurationParts } from "../lib/stats";
+import { libraryKey, removalClass, useRemovalExit } from "../lib/libraryRemoval";
+import { useFlipLayout } from "../lib/useFlipLayout";
 import DetailsPanel from "../components/DetailsPanel";
 import PosterCaption from "../components/PosterCaption";
 import FilterSheet, { FilterGroup } from "../components/FilterSheet";
@@ -25,6 +27,8 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
   { value: "recentlyWatched", label: "Recently watched" },
   { value: "recentlyAdded", label: "Recently added" },
 ];
+
+const movieKey = (movie: Movie) => libraryKey("movie", movie.tmdbId);
 
 export default function Movies({
   initialFilter,
@@ -106,6 +110,11 @@ export default function Movies({
     return sorted;
   }, [movies, query, sortKey, filterKey, genreFilter]);
 
+  // Same exit as the Shows grid: see lib/libraryRemoval.ts.
+  const gridRef = useRef<HTMLDivElement>(null);
+  const captureGrid = useFlipLayout(gridRef);
+  const display = useRemovalExit(visible, movieKey, captureGrid);
+
   if (!movies) return <p className="muted">Loading...</p>;
 
   async function toggleWatched(tmdbId: number, currentlyWatched: boolean) {
@@ -142,7 +151,7 @@ export default function Movies({
         </p>
       )}
 
-      {movies.length === 0 ? (
+      {movies.length === 0 && display.length === 0 ? (
         <p className="muted">No movies yet. Import your TV Time export, or add one below.</p>
       ) : (
         <>
@@ -198,13 +207,14 @@ export default function Movies({
             </FilterSheet>
           </div>
 
-          {visible.length === 0 && <p className="muted">No movies match that search/filter.</p>}
+          {display.length === 0 && <p className="muted">No movies match that search/filter.</p>}
 
-          <div className="show-grid">
-            {visible.map((m) => (
+          <div className="show-grid" ref={gridRef}>
+            {display.map(({ item: m, removal }) => (
               <div
                 key={m.tmdbId}
-                className="show-card movie-card"
+                data-flip-key={m.tmdbId}
+                className={`show-card movie-card${removalClass(removal)}`}
                 role="button"
                 tabIndex={0}
                 onClick={() => setOpenDetails(m.tmdbId)}

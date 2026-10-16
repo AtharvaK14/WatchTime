@@ -478,6 +478,13 @@ interface ReleaseDatesResponse {
  * rather than returning nothing. A missing regional entry is a gap in TMDB's
  * data, not evidence the release isn't happening, and the same reasoning
  * already governs isAvailableToWatch() for episodes.
+ *
+ * The fallback is for a missing ENTRY, not a missing type within one. When
+ * the region is listed, its list is the answer: a US entry with a theatrical
+ * date and no digital one says the film is not out at home in the US yet,
+ * and another country's digital date does not change that. Falling back per
+ * type used to borrow exactly that date, which mislabelled films as "Digital
+ * Release" on Home and could announce one as available to watch early.
  */
 export async function getMovieReleaseDates(
   tmdbId: number,
@@ -487,7 +494,7 @@ export async function getMovieReleaseDates(
 
   function earliest(type: number): string | null {
     const preferred = data.results.find((r) => r.iso_3166_1 === region);
-    const pools = preferred ? [[preferred], data.results] : [data.results];
+    const pools = preferred ? [[preferred]] : [data.results];
     for (const pool of pools) {
       const dates = pool
         .flatMap((r) => r.release_dates)

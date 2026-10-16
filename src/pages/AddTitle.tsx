@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../db";
+import { useEffect, useState } from "react";
 import {
   getPopularTvShows,
   getPopularMovies,
@@ -15,30 +13,8 @@ import DetailsPanel from "../components/DetailsPanel";
 import PosterCaption from "../components/PosterCaption";
 import UniversalSearch, { type SearchResults } from "../components/UniversalSearch";
 import { BookmarkIcon } from "../components/icons";
-
-/**
- * Which TMDB ids are already in the library, read live.
- *
- * Live rather than a one-off read on purpose: adding or removing a title
- * happens in DetailsPanel, which this page opens on top of itself, so the
- * badge updates the moment that panel writes — without the user closing it,
- * and without this page refetching anything from TMDB.
- *
- * primaryKeys() rather than toArray(): the only thing needed here is
- * membership, and a large library should not be materialised into objects to
- * answer that.
- */
-function useLibraryIds() {
-  const showIds = useLiveQuery(() => db.shows.toCollection().primaryKeys(), []);
-  const movieIds = useLiveQuery(() => db.movies.toCollection().primaryKeys(), []);
-  return useMemo(
-    () => ({
-      shows: new Set<number>((showIds as number[] | undefined) ?? []),
-      movies: new Set<number>((movieIds as number[] | undefined) ?? []),
-    }),
-    [showIds, movieIds]
-  );
-}
+import { useLibraryIds } from "../lib/useLibraryIds";
+import { libraryKey, removalClass, useLibraryRemovals } from "../lib/libraryRemoval";
 
 /**
  * "Already in your library", shown directly on the artwork so the user no
@@ -81,6 +57,8 @@ function yearOf(date: string | null | undefined): number | null {
  * details panel the card opens.
  */
 function TitleCard({
+  kind,
+  tmdbId,
   name,
   year,
   posterPath,
@@ -88,6 +66,8 @@ function TitleCard({
   inLibrary,
   onOpen,
 }: {
+  kind: "show" | "movie";
+  tmdbId: number;
   name: string;
   year: number | null;
   posterPath: string | null;
@@ -96,8 +76,16 @@ function TitleCard({
   inLibrary: boolean;
   onOpen: () => void;
 }) {
+  // These grids are TMDB's, not the library's, so a removed title's card
+  // stays where it is: only the bookmark goes. The highlight is what says
+  // which card that happened to once the panel has closed. Only the highlight
+  // phase applies here - "held" and "exit" are for cards leaving a library list.
+  const removal = useLibraryRemovals().get(libraryKey(kind, tmdbId));
   return (
-    <button className="show-card" onClick={onOpen}>
+    <button
+      className={`show-card${removal === "highlight" ? removalClass(removal) : ""}`}
+      onClick={onOpen}
+    >
       {posterPath ? (
         <img src={`${TMDB_IMAGE_BASE}${posterPath}`} alt={name} />
       ) : (
@@ -131,6 +119,8 @@ function ShowRow({
       {items.map((r) => (
         <TitleCard
           key={r.id}
+          kind="show"
+          tmdbId={r.id}
           name={r.name}
           year={yearOf(r.first_air_date)}
           posterPath={r.poster_path}
@@ -159,6 +149,8 @@ function MovieRow({
       {items.map((r) => (
         <TitleCard
           key={r.id}
+          kind="movie"
+          tmdbId={r.id}
           name={r.title}
           year={yearOf(r.release_date)}
           posterPath={r.poster_path}
@@ -199,6 +191,8 @@ function Results({
             {results.titles.map((t) => (
               <TitleCard
                 key={`${t.kind}:${t.tmdbId}`}
+                kind={t.kind}
+                tmdbId={t.tmdbId}
                 name={t.name}
                 year={t.year}
                 posterPath={t.posterPath}
@@ -223,14 +217,17 @@ function Results({
               {results.mood.map((m) => (
                 <TitleCard
                   key={`${m.kind}:${m.tmdbId}`}
+                  kind={m.kind}
+                  tmdbId={m.tmdbId}
                   name={m.name}
                   year={m.year}
                   posterPath={m.posterPath}
                   kindTag={kindTag(m.kind)}
-                  // m.inLibrary is the search index's own answer; the live
-                  // sets are authoritative once a title is added or removed
-                  // through the panel this page opens on top of itself.
-                  inLibrary={m.inLibrary || owned(m.kind, m.tmdbId)}
+                  // The live sets alone, not m.inLibrary as well. That is the
+                  // search index's answer from when the search ran, and OR-ing
+                  // it in kept a title removed through the panel this page
+                  // opens on top of itself marked as owned until the next search.
+                  inLibrary={owned(m.kind, m.tmdbId)}
                   onOpen={() => onOpen(m.kind, m.tmdbId)}
                 />
               ))}

@@ -188,14 +188,42 @@ export function isAvailableToWatch(airDate: string | null, today: string): boole
   return airDate <= today;
 }
 
+/**
+ * A show's available episodes, in season/episode order.
+ *
+ * isAvailableToWatch() decides each episode on its own, which is right for a
+ * missing date in isolation and wrong for one that comes AFTER a confirmed
+ * future episode. TMDB routinely lists an announced season as a dated premiere
+ * followed by undated episodes; those cannot have aired before the premiere
+ * has, so they are not available whatever their missing date would otherwise
+ * suggest. Without this a user caught up and waiting for that premiere looked
+ * part-way through the show - pointed at an unaired "next episode" in Watch
+ * Next, and filed as stale (and so dropped from Upcoming Episodes) once the
+ * break outlasted the staleness threshold.
+ *
+ * Only undated episodes are inferred this way. A confirmed past date is still
+ * believed wherever it sits, and an undated episode with nothing scheduled
+ * before it is still available, which is the Spider-Noir case unchanged.
+ */
+function availableInProgression(episodes: Episode[], today: string): Episode[] {
+  const sorted = [...episodes].sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);
+  const available: Episode[] = [];
+  let afterAnUnairedEpisode = false;
+  for (const ep of sorted) {
+    if (!isAvailableToWatch(ep.airDate, today)) {
+      afterAnUnairedEpisode = true;
+      continue;
+    }
+    if (!ep.airDate && afterAnUnairedEpisode) continue;
+    available.push(ep);
+  }
+  return available;
+}
+
 /** The next available, unwatched episode for a show, in season/episode order. Null if none (up to date, or nothing cached yet). */
 export function findNextUnwatched(episodes: Episode[], watchedKeys: Set<string>): Episode | null {
   const today = new Date().toISOString().slice(0, 10);
-  const sorted = [...episodes].sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);
-  for (const ep of sorted) {
-    if (isAvailableToWatch(ep.airDate, today) && !watchedKeys.has(ep.key)) return ep;
-  }
-  return null;
+  return availableInProgression(episodes, today).find((ep) => !watchedKeys.has(ep.key)) ?? null;
 }
 
 /**
@@ -205,7 +233,7 @@ export function findNextUnwatched(episodes: Episode[], watchedKeys: Set<string>)
  */
 export function countAdditionalUnwatched(episodes: Episode[], watchedKeys: Set<string>): number {
   const today = new Date().toISOString().slice(0, 10);
-  const unwatchedAvailable = episodes.filter((ep) => isAvailableToWatch(ep.airDate, today) && !watchedKeys.has(ep.key));
+  const unwatchedAvailable = availableInProgression(episodes, today).filter((ep) => !watchedKeys.has(ep.key));
   return Math.max(0, unwatchedAvailable.length - 1);
 }
 
