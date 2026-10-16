@@ -1,7 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TMDB_IMAGE_BASE, hasApiKey } from "../tmdb";
-import { buildForYouSections, type ForYouResult, type SectionItem } from "../lib/recommend/sections";
+import {
+  buildForYouSections,
+  type ForYouResult,
+  type ForYouSection,
+  type SectionItem,
+} from "../lib/recommend/sections";
 import type { TasteProfile } from "../lib/recommend/tasteProfile";
+import { useLibraryIds } from "../lib/useLibraryIds";
+import { libraryKey, removalClass, useRemovalExit, type RemovalPhase } from "../lib/libraryRemoval";
+import { useFlipLayout } from "../lib/useFlipLayout";
+
+const itemKey = (item: SectionItem) => libraryKey(item.kind, item.tmdbId);
 
 /**
  * The For You page.
@@ -27,13 +37,29 @@ import type { TasteProfile } from "../lib/recommend/tasteProfile";
  * The title itself now reserves two lines whether it needs them or not, so
  * card heights are identical regardless of title length.
  */
-function Poster({ item, onOpen }: { item: SectionItem; onOpen: (item: SectionItem) => void }) {
+function Poster({
+  item,
+  inLibrary,
+  removal,
+  onOpen,
+}: {
+  item: SectionItem;
+  /** Read live, not from when the page was built: see RailSection. */
+  inLibrary: boolean;
+  removal?: RemovalPhase;
+  onOpen: (item: SectionItem) => void;
+}) {
   // note is only ever set by the library-derived sections, where every item
   // is by definition already owned, so an "in library" marker there would be
   // on every single card and therefore tell the user nothing.
-  const showOwnedMarker = item.inLibrary && !item.note;
+  const showOwnedMarker = inLibrary && !item.note;
   return (
-    <button className="rail-card" onClick={() => onOpen(item)} title={item.name}>
+    <button
+      className={`rail-card${removalClass(removal)}`}
+      data-flip-key={itemKey(item)}
+      onClick={() => onOpen(item)}
+      title={item.name}
+    >
       <span className="rail-poster-wrap">
         {item.posterPath ? (
           <img src={`${TMDB_IMAGE_BASE}${item.posterPath}`} alt="" className="rail-poster" loading="lazy" />
@@ -50,9 +76,60 @@ function Poster({ item, onOpen }: { item: SectionItem; onOpen: (item: SectionIte
         {item.kind === "show" ? "TV series" : "Film"}
         {item.year ? `, ${item.year}` : ""}
         {item.note ? `, ${item.note}` : ""}
-        {item.inLibrary ? ", in your library" : ""}
+        {inLibrary ? ", in your library" : ""}
       </span>
     </button>
+  );
+}
+
+/**
+ * One rail.
+ *
+ * The page is built once, when it opens, but library membership can change
+ * under it: every card opens DetailsPanel, which can add or remove the title.
+ * So ownership is read live here rather than taken from the build. Cards in a
+ * library-derived section (the ones carrying a note, like "New seasons you've
+ * missed") are only there BECAUSE the title is in the library, so a removed
+ * one leaves the rail - held until its panel closes, like every other list.
+ * A recommendation stays where it is and just loses its owned marker.
+ */
+function RailSection({
+  section,
+  library,
+  onOpen,
+}: {
+  section: ForYouSection;
+  library: ReturnType<typeof useLibraryIds>;
+  onOpen: (item: SectionItem) => void;
+}) {
+  const owned = (item: SectionItem) =>
+    library.ready ? (item.kind === "show" ? library.shows : library.movies).has(item.tmdbId) : item.inLibrary;
+  const items = useMemo(
+    () =>
+      library.ready
+        ? section.items.filter(
+            (item) => !item.note || (item.kind === "show" ? library.shows : library.movies).has(item.tmdbId)
+          )
+        : section.items,
+    [section.items, library]
+  );
+  const railRef = useRef<HTMLDivElement>(null);
+  const capture = useFlipLayout(railRef);
+  const display = useRemovalExit(items, itemKey, capture);
+  if (display.length === 0) return null;
+
+  return (
+    <section className="rail-section">
+      <div className="rail-head">
+        <h4>{section.title}</h4>
+        {section.subtitle && <span className="muted small">{section.subtitle}</span>}
+      </div>
+      <div className="rail" ref={railRef}>
+        {display.map(({ item, removal }) => (
+          <Poster key={itemKey(item)} item={item} inLibrary={owned(item)} removal={removal} onOpen={onOpen} />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -123,6 +200,7 @@ export default function ForYou({ onOpen }: { onOpen: (kind: "show" | "movie", tm
   const [result, setResult] = useState<ForYouResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [showInsights, setShowInsights] = useState(false);
+  const library = useLibraryIds();
   const mounted = useRef(true);
 
   useEffect(() => {
@@ -172,17 +250,12 @@ export default function ForYou({ onOpen }: { onOpen: (kind: "show" | "movie", tm
       {result.retrievalFailed && <p className="status-error small">{result.message}</p>}
 
       {result.sections.map((section) => (
-        <section key={section.id} className="rail-section">
-          <div className="rail-head">
-            <h4>{section.title}</h4>
-            {section.subtitle && <span className="muted small">{section.subtitle}</span>}
-          </div>
-          <div className="rail">
-            {section.items.map((item) => (
-              <Poster key={`${item.kind}:${item.tmdbId}`} item={item} onOpen={(i) => onOpen(i.kind, i.tmdbId)} />
-            ))}
-          </div>
-        </section>
+        <RailSection
+          key={section.id}
+          section={section}
+          library={library}
+          onOpen={(i) => onOpen(i.kind, i.tmdbId)}
+        />
       ))}
     </div>
   );

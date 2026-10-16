@@ -14,7 +14,7 @@
 import { Capacitor } from "@capacitor/core";
 import { LocalNotifications, type PermissionStatus } from "@capacitor/local-notifications";
 import { db } from "../../db";
-import { getMovieReleaseDates } from "../../tmdb";
+import { storeTypedReleaseDates } from "../releaseDates";
 import { requestDeepLink, parseDeepLinkTarget } from "../deepLink";
 import { buildNotificationEvents, notificationId, todayIso, type NotificationEvent } from "./events";
 import { clearSchedule, pushSchedule, toScheduledNotification } from "./bridge";
@@ -136,14 +136,9 @@ async function backfillDigitalReleaseDates(limit = 12): Promise<void> {
 
   for (const movie of candidates) {
     try {
-      const dates = await getMovieReleaseDates(movie.tmdbId);
-      await db.movies.update(movie.tmdbId, {
-        digitalReleaseDate: dates.digital,
-        // The typed theatrical date is more precise than TMDB's generic
-        // release_date when both exist, but a missing one must never wipe
-        // the value already stored.
-        ...(dates.theatrical ? { releaseDate: dates.theatrical } : {}),
-      });
+      // Shared with Home's release-type tags, which read the theatrical date
+      // this stores alongside the digital one from the same response.
+      await storeTypedReleaseDates(movie.tmdbId);
     } catch {
       // Rate limit, offline, or a movie TMDB has no release data for. Left
       // undefined so a later run retries, the same way Home's episode sync

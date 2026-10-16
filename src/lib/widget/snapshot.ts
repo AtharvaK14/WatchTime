@@ -96,8 +96,9 @@ export function buildWidgetSnapshot(
   now = new Date()
 ): WidgetSnapshot {
   const followed = shows.filter((s) => s.isFollowed && !s.isArchived);
+  const staleThreshold = getStaleDaysThreshold();
 
-  const watchNext = buildWatchNextRows(followed, episodes, watched, getStaleDaysThreshold())
+  const watchNext = buildWatchNextRows(followed, episodes, watched, staleThreshold)
     .filter((row) => row.category === "watch-next" && row.nextEpisode !== null)
     .sort(byRecency)
     .slice(0, WATCH_NEXT_SNAPSHOT_ROWS)
@@ -118,7 +119,9 @@ export function buildWidgetSnapshot(
       };
     });
 
-  const comingUp = buildUpcomingEpisodeRows(followed, episodes).map<WidgetComingUpRow>((row) => ({
+  // Same actively-following filter as the app's Upcoming episodes column, so
+  // the widget never lists an unstarted or abandoned show the app leaves out.
+  const comingUp = buildUpcomingEpisodeRows(followed, episodes, watched, staleThreshold).map<WidgetComingUpRow>((row) => ({
     showId: row.showId,
     showName: row.showName,
     episodeKey: row.episode.key,

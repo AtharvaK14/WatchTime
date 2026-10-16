@@ -1,15 +1,18 @@
 import { useEffect, useMemo, useRef, useState, type AnimationEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Episode } from "../db";
+import { db, type Episode, type Movie } from "../db";
 import { TMDB_IMAGE_BASE } from "../tmdb";
 import { ensureEpisodesCached } from "../lib/episodeSync";
 import {
   buildReleasingThisMonth,
   buildUpcomingEpisodeRows,
   formatUpcomingDate,
+  releaseKindLabel,
   releaseStatusLabel,
+  type ReleasingThisMonthRow,
   type UpcomingEpisodeRow,
 } from "../lib/comingUp";
+import { backfillTypedReleaseDates, moviesNeedingTypedDates } from "../lib/releaseDates";
 import { getStaleDaysThreshold } from "../lib/showStatus";
 import { markNextEpisodeWatched, recordEpisodeRewatch } from "../lib/watchEvents";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -34,9 +37,16 @@ import {
 } from "../lib/watchNext";
 import { resumeWatchingShow } from "../lib/stoppedWatching";
 import { useFlipLayout } from "../lib/useFlipLayout";
-import { useWatchedTransitions, type WatchedTransition } from "../lib/useWatchedTransitions";
+import { useWatchedTransitions, type DisplayRow, type WatchedTransition } from "../lib/useWatchedTransitions";
+import { libraryKey, removalClass, useRemovalExit, type RemovalPhase } from "../lib/libraryRemoval";
 
 type UpNextTab = "next" | "stale" | "not-started" | "stopped";
+
+// Stable key functions for useRemovalExit, one per list shape on this page.
+const watchNextKey = (d: DisplayRow) => libraryKey("show", d.row.showId);
+const upcomingKey = (row: UpcomingEpisodeRow) => libraryKey("show", row.showId);
+const releasingKey = (row: ReleasingThisMonthRow) => libraryKey("movie", row.movie.tmdbId);
+const movieKey = (movie: Movie) => libraryKey("movie", movie.tmdbId);
 
 /**
  * The confirmation a card shows while its watched sequence plays: the card
@@ -70,6 +80,7 @@ function WatchedOverlay({ hasNext }: { hasNext: boolean }) {
 function EpisodeRow({
   row,
   transition,
+  removal,
   onOpenShow,
   onOpenEpisode,
   onMarkWatched,
@@ -78,6 +89,8 @@ function EpisodeRow({
   row: Row;
   /** Set while this card's watched sequence plays. See useWatchedTransitions. */
   transition?: WatchedTransition;
+  /** Set while the show is leaving because it was removed from the library. See useRemovalExit. */
+  removal?: RemovalPhase;
   onOpenShow: (id: number) => void;
   onOpenEpisode: (row: Row) => void;
   onMarkWatched: (row: Row) => void;
@@ -87,7 +100,7 @@ function EpisodeRow({
   const isPremiere = row.nextEpisode?.episodeNumber === 1;
   const stopped = row.category === "stopped";
   return (
-    <div className={`watch-next-row${transition ? ` is-${transition.phase}` : ""}`}>
+    <div className={`watch-next-row${transition ? ` is-${transition.phase}` : ""}${removalClass(removal)}`}>
       {row.posterPath ? (
         <img src={`${TMDB_IMAGE_BASE}${row.posterPath}`} alt={row.showName} onClick={() => onOpenShow(row.showId)} />
       ) : (
@@ -303,10 +316,14 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
   const listRef = useRef<HTMLDivElement>(null);
   const captureLayout = useFlipLayout(listRef);
   const {
-    display,
+    display: watchedDisplay,
     start: startWatchedSequence,
     reset: resetWatchedSequences,
   } = useWatchedTransitions({ list: tab, rows: lists[tab], beforeLayoutChange: captureLayout });
+  // A show removed from the library through a panel opened from this list
+  // stays on its card until the panel closes, then is highlighted and leaves,
+  // with the cards below gliding up. See lib/libraryRemoval.ts.
+  const display = useRemovalExit(watchedDisplay, watchNextKey, captureLayout, tab);
 
   function selectTab(next: UpNextTab) {
     if (next === tab) return;
@@ -399,7 +416,7 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
       )}
 
       <div className="watch-next-list" ref={listRef}>
-        {display.map(({ row, transition }) => (
+        {display.map(({ item: { row, transition }, removal }) => (
           // The slot is what the list lays out and glides (data-flip-key); the
           // card inside it is what flips. Split so the two motions are on
           // different elements and can never overwrite each other's transform.
@@ -407,6 +424,7 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
             <EpisodeRow
               row={row}
               transition={transition}
+              removal={removal}
               onOpenShow={onOpenShow}
               onOpenEpisode={(r) => r.nextEpisode && setOpenEpisode({ showId: r.showId, episode: r.nextEpisode })}
               onMarkWatched={markWatched}
@@ -455,6 +473,9 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
 function ComingUp() {
   const shows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(), []);
   const allEpisodes = useLiveQuery(() => db.episodes.toArray(), []);
+  // Watch history decides which shows are actively followed: Upcoming
+  // episodes uses the same viewing state as the Up Next tabs above it.
+  const allWatched = useLiveQuery(() => db.watchedEpisodes.toArray(), []);
   const movies = useLiveQuery(() => db.movies.toArray(), []);
   const [openMovie, setOpenMovie] = useState<number | null>(null);
   // Tapping an upcoming episode opens THAT episode, matching the Coming Up
@@ -467,26 +488,58 @@ function ComingUp() {
   const [openShow, setOpenShow] = useState<number | null>(null);
 
   const upcomingEpisodes = useMemo<UpcomingEpisodeRow[]>(
-    () => (!shows || !allEpisodes ? [] : buildUpcomingEpisodeRows(shows, allEpisodes)),
-    [shows, allEpisodes]
+    () =>
+      !shows || !allEpisodes || !allWatched
+        ? []
+        : buildUpcomingEpisodeRows(shows, allEpisodes, allWatched, getStaleDaysThreshold()),
+    [shows, allEpisodes, allWatched]
   );
 
   const releasingThisMonth = useMemo(() => (!movies ? [] : buildReleasingThisMonth(movies)), [movies]);
 
-  if (!shows || !allEpisodes || !movies) return null;
-  if (upcomingEpisodes.length === 0 && releasingThisMonth.length === 0) return null;
+  // Theatrical vs digital needs TMDB's typed release dates, which only the
+  // notification scheduler fetched before, and only for the digital half.
+  // Looked up here just for movies whose release could land in this month and
+  // that have never been asked about; after that the answer is stored, so a
+  // visit to Home normally costs no request at all.
+  const typedDatesNeeded = movies ? moviesNeedingTypedDates(movies).map((m) => m.tmdbId).join(",") : "";
+  const moviesForBackfill = useRef(movies);
+  moviesForBackfill.current = movies;
+  useEffect(() => {
+    if (!typedDatesNeeded || !moviesForBackfill.current) return;
+    let cancelled = false;
+    backfillTypedReleaseDates(moviesForBackfill.current, () => cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [typedDatesNeeded]);
+
+  // Removed titles leave these columns the same way they leave every other
+  // list: held until their panel closes, then highlighted and gone.
+  const upcomingListRef = useRef<HTMLDivElement>(null);
+  const releasingListRef = useRef<HTMLDivElement>(null);
+  const captureUpcoming = useFlipLayout(upcomingListRef);
+  const captureReleasing = useFlipLayout(releasingListRef);
+  const upcomingDisplay = useRemovalExit(upcomingEpisodes, upcomingKey, captureUpcoming);
+  const releasingDisplay = useRemovalExit(releasingThisMonth, releasingKey, captureReleasing);
+
+  if (!shows || !allEpisodes || !allWatched || !movies) return null;
+  // Counted off what is on screen, so the section does not vanish under a
+  // last card that is still playing its exit.
+  if (upcomingDisplay.length === 0 && releasingDisplay.length === 0) return null;
 
   return (
     <>
       <h2 className="section-title">Coming Up</h2>
       <div className="coming-up-cols">
-        <div className="coming-up-col">
+        <div className="coming-up-col" ref={upcomingListRef}>
           <p className="muted small coming-up-col-label">Upcoming episodes</p>
-          {upcomingEpisodes.length === 0 && <p className="muted small">Nothing confirmed yet.</p>}
-          {upcomingEpisodes.map((row) => (
+          {upcomingDisplay.length === 0 && <p className="muted small">Nothing confirmed yet.</p>}
+          {upcomingDisplay.map(({ item: row, removal }) => (
             <div
               key={row.showId}
-              className="up-row"
+              data-flip-key={row.showId}
+              className={`up-row${removalClass(removal)}`}
               role="button"
               tabIndex={0}
               onClick={() => setOpenEpisode(row)}
@@ -513,13 +566,14 @@ function ComingUp() {
             </div>
           ))}
         </div>
-        <div className="coming-up-col">
+        <div className="coming-up-col" ref={releasingListRef}>
           <p className="muted small coming-up-col-label">Releasing this month</p>
-          {releasingThisMonth.length === 0 && <p className="muted small">Nothing this month.</p>}
-          {releasingThisMonth.map((m) => (
+          {releasingDisplay.length === 0 && <p className="muted small">Nothing this month.</p>}
+          {releasingDisplay.map(({ item: { movie: m, date, releaseKind }, removal }) => (
             <div
               key={m.tmdbId}
-              className="up-row"
+              data-flip-key={m.tmdbId}
+              className={`up-row${removalClass(removal)}`}
               role="button"
               tabIndex={0}
               onClick={() => setOpenMovie(m.tmdbId)}
@@ -537,12 +591,21 @@ function ComingUp() {
               )}
               <div className="up-row-body">
                 <p className="show-name">{m.title}</p>
-                {/* Already Watched takes precedence over Want to watch; see
+                {/* The release type rides on the status line rather than the
+                    artwork or the title: the poster here is a 34px thumbnail
+                    with no room for a label, and the title keeps its single
+                    line. No tag at all when the stored dates cannot say which
+                    release this is - see releaseThisMonth().
+
+                    Already Watched takes precedence over Want to watch; see
                     releaseStatusLabel. The non-breaking space keeps rows with
                     neither the same height as the rest. */}
-                <p className="muted small">{releaseStatusLabel(m) ?? "\u00a0"}</p>
+                <p className="muted small up-row-meta">
+                  {releaseKind && <span className="release-tag">{releaseKindLabel(releaseKind)}</span>}
+                  <span className="up-row-status">{releaseStatusLabel(m) ?? "\u00a0"}</span>
+                </p>
               </div>
-              <span className="up-row-date">{formatUpcomingDate(m.releaseDate ?? null)}</span>
+              <span className="up-row-date">{formatUpcomingDate(date)}</span>
             </div>
           ))}
         </div>
@@ -573,6 +636,9 @@ function ComingUp() {
     </>
   );
 }
+
+/** A stable empty list for while the query loads, so the removal memo is not recomputed every render. */
+const NO_MOVIES: Movie[] = [];
 
 const MTW_CARD_WIDTH = 120;
 const MTW_GAP = 14;
@@ -606,6 +672,12 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
     return [...wantToWatch].sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""));
   }, [wantToWatch, filter]);
 
+  // Held across the whole sorted list, before the rail is cut to what fits,
+  // so a removed card keeps its place while it leaves and the next movie
+  // slides in behind it rather than everything shifting under the highlight.
+  const captureRail = useFlipLayout(railRef);
+  const display = useRemovalExit(sorted ?? NO_MOVIES, movieKey, captureRail);
+
   // Real dynamic fit: measure the rail's actual rendered width (which
   // itself depends on the app shell, the side rail, and the viewport, not
   // just the viewport alone) and compute how many fixed-width cards
@@ -617,7 +689,7 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
   // resolved AND is non-empty. With [] deps this effect ran exactly once,
   // on mount, against a still-null ref, so the observer never attached
   // and fitCount sat at its default forever regardless of window width.
-  const railRendered = (sorted?.length ?? 0) > 0;
+  const railRendered = display.length > 0;
   useEffect(() => {
     const el = railRef.current;
     if (!el) return;
@@ -638,25 +710,28 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
     await db.movies.update(tmdbId, { watched: true, watchedAt: new Date().toISOString() });
   }
 
-  const hasMore = sorted.length > (isMobile ? MTW_MOBILE_MAX : fitCount);
+  const hasMore = display.length > (isMobile ? MTW_MOBILE_MAX : fitCount);
   // Desktop: if there's overflow, the last fitting slot becomes the "View
   // all" tile instead of a movie card, so movies + tile together still
   // exactly fill the measured width. Mobile: fixed cap of 5 movies, the
   // view-all tile rides along as a 6th card in the scrollable strip.
   const visible = isMobile
-    ? sorted.slice(0, MTW_MOBILE_MAX)
-    : sorted.slice(0, hasMore ? Math.max(1, fitCount - 1) : fitCount);
+    ? display.slice(0, MTW_MOBILE_MAX)
+    : display.slice(0, hasMore ? Math.max(1, fitCount - 1) : fitCount);
+  // The View all count is of movies still on the watchlist: one mid-exit
+  // past the cut is already gone from it.
+  const hiddenCount = display.slice(visible.length).filter((d) => !d.removal).length;
 
   return (
     <>
       <h2 className="section-title">Movies to Watch</h2>
 
-      {sorted.length === 0 ? (
+      {display.length === 0 ? (
         <p className="muted">Nothing on your movie watchlist right now.</p>
       ) : (
         <div className="mtw-rail" ref={railRef}>
-          {visible.map((m) => (
-            <div key={m.tmdbId} className="mtw-card">
+          {visible.map(({ item: m, removal }) => (
+            <div key={m.tmdbId} data-flip-key={m.tmdbId} className={`mtw-card${removalClass(removal)}`}>
               {m.posterPath ? (
                 <img
                   className="mtw-poster"
@@ -695,9 +770,9 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
             </div>
           ))}
           {hasMore && (
-            <div className="mtw-card">
+            <div className="mtw-card" data-flip-key="view-all">
               <button type="button" className="mtw-view-all-tile" onClick={onViewAll} aria-label="View all movies to watch">
-                <span className="mtw-view-all-count">+{sorted.length - visible.length}</span>
+                <span className="mtw-view-all-count">+{hiddenCount}</span>
                 <span>View all</span>
                 <span aria-hidden="true">&rsaquo;</span>
               </button>

@@ -19,9 +19,8 @@ export function setStaleDaysThreshold(days: number): void {
   localStorage.setItem(STALE_DAYS_STORAGE_KEY, String(Math.floor(days)));
 }
 
-export function daysSince(isoDate: string | null): number | null {
+export function daysSince(isoDate: string | null, now = new Date()): number | null {
   if (!isoDate) return null;
   const then = new Date(isoDate).getTime();
-  const now = Date.now();
-  return Math.floor((now - then) / (1000 * 60 * 60 * 24));
+  return Math.floor((now.getTime() - then) / (1000 * 60 * 60 * 24));
 }
