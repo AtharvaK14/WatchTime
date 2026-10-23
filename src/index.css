@@ -67,6 +67,11 @@
      Translucent on purpose: the card behind stays faintly visible, so it reads
      as THAT card acknowledging the tap rather than a green block replacing it. */
   --watched-veil: rgba(63, 185, 80, 0.8);
+  /* The same green over a movie POSTER that has just been marked watched.
+     Lighter than --watched-veil because what is behind it is artwork the user
+     should still recognise through it, not a text card; the white tick mark on
+     top carries the "done" on its own. */
+  --watched-veil-poster: rgba(63, 185, 80, 0.5);
   /* A card leaving the library (lib/libraryRemoval.ts). --danger, because it
      is the colour of the Remove button that caused it, at reduced alpha so
      the mark is a tint and a ring rather than a red block: the user is being
@@ -2901,6 +2906,52 @@ select,
   transform: translate(18px, -50%);
 }
 
+/* "On in WatchTime, blocked by Android": the explanation and the one button
+   that leads out of it, under the main toggle. */
+.notif-blocked {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.notif-blocked p { margin: 0; }
+
+/* ---- The onboarding step (components/NotificationChoice.tsx) ---------- */
+
+/* The same rows as Settings, minus the switches: here they describe what a
+   yes turns on, in the words the user will find again under Settings, and
+   the choice itself is the wizard's own pair of buttons below them. In the
+   accent, as in Settings when on, because a yes turns every one of them on. */
+.wizard-notif-kinds {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wizard-notif-group .notif-group-title { margin-bottom: 6px; }
+/* Tighter than the Settings rows: four of them plus the choice have to fit a
+   phone screen without the buttons ending up below the fold. */
+.wizard-notif-row .notif-row-icon { width: 28px; height: 28px; }
+.wizard-notif-row .notif-row-label { font-size: 0.9rem; }
+.wizard-notif-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.wizard-notif-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+}
+.wizard-notif-row + .wizard-notif-row { border-top: 1px solid var(--border); }
+.wizard-notif-row .notif-row-icon {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
 /* ============================================================
    NEW tag (pages/Home.tsx)
 
@@ -3392,6 +3443,94 @@ select,
 @keyframes removal-exit-row {
   from { opacity: 1; transform: none; }
   to { opacity: 0; transform: scale(0.97); }
+}
+
+/* ============================================================
+   MOVIE MARKED WATCHED (lib/movieWatched.ts)
+
+   The movie counterpart of the Up Next watched sequence, on every list a
+   movie can be marked watched from - the Movies to Watch rail, Releasing this
+   month, the Movies grid, Discover and For You:
+
+     confirm  a translucent green veil and the tick arrive over the poster
+     exit     the card leaves a list it no longer belongs on, with the cards
+              around it gliding into the gap (useFlipLayout); where it stays,
+              the veil fades off it instead
+
+   The veil and the mark are the episode card's own (watched-flash-in, and
+   .wn-watched-mark's pop); the exit is the removal exit's, so leaving a list
+   looks the same whatever the reason. Durations are mirrored by
+   MOVIE_WATCHED_CONFIRM_MS and MOVIE_WATCHED_EXIT_MS. Reduced motion skips
+   the sequence in JS and the list simply updates.
+   ============================================================ */
+
+/* A card mid-sequence takes no taps: a second tick would toggle it back, and
+   a tap on the poster would open a panel on a card that is leaving. */
+.is-watched-saving,
+.is-watched-held,
+.is-watched-confirm,
+.is-watched-exit {
+  pointer-events: none;
+}
+
+/* Over the poster, above its caption and badges (z-index 2). The default
+   covers the whole card, which on the grids IS the poster. */
+.movie-watched-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--watched-veil-poster);
+  pointer-events: none;
+  animation: watched-flash-in 160ms ease-out both;
+}
+.movie-watched-overlay.is-fading {
+  animation: watched-flash-out 240ms ease-in forwards;
+}
+@keyframes watched-flash-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* The rail cards are a poster with the title BELOW it, so the veil stops at
+   the poster: the same 2:3 box, anchored to the card's top. */
+.mtw-card > .movie-watched-overlay {
+  bottom: auto;
+  aspect-ratio: 2 / 3;
+}
+.mtw-card .movie-watched-overlay .wn-watched-mark,
+.rail-poster-wrap .movie-watched-overlay .wn-watched-mark {
+  width: 40px;
+  height: 40px;
+  font-size: 1.2rem;
+}
+
+/* Releasing this month rows are a 34px thumbnail and text, too small to hold
+   the mark, so the veil covers the row - spread a few pixels past its edges,
+   like the removal highlight - with a smaller mark in the middle. */
+.up-row { position: relative; }
+.up-row > .movie-watched-overlay {
+  inset: 2px -6px;
+  border-radius: 6px;
+}
+.up-row .movie-watched-overlay .wn-watched-mark {
+  width: 30px;
+  height: 30px;
+  font-size: 0.95rem;
+}
+
+/* Out of the list. forwards holds it invisible for the instant between the
+   animation ending and the list dropping the card. */
+.show-card.is-watched-exit:not(.is-watched-staying),
+.mtw-card.is-watched-exit:not(.is-watched-staying),
+.rail-card.is-watched-exit:not(.is-watched-staying) {
+  animation: removal-exit-card 240ms ease-in forwards;
+}
+.up-row.is-watched-exit:not(.is-watched-staying) {
+  animation: removal-exit-row 240ms ease-in forwards;
 }
 
 /* ============================================================

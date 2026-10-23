@@ -15,6 +15,8 @@ import UniversalSearch, { type SearchResults } from "../components/UniversalSear
 import { BookmarkIcon } from "../components/icons";
 import { useLibraryIds } from "../lib/useLibraryIds";
 import { libraryKey, removalClass, useLibraryRemovals } from "../lib/libraryRemoval";
+import { useMovieWatchedPhases, watchedClass } from "../lib/movieWatched";
+import MovieWatchedOverlay from "../components/MovieWatchedOverlay";
 
 /**
  * "Already in your library", shown directly on the artwork so the user no
@@ -81,9 +83,13 @@ function TitleCard({
   // which card that happened to once the panel has closed. Only the highlight
   // phase applies here - "held" and "exit" are for cards leaving a library list.
   const removal = useLibraryRemovals().get(libraryKey(kind, tmdbId));
+  // Same reasoning for a movie marked watched in that panel: the card stays,
+  // and shows the watched tick once the panel has closed, so the user can see
+  // which card it happened to. Only ever set for movies.
+  const watched = useMovieWatchedPhases().get(libraryKey(kind, tmdbId));
   return (
     <button
-      className={`show-card${removal === "highlight" ? removalClass(removal) : ""}`}
+      className={`show-card${removal === "highlight" ? removalClass(removal) : ""}${watchedClass(watched, true)}`}
       onClick={onOpen}
     >
       {posterPath ? (
@@ -98,6 +104,7 @@ function TitleCard({
       {inLibrary && <InLibraryBadge />}
       <PosterCaption title={name} year={year} />
       {inLibrary && <span className="sr-only">In your library</span>}
+      <MovieWatchedOverlay phase={watched} staying />
     </button>
   );
 }

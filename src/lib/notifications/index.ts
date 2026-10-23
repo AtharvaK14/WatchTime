@@ -14,15 +14,16 @@
 import { Capacitor } from "@capacitor/core";
 import { LocalNotifications, type PermissionStatus } from "@capacitor/local-notifications";
 import { db } from "../../db";
-import { storeTypedReleaseDates } from "../releaseDates";
+import { backfillTypedReleaseDates } from "../releaseDates";
 import { requestDeepLink, parseDeepLinkTarget } from "../deepLink";
 import { buildNotificationEvents, notificationId, todayIso, type NotificationEvent } from "./events";
-import { clearSchedule, pushSchedule, toScheduledNotification } from "./bridge";
+import { clearSchedule, openSystemNotificationSettings, pushSchedule, toScheduledNotification } from "./bridge";
 import {
   kindEnabled,
   markPermissionRequested,
   notificationsEnabled,
   permissionAlreadyRequested,
+  setNotificationsEnabled,
 } from "./prefs";
 
 /**
@@ -59,10 +60,13 @@ export async function checkNotificationPermission(): Promise<NotificationAvailab
 }
 
 /**
- * Requests the OS permission. Only ever called from an explicit user action
- * (the Settings toggle), never on launch - Android 13+ requires
- * POST_NOTIFICATIONS at runtime and the platform guidance is to ask in
- * context, once, after the user has shown they want the feature.
+ * Requests the OS permission. Only ever called from an explicit user action -
+ * "Turn on notifications" in onboarding or the Settings toggle - never on
+ * launch: Android 13+ requires POST_NOTIFICATIONS at runtime and the platform
+ * guidance is to ask in context, once, after the user has shown they want the
+ * feature. Onboarding explains what notifications are for first and asks
+ * only if the user says yes, so the system dialog is never the first thing
+ * they hear about it.
  *
  * The one-shot nature of the system dialog is why permissionAlreadyRequested()
  * is recorded here: a second request would resolve "denied" with no UI at all,
@@ -87,6 +91,49 @@ export function mustUseSystemSettings(availability: NotificationAvailability): b
 }
 
 /**
+ * The user said yes to notifications - in onboarding or in Settings.
+ *
+ * Two separate things happen, in this order, and the app keeps them apart:
+ *
+ *  1. The APP preference is recorded as on. That is the user's answer, and it
+ *     stands whatever Android says next.
+ *  2. The OS permission is requested (a no-op when already granted). Only a
+ *     grant actually lets anything be delivered.
+ *
+ * So a user who said yes and then denied the system dialog is "on in
+ * WatchTime, blocked by Android" - and the screens say exactly that, with a
+ * route to the system setting, rather than claiming notifications are on.
+ * Recording the preference is also what lets a later grant in system settings
+ * take effect on its own: the next resume finds both halves true and
+ * schedules, without the user having to come back and flip the toggle again.
+ *
+ * Returns the permission state after asking, for the caller to explain.
+ */
+export async function enableNotifications(): Promise<NotificationAvailability> {
+  setNotificationsEnabled(true);
+  const availability = await requestNotificationPermission();
+  if (availability === "granted") await syncScheduledNotifications();
+  return availability;
+}
+
+/** The user said no, or turned them off. Recorded as an answer, so they are not asked again. */
+export async function disableNotifications(): Promise<void> {
+  setNotificationsEnabled(false);
+  await cancelAllNotifications();
+}
+
+/**
+ * Opens Android's notification settings for this app, for a permission the
+ * system dialog can no longer grant. False when there is nowhere to send the
+ * user (the browser build, or a native build without the method), so the
+ * caller can fall back to telling them where to look.
+ */
+export async function openNotificationSettings(): Promise<boolean> {
+  if (!notificationsSupported()) return false;
+  return openSystemNotificationSettings();
+}
+
+/**
  * Cancels anything still queued with @capacitor/local-notifications.
  *
  * Purely a migration path. Earlier builds scheduled through that plugin, so
@@ -106,46 +153,17 @@ async function dropLegacyCapacitorSchedule(): Promise<void> {
 }
 
 /**
- * Fills in Movie.digitalReleaseDate for the small set of movies a digital
- * notification could plausibly be about.
+ * Lookups the scheduler spends per run on typed movie release dates.
  *
- * Scoped hard on purpose: unwatched movies only, and only those whose
- * theatrical date is recent or still ahead (a film from 2011 is not about to
- * get a digital release announcement). An unbounded backfill would spend one
- * TMDB request per movie across an imported library of hundreds, for a field
- * almost none of them need. `undefined` means never looked up and `null`
- * means looked up and absent, so a null is never retried.
+ * Which movies need one is decided by lib/releaseDates.ts, the same rule
+ * Home's Releasing this month uses: missing or older than a week, within the
+ * window where a release can still matter, watched movies included (their
+ * digital release is still announced). It used to be a separate rule here -
+ * unwatched only, and looked up exactly once - so a digital date TMDB added
+ * after the first lookup was never seen, and a film watched in cinemas could
+ * never get its digital date at all.
  */
-async function backfillDigitalReleaseDates(limit = 12): Promise<void> {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - 120);
-  const earliestRelevant = todayIso(cutoff);
-
-  const movies = await db.movies.toArray();
-  const candidates = movies
-    .filter(
-      (m) =>
-        !m.watched &&
-        m.digitalReleaseDate === undefined &&
-        m.releaseDate !== undefined &&
-        m.releaseDate !== null &&
-        m.releaseDate >= earliestRelevant
-    )
-    .sort((a, b) => (b.releaseDate ?? "").localeCompare(a.releaseDate ?? ""))
-    .slice(0, limit);
-
-  for (const movie of candidates) {
-    try {
-      // Shared with Home's release-type tags, which read the theatrical date
-      // this stores alongside the digital one from the same response.
-      await storeTypedReleaseDates(movie.tmdbId);
-    } catch {
-      // Rate limit, offline, or a movie TMDB has no release data for. Left
-      // undefined so a later run retries, the same way Home's episode sync
-      // collects failures instead of aborting the batch.
-    }
-  }
-}
+const RELEASE_DATE_LOOKUPS_PER_RUN = 12;
 
 /**
  * The moment a release actually becomes available.
@@ -156,11 +174,18 @@ async function backfillDigitalReleaseDates(limit = 12): Promise<void> {
  * invented, which is exactly what the removed "deliver at" preference was.
  *
  * Local, not UTC, for the same reason todayIso() is: a release on the 10th
- * should announce itself when the user's own 10th starts.
+ * should announce itself when the user's own 10th starts. For a release dated
+ * today this moment has already passed, and the native side posts it as soon
+ * as it receives the schedule (ReleaseNotifier.arm() fires overdue entries a
+ * moment later, and anything under a day old is still delivered).
  */
 function releaseMomentFor(event: NotificationEvent): Date {
   return new Date(`${event.date}T00:00:00`);
 }
+
+/** The run in progress, and whether another was asked for while it ran. See syncScheduledNotifications. */
+let running: Promise<number> | null = null;
+let rerunRequested = false;
 
 /**
  * Reconciles the native schedule with what the library currently implies.
@@ -174,11 +199,40 @@ function releaseMomentFor(event: NotificationEvent): Date {
  * running this on every resume cannot re-announce anything.
  */
 export async function syncScheduledNotifications(): Promise<number> {
+  // One run at a time. Runs are requested from several places now (launch,
+  // resume, the end of Home's episode sync, a movie marked watched), and two
+  // overlapping runs could finish out of order, the older library state
+  // overwriting the newer schedule. A request that arrives mid-run is folded
+  // into one more pass after it, which reads the library as it is by then.
+  if (running) {
+    rerunRequested = true;
+    return running;
+  }
+  running = (async () => {
+    try {
+      let count = 0;
+      do {
+        rerunRequested = false;
+        count = await reconcileSchedule();
+      } while (rerunRequested);
+      return count;
+    } finally {
+      running = null;
+    }
+  })();
+  return running;
+}
+
+async function reconcileSchedule(): Promise<number> {
   if (!notificationsSupported() || !notificationsEnabled()) return 0;
   if ((await checkNotificationPermission()) !== "granted") return 0;
 
   await dropLegacyCapacitorSchedule();
-  await backfillDigitalReleaseDates().catch(() => {});
+  // Shared with Home's release-type tags, which read the theatrical date this
+  // stores alongside the digital one from the same response.
+  await backfillTypedReleaseDates(await db.movies.toArray(), undefined, undefined, RELEASE_DATE_LOOKUPS_PER_RUN).catch(
+    () => {}
+  );
 
   const [shows, episodes, movies] = await Promise.all([
     db.shows.toArray(),
@@ -186,14 +240,13 @@ export async function syncScheduledNotifications(): Promise<number> {
     db.movies.toArray(),
   ]);
 
-  const now = Date.now();
+  const today = todayIso();
   const wanted = buildNotificationEvents(shows, episodes, movies)
     .filter((e) => kindEnabled(e.kind))
-    // Belt and braces. buildNotificationEvents already emits only strictly
-    // future dates, so every release moment here is ahead of now; this keeps
-    // a clock change or a date-boundary race from queueing something the
-    // native side would then fire the instant it was stored.
-    .filter((e) => releaseMomentFor(e).getTime() > now)
+    // Belt and braces. buildNotificationEvents already emits only today and
+    // later; this keeps a date-boundary race (the run straddling midnight)
+    // from handing native a release from yesterday, which it would post.
+    .filter((e) => e.date >= today)
     .slice(0, MAX_SCHEDULED);
 
   await pushSchedule(
@@ -203,6 +256,33 @@ export async function syncScheduledNotifications(): Promise<number> {
   );
 
   return wanted.length;
+}
+
+/** How long requestNotificationSync() waits for a burst of library writes to settle. */
+const RESYNC_DEBOUNCE_MS = 1500;
+let resyncTimer: number | null = null;
+
+/**
+ * Asks for the schedule to be rebuilt shortly, from wherever the library has
+ * just changed in a way that matters to it.
+ *
+ * Launch and resume were the only triggers before, and the launch run reads
+ * the episode cache before Home's sync has refreshed it. A new season Home
+ * fetched a minute later therefore reached the schedule only at the next
+ * resume - and a user who opened the app the evening before a release and
+ * did not come back until after it was never told. Home's sync calls this when
+ * it finishes, so a release learned of is a release scheduled.
+ *
+ * Debounced, because the callers write in bursts, and cheap when the feature
+ * is off: the run itself returns before reading anything.
+ */
+export function requestNotificationSync(): void {
+  if (!notificationsSupported() || !notificationsEnabled()) return;
+  if (resyncTimer !== null) window.clearTimeout(resyncTimer);
+  resyncTimer = window.setTimeout(() => {
+    resyncTimer = null;
+    syncScheduledNotifications().catch(() => {});
+  }, RESYNC_DEBOUNCE_MS);
 }
 
 /** Drops every queued notification. Called when the user turns the feature off. */

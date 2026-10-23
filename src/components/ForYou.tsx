@@ -9,7 +9,9 @@ import {
 import type { TasteProfile } from "../lib/recommend/tasteProfile";
 import { useLibraryIds } from "../lib/useLibraryIds";
 import { libraryKey, removalClass, useRemovalExit, type RemovalPhase } from "../lib/libraryRemoval";
+import { useMovieWatchedPhases, watchedClass } from "../lib/movieWatched";
 import { useFlipLayout } from "../lib/useFlipLayout";
+import MovieWatchedOverlay from "./MovieWatchedOverlay";
 
 const itemKey = (item: SectionItem) => libraryKey(item.kind, item.tmdbId);
 
@@ -53,9 +55,13 @@ function Poster({
   // is by definition already owned, so an "in library" marker there would be
   // on every single card and therefore tell the user nothing.
   const showOwnedMarker = inLibrary && !item.note;
+  // A movie marked watched in the panel this card opened. Recommendations are
+  // not a watchlist, so the card stays; it shows the tick on its poster once
+  // the panel has closed. Only ever set for movies.
+  const watched = useMovieWatchedPhases().get(itemKey(item));
   return (
     <button
-      className={`rail-card${removalClass(removal)}`}
+      className={`rail-card${removalClass(removal)}${watchedClass(watched, true)}`}
       data-flip-key={itemKey(item)}
       onClick={() => onOpen(item)}
       title={item.name}
@@ -68,6 +74,7 @@ function Poster({
         )}
         {item.note && <span className="rail-pill">{item.note}</span>}
         {showOwnedMarker && <span className="rail-owned" aria-hidden="true" />}
+        <MovieWatchedOverlay phase={watched} staying />
       </span>
       <span className="rail-name">{item.name}</span>
       {/* The visual markers above are decorative; the same facts go to

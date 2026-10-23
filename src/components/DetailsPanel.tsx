@@ -7,8 +7,17 @@ import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount } from "../lib/
 import { ensureEpisodesWatched, recordEpisodeRewatch, recordMovieRewatch } from "../lib/watchEvents";
 import { isStoppedWatching, resumeWatchingShow, stopWatchingShow } from "../lib/stoppedWatching";
 import { cancelRemoval, holdRemoval, playRemoval, removeFromLibrary } from "../lib/libraryRemoval";
+// Aliased: this component's own movieWatched state setter has the same name.
+import {
+  cancelMovieWatched,
+  holdMovieWatched,
+  playMovieWatched,
+  setMovieWatched as writeMovieWatched,
+} from "../lib/movieWatched";
+import { requestNotificationSync } from "../lib/notifications";
 import { useDraggableSheet, DISMISS_ANIMATION_MS } from "../lib/useDraggableSheet";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
+import { useDismissKeyboardOnOpen } from "../lib/keyboard";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useBackHandler } from "../lib/backHandler";
 import { prefersReducedMotion, useAnimatedDismiss } from "../lib/useAnimatedDismiss";
@@ -75,6 +84,9 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // mobile-specific. useDraggableSheet's output is only wired into the
   // JSX on the mobile render path below, it's inert otherwise.
   useLockBodyScroll();
+  // Opened from a search result or a filtered list, the keyboard would
+  // otherwise stay up over this panel.
+  useDismissKeyboardOnOpen();
   // Aliased: this file already has an `expandedSeason` for the accordion, and
   // two unqualified "expanded" flags meaning different things read badly.
   const {
@@ -107,6 +119,8 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   const [stopped, setStopped] = useState(false);
   const [movieWatched, setMovieWatched] = useState(false); // movies only
   const [movieRewatchCount, setMovieRewatchCount] = useState(0); // movies only, extra watches beyond the first
+  const [savingWatched, setSavingWatched] = useState(false); // movies only
+  const [watchError, setWatchError] = useState<string | null>(null); // movies only
   const [added, setAdded] = useState(false);
   const [removeConfirming, setRemoveConfirming] = useState(false);
   const [removing, setRemoving] = useState(false);
@@ -143,11 +157,18 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // every close path shares - X, backdrop, drag, Escape, Android back, and a
   // tab switch that takes the panel with it - so it is hooked here rather
   // than on each of them.
+  //
+  // A movie marked watched here is the same story (lib/movieWatched.ts): its
+  // card waits under the panel, then shows the watched tick and leaves the
+  // lists it no longer belongs on once the panel is gone.
   const removedHere = useRef(false);
+  const watchedHere = useRef(false);
   useEffect(() => {
     return () => {
       if (removedHere.current) playRemoval(kind, tmdbId);
+      if (watchedHere.current) playMovieWatched(tmdbId);
       removedHere.current = false;
+      watchedHere.current = false;
     };
   }, [kind, tmdbId]);
 
@@ -461,22 +482,48 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
    * the library on neither list, mirroring the Home rail round trip.
    */
   async function toggleMovieWatched() {
-    if (kind !== "movie" || !details) return;
-    if (!inLibrary) {
-      await db.movies.put(buildMovieRecord(true, details));
-      setInLibrary(true);
-      setAdded(true);
-      setMovieWatched(true);
-      keepInLibrary();
+    if (kind !== "movie" || !details || savingWatched) return;
+    const marking = !inLibrary || !movieWatched;
+    setSavingWatched(true);
+    setWatchError(null);
+    // Held before the write, for the same reason as a removal: the lists can
+    // re-render without the movie before the write's promise resolves.
+    if (marking) holdMovieWatched(tmdbId);
+    try {
+      if (!inLibrary) {
+        await db.movies.put(buildMovieRecord(true, details));
+        requestNotificationSync();
+      } else {
+        // The shared write path, so this and the card ticks cannot disagree
+        // about what "watched" does to the watchlist.
+        await writeMovieWatched(tmdbId, marking);
+      }
+    } catch (e) {
+      // Nothing changed, so this attempt's hold is released and nothing
+      // animates for it. A failed UNmark leaves an earlier mark standing, and
+      // with it that mark's hold: the movie is still watched.
+      if (marking) {
+        cancelMovieWatched(tmdbId);
+        watchedHere.current = false;
+      }
+      setWatchError(e instanceof Error ? e.message : String(e));
+      setSavingWatched(false);
       return;
     }
-    if (movieWatched) {
-      await db.movies.update(tmdbId, { watched: false, watchedAt: null, wantsToWatch: true });
-      setMovieWatched(false);
-    } else {
-      await db.movies.update(tmdbId, { watched: true, watchedAt: new Date().toISOString(), wantsToWatch: false });
-      setMovieWatched(true);
+    if (marking) {
+      watchedHere.current = true;
+    } else if (watchedHere.current) {
+      // Marked and unmarked again before closing: nothing to show.
+      cancelMovieWatched(tmdbId);
+      watchedHere.current = false;
     }
+    if (!inLibrary) {
+      setInLibrary(true);
+      setAdded(true);
+      keepInLibrary();
+    }
+    setMovieWatched(marking);
+    setSavingWatched(false);
   }
 
   /**
@@ -521,6 +568,12 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
       return;
     }
     removedHere.current = true;
+    // Marked watched and then removed in the same panel: the removal is the
+    // one to show. Released only now, after the removal hold has the card.
+    if (watchedHere.current) {
+      cancelMovieWatched(tmdbId);
+      watchedHere.current = false;
+    }
     setJustRemoved(true);
     setInLibrary(false);
     setAdded(false);
@@ -621,7 +674,9 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
           ) : (
             <div className="field-row">
               {kind === "movie" && (
-                <button onClick={toggleMovieWatched}>{movieWatched ? "Mark unwatched" : "Mark watched"}</button>
+                <button onClick={toggleMovieWatched} disabled={savingWatched}>
+                  {movieWatched ? "Mark unwatched" : "Mark watched"}
+                </button>
               )}
               {/* Beside Remove rather than among the season controls: both are
                   decisions about the show as a whole, and this is the gentler of
@@ -645,6 +700,11 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
               </button>
             </div>
           )}
+          {watchError && (
+            <p className="status-error small" role="alert">
+              Couldn't save that, so nothing has changed. ({watchError})
+            </p>
+          )}
         </>
       ) : (
         <>
@@ -657,8 +717,17 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
           )}
           <div className="field-row">
             <button onClick={handleAdd}>{kind === "show" ? "Add to Shows" : "Add to Movies"}</button>
-            {kind === "movie" && <button onClick={toggleMovieWatched}>Add &amp; mark watched</button>}
+            {kind === "movie" && (
+              <button onClick={toggleMovieWatched} disabled={savingWatched}>
+                Add &amp; mark watched
+              </button>
+            )}
           </div>
+          {watchError && (
+            <p className="status-error small" role="alert">
+              Couldn't save that, so nothing has changed. ({watchError})
+            </p>
+          )}
         </>
       )}
     </>

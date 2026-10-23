@@ -43,6 +43,11 @@ export interface ReleaseNotificationsPlugin {
   schedule(options: { payload: string }): Promise<void>;
   /** Drops the schedule and any armed alarm. */
   cancelAll(): Promise<void>;
+  /**
+   * Opens Android's notification settings for this app. The only way back
+   * once the system permission dialog will no longer show.
+   */
+  openSettings(): Promise<void>;
 }
 
 const ReleaseNotifications = registerPlugin<ReleaseNotificationsPlugin>("ReleaseNotifications");
@@ -90,6 +95,17 @@ export async function pushSchedule(notifications: ScheduledNotification[]): Prom
     // A build without the plugin registered. The previous schedule stays
     // armed, which is stale but valid; failing here must never break the
     // Settings screen or the resume path that triggered it.
+  }
+}
+
+/** False when there is no native method to call (an older native build, or not Android). */
+export async function openSystemNotificationSettings(): Promise<boolean> {
+  if (!releaseNotificationsSupported()) return false;
+  try {
+    await ReleaseNotifications.openSettings();
+    return true;
+  } catch {
+    return false;
   }
 }
 

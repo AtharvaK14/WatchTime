@@ -62,31 +62,99 @@ async function toEpisodeRecords(
 }
 
 /**
- * Seasons already refreshed in this browser session because they were
- * mid-run, keyed `${tmdbId}:${season}`.
+ * When each live season was last re-read, keyed `${tmdbId}:${season}`, as
+ * epoch millis.
  *
  * A season that is currently airing has to be re-read occasionally even when
  * nothing about it looks wrong locally, because TMDB revises air dates during
- * a run. Once per session is the right frequency for that: it is the same
- * order of cost as the first sync, and a date correction that arrives a few
- * hours late changes nothing the user can act on. Deliberately in memory
- * only - persisting it would buy a handful of requests and cost a schema
- * field that means nothing outside a single run of the app.
+ * a run. Deliberately in memory only - persisting it would buy a handful of
+ * requests and cost a schema field that means nothing outside a run of the
+ * app.
+ *
+ * It used to be a set, "refreshed once this session". On Android the
+ * WebView's session is the life of the process, which routinely runs for
+ * days in the background, so "once per session" could mean once a week: a
+ * date TMDB filled in or moved after that one read was never seen, and
+ * neither the notification scheduler nor Coming Up could know about it.
  */
-const refreshedInFlightSeasons = new Set<string>();
+const lastInFlightRefresh = new Map<string, number>();
+
+/**
+ * How often a live season is re-read. A few times a day is the same order of
+ * cost as the first sync spread thin, and a date correction that arrives a few
+ * hours late changes nothing the user can act on.
+ */
+export const IN_FLIGHT_REFRESH_MS = 6 * 60 * 60 * 1000;
 
 /** How far back a season still counts as "mid-run" for the refresh above. */
 const IN_FLIGHT_LOOKBACK_DAYS = 21;
 
+/** How old a season's dated episodes can be before its undated ones count as a permanent gap. */
+const UNDATED_GAP_AFTER_DAYS = 365;
+
 /**
- * Whether a cached season still looks live: an episode still to come, or one
- * that landed within the last few weeks. Those are the seasons whose episode
- * list can still change under us.
+ * Whether a cached season still looks live - one whose episode list or dates
+ * can still change under us:
+ *
+ *  - an episode still to come, or one that landed within the last few weeks;
+ *  - or it is the show's latest season, TMDB has not dated some of its
+ *    episodes yet, and none of it aired over a year ago.
+ *
+ * The second case is the one that used to be missed. An announced season is
+ * often listed on TMDB with all of its episodes and no dates at all - and
+ * streaming drops are often only dated around release. A season first cached
+ * in that state had no dated episode to look live and the same episode count
+ * as TMDB, so it was never read again: the dates arrived upstream and never
+ * reached the cache, and a whole-season release was never scheduled as a
+ * notification. Limited to the latest season, and to one that is not old, so
+ * a finished season with a permanent gap in TMDB's data is not re-read
+ * forever. TMDB's show status is deliberately not consulted: it is often still
+ * "Ended" for a while after a new season is announced.
  */
-function seasonIsInFlight(cached: Episode[], now: Date): boolean {
+function seasonIsInFlight(cached: Episode[], now: Date, isLatestSeason: boolean): boolean {
   const today = todayIso(now);
   const recent = daysAgoIso(IN_FLIGHT_LOOKBACK_DAYS, now);
-  return cached.some((ep) => ep.airDate !== null && (ep.airDate > today || ep.airDate >= recent));
+  if (cached.some((ep) => ep.airDate !== null && (ep.airDate > today || ep.airDate >= recent))) return true;
+  if (!isLatestSeason || !cached.some((ep) => !ep.airDate)) return false;
+  const old = daysAgoIso(UNDATED_GAP_AFTER_DAYS, now);
+  return !cached.some((ep) => ep.airDate !== null && ep.airDate < old);
+}
+
+export interface SeasonRefresh {
+  seasonNumber: number;
+  /** "count": TMDB's episode count differs from the cache. "in-flight": live, and not re-read recently. */
+  reason: "count" | "in-flight";
+}
+
+/**
+ * Which of a show's seasons to re-read, from the show details response and the
+ * cached episodes. Pure, so the scenario scripts can run the exact decision
+ * ensureEpisodesCached makes. `lastRefreshed` is read, never written.
+ */
+export function seasonsNeedingRefresh(
+  details: Pick<TvShowDetails, "id" | "seasons">,
+  cachedBySeason: Map<number, Episode[]>,
+  now: Date,
+  lastRefreshed: ReadonlyMap<string, number> = lastInFlightRefresh
+): SeasonRefresh[] {
+  const realSeasons = details.seasons.filter((s) => s.season_number > 0);
+  const latest = Math.max(0, ...realSeasons.map((s) => s.season_number));
+
+  const refresh: SeasonRefresh[] = [];
+  for (const season of realSeasons) {
+    const cached = cachedBySeason.get(season.season_number) ?? [];
+    if (cached.length !== season.episode_count) {
+      refresh.push({ seasonNumber: season.season_number, reason: "count" });
+      continue;
+    }
+    if (cached.length === 0) continue;
+    const last = lastRefreshed.get(`${details.id}:${season.season_number}`);
+    if (last !== undefined && now.getTime() - last < IN_FLIGHT_REFRESH_MS) continue;
+    if (seasonIsInFlight(cached, now, season.season_number === latest)) {
+      refresh.push({ seasonNumber: season.season_number, reason: "in-flight" });
+    }
+  }
+  return refresh;
 }
 
 /** Replaces one season's cached episodes with a freshly fetched list. */
@@ -118,7 +186,8 @@ async function fetchSeasonInto(tmdbId: number, seasonNumber: number, cached: Epi
  *
  *   - TMDB's episode_count disagrees with what is cached (episodes were added
  *     or removed upstream since the first fetch), or
- *   - it is still in flight and has not been refreshed yet this session.
+ *   - it is still in flight (see seasonIsInFlight) and has not been re-read
+ *     in the last IN_FLIGHT_REFRESH_MS.
  *
  * Neither costs a request when nothing has changed: episode_count arrives in
  * the show details response this function already fetches, and a finished
@@ -126,8 +195,7 @@ async function fetchSeasonInto(tmdbId: number, seasonNumber: number, cached: Epi
  */
 export async function ensureEpisodesCached(tmdbId: number, now = new Date()): Promise<number[]> {
   const details = await getTvShowDetails(tmdbId);
-  const realSeasons = details.seasons.filter((s) => s.season_number > 0);
-  const seasonNumbers = realSeasons.map((s) => s.season_number);
+  const seasonNumbers = details.seasons.filter((s) => s.season_number > 0).map((s) => s.season_number);
 
   const existing = await db.episodes.where("showId").equals(tmdbId).toArray();
   const cachedBySeason = new Map<number, Episode[]>();
@@ -137,19 +205,13 @@ export async function ensureEpisodesCached(tmdbId: number, now = new Date()): Pr
     else cachedBySeason.set(ep.seasonNumber, [ep]);
   }
 
-  for (const season of realSeasons) {
-    const cached = cachedBySeason.get(season.season_number) ?? [];
-    const inFlightKey = `${tmdbId}:${season.season_number}`;
-    const countChanged = cached.length !== season.episode_count;
-    const inFlight =
-      cached.length > 0 && !refreshedInFlightSeasons.has(inFlightKey) && seasonIsInFlight(cached, now);
-    if (!countChanged && !inFlight) continue;
-
+  for (const { seasonNumber } of seasonsNeedingRefresh(details, cachedBySeason, now)) {
     // Marked before the request, not after: a season whose fetch fails should
-    // not be retried on every re-render for the rest of the session. The
-    // count check above still catches it on the next app launch.
-    if (inFlight) refreshedInFlightSeasons.add(inFlightKey);
-    await fetchSeasonInto(tmdbId, season.season_number, cached);
+    // not be retried on every re-render until the interval is up. The count
+    // check is not subject to it, so a count change is still fetched on the
+    // next sync. A count fetch is a fresh read too, so it is marked as well.
+    lastInFlightRefresh.set(`${tmdbId}:${seasonNumber}`, now.getTime());
+    await fetchSeasonInto(tmdbId, seasonNumber, cachedBySeason.get(seasonNumber) ?? []);
   }
 
   return seasonNumbers;

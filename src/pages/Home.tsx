@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type AnimationEvent } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
+import { App as CapacitorApp } from "@capacitor/app";
 import { db, type Episode, type Movie } from "../db";
 import { TMDB_IMAGE_BASE } from "../tmdb";
-import { ensureEpisodesCached } from "../lib/episodeSync";
+import { ensureEpisodesCached, IN_FLIGHT_REFRESH_MS } from "../lib/episodeSync";
 import {
   buildReleasingThisMonth,
   buildUpcomingEpisodeRows,
@@ -39,14 +40,29 @@ import { resumeWatchingShow } from "../lib/stoppedWatching";
 import { useFlipLayout } from "../lib/useFlipLayout";
 import { useWatchedTransitions, type DisplayRow, type WatchedTransition } from "../lib/useWatchedTransitions";
 import { libraryKey, removalClass, useRemovalExit, type RemovalPhase } from "../lib/libraryRemoval";
+import { markMovieWatchedFromCard, useMovieWatchedExit, watchedClass, type WatchedSlot } from "../lib/movieWatched";
+import { isOnWatchlist } from "../lib/watchlist";
+import { requestNotificationSync } from "../lib/notifications";
+import MovieWatchedOverlay from "../components/MovieWatchedOverlay";
 
 type UpNextTab = "next" | "stale" | "not-started" | "stopped";
+
+/**
+ * How long the app can be away before coming back re-syncs episode lists.
+ * The same interval episodeSync re-reads a live season at, so a resume after
+ * that long is exactly when a re-read can find something new.
+ */
+const EPISODE_RESYNC_MS = IN_FLIGHT_REFRESH_MS;
 
 // Stable key functions for useRemovalExit, one per list shape on this page.
 const watchNextKey = (d: DisplayRow) => libraryKey("show", d.row.showId);
 const upcomingKey = (row: UpcomingEpisodeRow) => libraryKey("show", row.showId);
 const releasingKey = (row: ReleasingThisMonthRow) => libraryKey("movie", row.movie.tmdbId);
 const movieKey = (movie: Movie) => libraryKey("movie", movie.tmdbId);
+// The movie lists run the watched hold first and the removal hold over its
+// output, so their key functions read through the watched slot.
+const releasingSlotKey = (slot: WatchedSlot<ReleasingThisMonthRow>) => releasingKey(slot.item);
+const movieSlotKey = (slot: WatchedSlot<Movie>) => movieKey(slot.item);
 
 /**
  * The confirmation a card shows while its watched sequence plays: the card
@@ -241,13 +257,31 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
   // appearing and disappearing above the list shoved every card down and back
   // up again. A watch changes nothing this sync fetches; following or
   // unfollowing a show does, and still restarts it.
+  //
+  // Also re-run when the app comes back to the foreground after a long time
+  // away (resyncTick). On Android, Home stays mounted for as long as the
+  // process lives, which can be days in the background, and this effect used
+  // to run only on mount - so an episode list TMDB filled in or re-dated in
+  // the meantime never reached the cache, and nothing downstream (Coming Up,
+  // the release notifications) could know about it.
   const followedIds = shows?.map((s) => s.tmdbId).join(",");
   const showsForSync = useRef(shows);
   showsForSync.current = shows;
+  const lastSyncStartedAt = useRef(0);
+  const [resyncTick, setResyncTick] = useState(0);
+  useEffect(() => {
+    const handle = CapacitorApp.addListener("appStateChange", ({ isActive }) => {
+      if (isActive && Date.now() - lastSyncStartedAt.current >= EPISODE_RESYNC_MS) setResyncTick((t) => t + 1);
+    });
+    return () => {
+      handle.then((h) => h.remove()).catch(() => {});
+    };
+  }, []);
   useEffect(() => {
     const toSync = showsForSync.current;
     if (!toSync) return;
     let cancelled = false;
+    lastSyncStartedAt.current = Date.now();
     async function sync() {
       setSyncing(true);
       setSyncErrors([]);
@@ -263,13 +297,17 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
       if (!cancelled) {
         setSyncing(false);
         setSyncErrors(failures);
+        // The schedule was built at launch from the cache as it was then. A
+        // season this sync just fetched has to reach it now, not at the next
+        // resume, which may be after the release.
+        requestNotificationSync();
       }
     }
     sync();
     return () => {
       cancelled = true;
     };
-  }, [followedIds]);
+  }, [followedIds, resyncTick]);
 
   const rows = useMemo<Row[]>(
     () =>
@@ -495,12 +533,13 @@ function ComingUp() {
     [shows, allEpisodes, allWatched]
   );
 
+  // Watchlist movies only, all of them: see buildReleasingThisMonth.
   const releasingThisMonth = useMemo(() => (!movies ? [] : buildReleasingThisMonth(movies)), [movies]);
 
-  // Theatrical vs digital needs TMDB's typed release dates, which only the
-  // notification scheduler fetched before, and only for the digital half.
-  // Looked up here just for movies whose release could land in this month and
-  // that have never been asked about; after that the answer is stored, so a
+  // Theatrical vs digital needs TMDB's typed release dates. Looked up here for
+  // movies whose release could matter now and whose stored dates are missing
+  // or more than a week old (see moviesNeedingTypedDates); the same rule the
+  // notification scheduler uses, so the two never disagree about a movie. A
   // visit to Home normally costs no request at all.
   const typedDatesNeeded = movies ? moviesNeedingTypedDates(movies).map((m) => m.tmdbId).join(",") : "";
   const moviesForBackfill = useRef(movies);
@@ -508,20 +547,27 @@ function ComingUp() {
   useEffect(() => {
     if (!typedDatesNeeded || !moviesForBackfill.current) return;
     let cancelled = false;
-    backfillTypedReleaseDates(moviesForBackfill.current, () => cancelled);
+    // A refreshed date can move a release into or out of the notification
+    // window as well as this list.
+    backfillTypedReleaseDates(moviesForBackfill.current, () => cancelled).then(() => {
+      if (!cancelled) requestNotificationSync();
+    });
     return () => {
       cancelled = true;
     };
   }, [typedDatesNeeded]);
 
   // Removed titles leave these columns the same way they leave every other
-  // list: held until their panel closes, then highlighted and gone.
+  // list: held until their panel closes, then highlighted and gone. A movie
+  // marked watched from its panel leaves Releasing this month the same way,
+  // after showing the watched tick.
   const upcomingListRef = useRef<HTMLDivElement>(null);
   const releasingListRef = useRef<HTMLDivElement>(null);
   const captureUpcoming = useFlipLayout(upcomingListRef);
   const captureReleasing = useFlipLayout(releasingListRef);
   const upcomingDisplay = useRemovalExit(upcomingEpisodes, upcomingKey, captureUpcoming);
-  const releasingDisplay = useRemovalExit(releasingThisMonth, releasingKey, captureReleasing);
+  const releasingWatched = useMovieWatchedExit(releasingThisMonth, releasingKey, captureReleasing);
+  const releasingDisplay = useRemovalExit(releasingWatched, releasingSlotKey, captureReleasing);
 
   if (!shows || !allEpisodes || !allWatched || !movies) return null;
   // Counted off what is on screen, so the section does not vanish under a
@@ -569,11 +615,11 @@ function ComingUp() {
         <div className="coming-up-col" ref={releasingListRef}>
           <p className="muted small coming-up-col-label">Releasing this month</p>
           {releasingDisplay.length === 0 && <p className="muted small">Nothing this month.</p>}
-          {releasingDisplay.map(({ item: { movie: m, date, releaseKind }, removal }) => (
+          {releasingDisplay.map(({ item: { item: { movie: m, date, releaseKind }, watched, staying }, removal }) => (
             <div
               key={m.tmdbId}
               data-flip-key={m.tmdbId}
-              className={`up-row${removalClass(removal)}`}
+              className={`up-row${removalClass(removal)}${watchedClass(watched, staying)}`}
               role="button"
               tabIndex={0}
               onClick={() => setOpenMovie(m.tmdbId)}
@@ -606,6 +652,7 @@ function ComingUp() {
                 </p>
               </div>
               <span className="up-row-date">{formatUpcomingDate(date)}</span>
+              <MovieWatchedOverlay phase={watched} staying={staying} />
             </div>
           ))}
         </div>
@@ -647,8 +694,9 @@ const MTW_GAP = 14;
 const MTW_MOBILE_MAX = 5;
 
 function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: MoodFilter | null }) {
-  const wantToWatch = useLiveQuery(() => db.movies.filter((m) => !m.watched && m.wantsToWatch).toArray(), []);
+  const wantToWatch = useLiveQuery(() => db.movies.filter(isOnWatchlist).toArray(), []);
   const [openDetails, setOpenDetails] = useState<number | null>(null);
+  const [watchError, setWatchError] = useState<string | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
   const [fitCount, setFitCount] = useState(5); // sensible default before the first real measurement
@@ -675,8 +723,11 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
   // Held across the whole sorted list, before the rail is cut to what fits,
   // so a removed card keeps its place while it leaves and the next movie
   // slides in behind it rather than everything shifting under the highlight.
+  // The same hold for a movie ticked as watched: it shows the tick on its
+  // poster, then leaves the rail, and the rest close up behind it.
   const captureRail = useFlipLayout(railRef);
-  const display = useRemovalExit(sorted ?? NO_MOVIES, movieKey, captureRail);
+  const watchedDisplay = useMovieWatchedExit(sorted ?? NO_MOVIES, movieKey, captureRail);
+  const display = useRemovalExit(watchedDisplay, movieSlotKey, captureRail);
 
   // Real dynamic fit: measure the rail's actual rendered width (which
   // itself depends on the app shell, the side rail, and the viewport, not
@@ -707,9 +758,17 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
   if (!sorted) return <p className="muted">Loading...</p>;
 
   async function markWatched(tmdbId: number) {
-    await db.movies.update(tmdbId, { watched: true, watchedAt: new Date().toISOString() });
+    setWatchError(null);
+    try {
+      await markMovieWatchedFromCard(tmdbId);
+    } catch (e) {
+      // The card has already been put back as the database has it.
+      setWatchError(e instanceof Error ? e.message : String(e));
+    }
   }
 
+  // Leaving cards (removed, or just watched) are no longer on the watchlist.
+  const isLeaving = (d: (typeof display)[number]) => !!d.removal || (!!d.item.watched && !d.item.staying);
   const hasMore = display.length > (isMobile ? MTW_MOBILE_MAX : fitCount);
   // Desktop: if there's overflow, the last fitting slot becomes the "View
   // all" tile instead of a movie card, so movies + tile together still
@@ -720,18 +779,28 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
     : display.slice(0, hasMore ? Math.max(1, fitCount - 1) : fitCount);
   // The View all count is of movies still on the watchlist: one mid-exit
   // past the cut is already gone from it.
-  const hiddenCount = display.slice(visible.length).filter((d) => !d.removal).length;
+  const hiddenCount = display.slice(visible.length).filter((d) => !isLeaving(d)).length;
 
   return (
     <>
       <h2 className="section-title">Movies to Watch</h2>
 
+      {watchError && (
+        <p className="status-error small" role="alert">
+          Couldn't mark that movie watched, so nothing changed. ({watchError})
+        </p>
+      )}
+
       {display.length === 0 ? (
         <p className="muted">Nothing on your movie watchlist right now.</p>
       ) : (
         <div className="mtw-rail" ref={railRef}>
-          {visible.map(({ item: m, removal }) => (
-            <div key={m.tmdbId} data-flip-key={m.tmdbId} className={`mtw-card${removalClass(removal)}`}>
+          {visible.map(({ item: { item: m, watched, staying }, removal }) => (
+            <div
+              key={m.tmdbId}
+              data-flip-key={m.tmdbId}
+              className={`mtw-card${removalClass(removal)}${watchedClass(watched, staying)}`}
+            >
               {m.posterPath ? (
                 <img
                   className="mtw-poster"
@@ -767,6 +836,7 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
               <p className="show-name mtw-name" title={m.title} onClick={() => setOpenDetails(m.tmdbId)}>
                 {m.title}
               </p>
+              <MovieWatchedOverlay phase={watched} staying={staying} />
             </div>
           ))}
           {hasMore && (
@@ -797,10 +867,7 @@ export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void 
   // a visible tab now, so excluding them here would make the "N results" line
   // undercount rows the user can see.
   const searchableShows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed).toArray(), []);
-  const searchableMovies = useLiveQuery(
-    () => db.movies.filter((m) => !m.watched && m.wantsToWatch).toArray(),
-    []
-  );
+  const searchableMovies = useLiveQuery(() => db.movies.filter(isOnWatchlist).toArray(), []);
 
   const candidates = useMemo<MoodCandidate[]>(
     () => [

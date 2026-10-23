@@ -1,100 +1,101 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { useState } from "react";
 import {
-  cancelAllNotifications,
-  checkNotificationPermission,
+  disableNotifications,
+  enableNotifications,
   mustUseSystemSettings,
   notificationsSupported,
+  openNotificationSettings,
   requestNotificationPermission,
   syncScheduledNotifications,
   type NotificationAvailability,
 } from "../lib/notifications";
 import type { NotificationKind } from "../lib/notifications/events";
-import {
-  kindEnabled,
-  notificationsEnabled,
-  setKindEnabled,
-  setNotificationsEnabled,
-} from "../lib/notifications/prefs";
-import { HomeIcon, SeasonsIcon, ShowsIcon, TicketIcon, type IconProps } from "./icons";
+import { kindEnabled, notificationsEnabled, setKindEnabled } from "../lib/notifications/prefs";
+import { useNotificationPermission } from "../lib/notifications/useNotificationPermission";
+import { NOTIFICATION_GROUPS } from "./notificationGroups";
 
-interface KindRow {
-  kind: NotificationKind;
-  label: string;
-  /** What being on actually causes. Every row says WHEN, because "when" is no longer configurable. */
-  detail: string;
-  icon: ComponentType<IconProps>;
+/**
+ * What to say, and offer, when the app preference is on but Android is not
+ * delivering. Shared with onboarding so the two never describe the same state
+ * differently. Never claims notifications are on while the OS says no.
+ */
+export function BlockedByAndroid({
+  availability,
+  onRequest,
+}: {
+  availability: NotificationAvailability;
+  /** Asks again, for the case where Android will still show its dialog. */
+  onRequest: () => void;
+}) {
+  const [couldNotOpen, setCouldNotOpen] = useState(false);
+  if (availability === "granted" || availability === "unsupported") return null;
+
+  if (availability === "prompt" || !mustUseSystemSettings(availability)) {
+    return (
+      <div className="notif-blocked">
+        <p className="muted small">
+          Android hasn't given WatchTime permission to show notifications yet, so none can be delivered.
+        </p>
+        <div className="field-row">
+          <button type="button" onClick={onRequest}>
+            Allow notifications
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="notif-blocked">
+      <p className="muted small">
+        Android is blocking notifications for <strong>WatchTime</strong>, so none can be delivered. Android won't ask
+        again from inside the app; allow them in Android settings and WatchTime starts sending them, nothing else to
+        do.
+      </p>
+      <div className="field-row">
+        <button
+          type="button"
+          onClick={async () => {
+            if (!(await openNotificationSettings())) setCouldNotOpen(true);
+          }}
+        >
+          Open Android settings
+        </button>
+      </div>
+      {couldNotOpen && (
+        <p className="muted small">
+          Couldn't open it from here. It's under{" "}
+          <strong>Settings &rsaquo; Apps &rsaquo; WatchTime &rsaquo; Notifications</strong>.
+        </p>
+      )}
+    </div>
+  );
 }
 
 /**
- * The categories, grouped the way a person thinks about them rather than the
- * way the event builder happens to enumerate them.
+ * Notification preferences, and the route to the OS permission.
  *
- * Labels are group-relative: inside "Movies", "Theatrical releases" says
- * everything "Movies in cinemas" did without repeating the group heading on
- * every row. This is the only place these strings live — the presentation of
- * a preference belongs with the screen that presents it, not with the
- * localStorage wrapper that stores it.
- */
-const GROUPS: { title: string; rows: KindRow[] }[] = [
-  {
-    title: "TV shows",
-    rows: [
-      {
-        kind: "episode",
-        label: "New episodes",
-        detail: "The moment an episode you follow becomes available",
-        icon: ShowsIcon,
-      },
-      {
-        kind: "season-premiere",
-        label: "New seasons",
-        detail: "A season premiere, or a whole season landing at once",
-        icon: SeasonsIcon,
-      },
-    ],
-  },
-  {
-    title: "Movies",
-    rows: [
-      {
-        kind: "movie-theatrical",
-        label: "Theatrical releases",
-        detail: "When a film on your list reaches cinemas",
-        icon: TicketIcon,
-      },
-      {
-        kind: "movie-digital",
-        label: "Digital releases",
-        detail: "When it becomes available to watch at home",
-        icon: HomeIcon,
-      },
-    ],
-  },
-];
-
-/**
- * The only place the OS notification permission is ever requested.
+ * Two separate states, shown separately: the app preference (on or off, the
+ * user's choice, made here or in onboarding) and Android's permission (which
+ * only Android can grant). Notifications are delivered only when both are on,
+ * and the screen says which one is missing rather than reporting "On" while
+ * Android blocks them.
  *
- * The permission is asked for on an explicit tap of the toggle and nowhere
- * else - never at launch, never on first run. Android 13+ requires
- * POST_NOTIFICATIONS at runtime and shows its dialog exactly once, so asking
- * before the user has expressed any interest spends the single chance the app
- * gets, and a reflexive "deny" then closes the feature off permanently.
+ * The permission is only ever requested on an explicit tap - here, or yes in
+ * onboarding - never at launch. Android 13+ requires POST_NOTIFICATIONS at
+ * runtime and shows its dialog a limited number of times, so asking before the
+ * user has expressed any interest spends the chance the app gets.
  */
 export default function NotificationSettings() {
-  const [availability, setAvailability] = useState<NotificationAvailability | null>(null);
+  const [availability, setAvailability] = useNotificationPermission();
   const [enabled, setEnabled] = useState(() => notificationsEnabled());
   // Mirrored into state so the switches re-render; localStorage stays the
   // source of truth, matching how the stale-days threshold is handled.
   const [kinds, setKinds] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(GROUPS.flatMap((g) => g.rows).map((r) => [r.kind, kindEnabled(r.kind)]))
+    Object.fromEntries(NOTIFICATION_GROUPS.flatMap((g) => g.rows).map((r) => [r.kind, kindEnabled(r.kind)]))
   );
   const [scheduled, setScheduled] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    checkNotificationPermission().then(setAvailability);
-  }, []);
 
   async function reschedule() {
     setScheduled(await syncScheduledNotifications());
@@ -102,21 +103,25 @@ export default function NotificationSettings() {
 
   async function toggleEnabled() {
     if (enabled) {
-      setNotificationsEnabled(false);
       setEnabled(false);
       setScheduled(null);
-      await cancelAllNotifications();
+      await disableNotifications();
       return;
     }
 
     setBusy(true);
+    const result = await enableNotifications();
+    setEnabled(true);
+    setAvailability(result);
+    if (result === "granted") await reschedule();
+    setBusy(false);
+  }
+
+  async function askAgain() {
+    setBusy(true);
     const result = await requestNotificationPermission();
     setAvailability(result);
-    if (result === "granted") {
-      setNotificationsEnabled(true);
-      setEnabled(true);
-      await reschedule();
-    }
+    if (result === "granted") await reschedule();
     setBusy(false);
   }
 
@@ -136,7 +141,7 @@ export default function NotificationSettings() {
     );
   }
 
-  const blocked = availability !== null && mustUseSystemSettings(availability);
+  const delivering = enabled && availability === "granted";
 
   return (
     <>
@@ -150,23 +155,18 @@ export default function NotificationSettings() {
         </p>
 
         <div className="field-row">
-          <button onClick={toggleEnabled} disabled={busy || (blocked && !enabled)}>
+          <button onClick={toggleEnabled} disabled={busy}>
             {enabled ? "Turn notifications off" : busy ? "Asking..." : "Turn notifications on"}
           </button>
-          {enabled && <span className="status-ok small">On</span>}
+          {delivering && <span className="status-ok small">On</span>}
+          {enabled && !delivering && availability !== null && (
+            <span className="muted small">On in WatchTime, blocked by Android</span>
+          )}
         </div>
 
-        {blocked && !enabled && (
-          <p className="muted small">
-            Notifications are blocked for {""}
-            <strong>this app</strong> in Android settings. Android only ever shows its permission dialog once, so
-            this has to be re-enabled from{" "}
-            <strong>Settings &rsaquo; Apps &rsaquo; WatchTime &rsaquo; Notifications</strong>. Come back here
-            afterwards and turn them on.
-          </p>
-        )}
+        {enabled && availability !== null && <BlockedByAndroid availability={availability} onRequest={askAgain} />}
 
-        {scheduled !== null && (
+        {delivering && scheduled !== null && (
           <p className="muted small">
             {scheduled === 0
               ? "Nothing to announce in the next few weeks. This updates itself as new air dates arrive."
@@ -177,7 +177,7 @@ export default function NotificationSettings() {
 
       {enabled && (
         <div className="notif-groups">
-          {GROUPS.map((group) => (
+          {NOTIFICATION_GROUPS.map((group) => (
             <section key={group.title} className="notif-group">
               <h3 className="notif-group-title">{group.title}</h3>
               <div className="notif-list">
