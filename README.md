@@ -14,7 +14,7 @@ Know what to watch next, what's coming up, and keep your whole library on your o
 ![Capacitor 8](https://img.shields.io/badge/Capacitor-8-119EFF?logo=capacitor&logoColor=white)
 ![Local-first](https://img.shields.io/badge/local--first-no%20account%20%C2%B7%20no%20ads-FF4433)
 
-[Features](#features) · [How it works](#how-it-works) · [Getting started](#getting-started) · [Project structure](#project-structure) · [Privacy](#privacy)
+[Features](#features) · [How it works](#how-it-works) · [Getting started](#getting-started) · [Project structure](#project-structure) · [Privacy](#privacy) · [Copyright](#copyright)
 
 </div>
 
@@ -221,3 +221,9 @@ WatchTime collects nothing. Your library, watch history and API keys stay on you
 - Streaming availability from [JustWatch](https://www.justwatch.com/), via TMDB.
 - Ratings from [OMDb](https://www.omdbapi.com/) and episode runtimes from [TVmaze](https://www.tvmaze.com/).
 - On-device embeddings with [Transformers.js](https://github.com/huggingface/transformers.js) and [`all-MiniLM-L6-v2`](https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2).
+
+## Copyright
+
+Copyright © 2026 Atharva Kadam. All rights reserved.
+
+The source is public so you can read it and build it for your own personal use. No other rights are granted: you may not distribute, publish, or sell it, or any app built from it, in whole or in part, on an app store or anywhere else, without written permission. The WatchTime name and logo may not be used for other apps.
