@@ -6,6 +6,7 @@ import {
   type MovieSearchResult,
   type TvSearchResult,
 } from "../tmdb";
+import { dismissKeyboard } from "../lib/keyboard";
 import { looksDescriptive } from "../lib/moodSearch/constraints";
 import { discoverByMood, type DiscoveryItem } from "../lib/moodSearch/discover";
 import type { IndexProgress } from "../lib/moodSearch/titleIndex";
@@ -136,6 +137,10 @@ export default function UniversalSearch({
 
   function pick(suggestion: Suggestion) {
     setOpen(false);
+    // The suggestion rows keep focus in the field on mousedown (so the click
+    // lands), which also kept the keyboard up over the panel this opens.
+    // Choosing a result ends the search interaction; the query stays.
+    dismissKeyboard();
     onOpen(suggestion.kind, suggestion.tmdbId);
   }
 

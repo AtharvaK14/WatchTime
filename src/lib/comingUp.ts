@@ -10,9 +10,10 @@
 import type { Episode, Movie, Show, WatchedEpisode } from "../db";
 import { findNextUpcoming } from "./episodeSync";
 import { todayIso } from "./releaseState";
+import { isOnWatchlist } from "./watchlist";
 import { classifyShow, groupByShow, isActivelyFollowing } from "./watchNext";
 
-/** How many rows the app's Coming up columns show. The widget takes a prefix of the same list. */
+/** How many rows the Upcoming episodes column shows. The widget takes a prefix of the same list. */
 export const COMING_UP_LIMIT = 6;
 
 export interface UpcomingEpisodeRow {
@@ -123,14 +124,32 @@ export function releaseThisMonth(movie: Movie, now = new Date()): Omit<Releasing
   return null;
 }
 
-/** Library movies with a release inside the current calendar month, soonest first. */
+/**
+ * Watchlist movies with a release inside the current calendar month, soonest
+ * first.
+ *
+ * A watchlist, not a release calendar: only movies isOnWatchlist() accepts -
+ * the same rule as the Movies page's Want to watch filter and Home's Movies to
+ * Watch rail. A watched movie is left out whatever its dates say. Seeing a
+ * film in cinemas in July and then having it listed again in October because
+ * TMDB dated its digital release was the reported bug: a new date is not a
+ * reason to watch it again. This is a decision about THIS list only. The
+ * movie stays in the library with its history, and its digital-release
+ * notification is decided separately (lib/notifications/events.ts).
+ *
+ * No cap by default. It used to stop at COMING_UP_LIMIT, which silently
+ * dropped every eligible movie after the sixth - the "some movies are
+ * missing" half of the same report. A month's releases from one person's
+ * watchlist is a short list; all of it is shown.
+ */
 export function buildReleasingThisMonth(
   movies: Movie[],
   now = new Date(),
-  limit = COMING_UP_LIMIT
+  limit = Number.POSITIVE_INFINITY
 ): ReleasingThisMonthRow[] {
   const rows: ReleasingThisMonthRow[] = [];
   for (const movie of movies) {
+    if (!isOnWatchlist(movie)) continue;
     const release = releaseThisMonth(movie, now);
     if (release) rows.push({ movie, ...release });
   }
@@ -146,11 +165,13 @@ export function releaseKindLabel(kind: ReleaseKind): string {
  * The status line under a movie in "Releasing this month", or null for none.
  *
  * Watched wins. The two flags are independent in the data and a watched movie
- * can still carry wantsToWatch: the Movies grid's tick sets only `watched`, and
- * a TV Time import can bring both. A film the user has already seen is not one
- * they still want to see, so it never says both — and it reads the same
- * `watched` flag the Movies page's Watched filter does, rather than any
- * separate record of its own.
+ * can still carry wantsToWatch: a TV Time import can bring both. A film the
+ * user has already seen is not one they still want to see, so it never says
+ * both — and it reads the same `watched` flag the Movies page's Watched filter
+ * does, rather than any separate record of its own. (buildReleasingThisMonth
+ * no longer lists watched movies at all, so on Home this is always "Want to
+ * watch"; the watched branch stays so the label can never contradict the
+ * flag if it is used anywhere else.)
  */
 export function releaseStatusLabel(movie: Pick<Movie, "watched" | "wantsToWatch">): string | null {
   if (movie.watched) return "Already Watched";

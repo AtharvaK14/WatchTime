@@ -122,10 +122,22 @@ function clusterEpisodeReleases(
     if (!show) continue; // not in the library, or archived — never notify
     if (ep.seasonNumber <= 0) continue; // specials aren't part of the run
     if (!hasConfirmedAirDate(ep)) continue; // unknown is not "upcoming"
-    // Strictly future only. This is what stops a freshly synced back
+    // Today or later, never earlier. This is what stops a freshly synced back
     // catalogue from announcing episodes that came out years ago: newly
     // CACHED is not newly AVAILABLE.
-    if (ep.airDate <= today || ep.airDate > horizon) continue;
+    //
+    // Today is included on purpose. It used to be strictly future, which
+    // silently dropped any release the app first learned the date of on the
+    // day itself - common for streaming drops, whose episode lists are often
+    // only filled in on TMDB around release, and for anyone who simply had not
+    // opened the app since the date was added. Such a release is still news
+    // that day; the native side posts it as soon as it is handed over (it is
+    // already past its midnight moment) and remembers it as posted for as
+    // long as it stays in the schedule, which is the rest of that day, so a
+    // later sync cannot announce it twice. Yesterday's are not included: by
+    // then Watch Next is already showing them as NEW, and "now available" a
+    // day late is not worth an alert.
+    if (ep.airDate < today || ep.airDate > horizon) continue;
 
     const key = `${ep.showId}:${ep.seasonNumber}:${ep.airDate}`;
     const existing = clusters.get(key);
@@ -166,11 +178,19 @@ function eventForCluster(cluster: ReleaseCluster): NotificationEvent {
   const { show, seasonNumber, date, episodes, seasonSize } = cluster;
   const image = posterUrl(show.posterPath);
   const opensSeason = episodes[0].episodeNumber === 1;
+  // One id per release event - show, season, day - whatever the cluster
+  // currently holds. It used to differ between a single episode and a batch
+  // ("episode:..." vs "batch:..."), so a premiere TMDB listed as one dated
+  // episode, and then filled in as the whole season on the same day, became a
+  // second event with a second id: a duplicate alert once same-day releases
+  // could be announced. With one id the native already-posted record covers
+  // it, and a repost would replace rather than add.
+  const eventId = `release:${show.tmdbId}:${seasonNumber}:${date}`;
 
   if (episodes.length === 1) {
     const ep = episodes[0];
     return {
-      eventId: `episode:${ep.key}:${date}`,
+      eventId,
       kind: opensSeason ? "season-premiere" : "episode",
       date,
       title: show.name,
@@ -190,7 +210,7 @@ function eventForCluster(cluster: ReleaseCluster): NotificationEvent {
   // wording rather than announcing a season that has not fully landed.
   const wholeSeason = episodes.length >= seasonSize;
   return {
-    eventId: `batch:${show.tmdbId}:${seasonNumber}:${date}`,
+    eventId,
     kind: opensSeason ? "season-premiere" : "episode",
     date,
     title: show.name,
@@ -208,14 +228,22 @@ function eventForCluster(cluster: ReleaseCluster): NotificationEvent {
  * Every notifiable event in [today, today + HORIZON_DAYS], sorted by date.
  *
  * Episodes: only for followed, unarchived shows (the exact same predicate
- * Home uses), and only episodes with a CONFIRMED future air date. A missing
- * air date is not a confirmed date and never produces a notification — the
- * same reasoning as findNextUpcoming(), and the opposite of
+ * Home uses), and only episodes with a CONFIRMED air date of today or later. A
+ * missing air date is not a confirmed date and never produces a notification —
+ * the same reasoning as findNextUpcoming(), and the opposite of
  * isAvailableToWatch(), which is about not HIDING things rather than about
  * claiming something is happening.
  *
- * Movies: only unwatched movies already in the library. A watched movie
- * getting a late digital date is not news.
+ * Movies: only movies already in the library, and the two releases are
+ * judged separately:
+ *
+ *  - Theatrical: unwatched movies only. Someone who has already seen it has
+ *    no use for "now playing in cinemas".
+ *  - Digital: watched or not. Seeing a film in cinemas is exactly when
+ *    "available to watch at home" is worth knowing, and the user asked for it.
+ *    This is deliberately independent of Home's Releasing this month, which
+ *    leaves watched movies out: one is a watchlist, the other is release news,
+ *    and neither decision is allowed to stand in for the other.
  */
 export function buildNotificationEvents(
   shows: Show[],
@@ -237,11 +265,15 @@ export function buildNotificationEvents(
   }
 
   for (const movie of movies) {
-    if (movie.watched) continue;
     const image = posterUrl(movie.posterPath);
 
-    const theatrical = movie.releaseDate ?? null;
-    if (theatrical && theatrical > today && theatrical <= horizon) {
+    // The typed theatrical date once it has been looked up, null included:
+    // null means TMDB lists no cinema release, and then releaseDate is the
+    // streaming premiere, which must not be announced as "in cinemas". Only a
+    // movie never looked up falls back to releaseDate, as before.
+    const theatrical =
+      movie.theatricalReleaseDate !== undefined ? movie.theatricalReleaseDate : (movie.releaseDate ?? null);
+    if (!movie.watched && theatrical && theatrical >= today && theatrical <= horizon) {
       events.push({
         eventId: `movie-theatrical:${movie.tmdbId}:${theatrical}`,
         kind: "movie-theatrical",
@@ -257,7 +289,7 @@ export function buildNotificationEvents(
     // Guarded against a digital date that merely equals the theatrical one
     // (TMDB sometimes carries the same day for both on straight-to-streaming
     // titles): two identical notifications on one day for one movie is noise.
-    if (digital && digital !== theatrical && digital > today && digital <= horizon) {
+    if (digital && digital !== theatrical && digital >= today && digital <= horizon) {
       events.push({
         eventId: `movie-digital:${movie.tmdbId}:${digital}`,
         kind: "movie-digital",

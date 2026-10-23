@@ -3,6 +3,7 @@ import type { Episode } from "../db";
 import { TMDB_STILL_BASE } from "../tmdb";
 import { getOmdbEpisodeRating, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbEpisodeRating } from "../omdb";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
+import { useDismissKeyboardOnOpen } from "../lib/keyboard";
 import { useBackHandler } from "../lib/backHandler";
 import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
 import StreamingCapsules from "./StreamingCapsules";
@@ -112,6 +113,8 @@ export default function EpisodeDetailsPanel({
   // the ref-counting in useLockBodyScroll ensures closing this one doesn't
   // prematurely unlock scroll while the parent panel is still open.
   useLockBodyScroll();
+  // Same as DetailsPanel: no keyboard left over the panel.
+  useDismissKeyboardOnOpen();
   // The panel plays a short exit before it actually unmounts, so closing it
   // no longer reads as the card being deleted mid-tap. Every close route
   // below goes through requestClose so they all animate identically.

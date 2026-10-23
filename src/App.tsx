@@ -22,7 +22,9 @@ import {
 } from "./lib/persistence";
 import { initNative } from "./lib/native";
 import DeepLinkHost from "./components/DeepLinkHost";
-import { initNotificationTapHandling, syncScheduledNotifications } from "./lib/notifications";
+import { initNotificationTapHandling, notificationsSupported, syncScheduledNotifications } from "./lib/notifications";
+import { notificationChoiceMade } from "./lib/notifications/prefs";
+import NotificationPrompt from "./components/NotificationPrompt";
 import { useWidgetSync } from "./lib/widget/sync";
 import { useOnline } from "./lib/useOnline";
 import { HomeIcon, ShowsIcon, MoviesIcon, DiscoverIcon, ForYouIcon, SettingsIcon, type IconProps } from "./components/icons";
@@ -68,6 +70,19 @@ function App() {
   const [showOnboarding, setShowOnboarding] = useState(
     () => localStorage.getItem("onboarding_completed") !== "true" && !hasApiKey()
   );
+
+  // The notification question for an install that was never asked it: one
+  // that finished onboarding before the question existed, or predates
+  // onboarding altogether. New installs are asked inside the wizard instead,
+  // so this waits for the wizard to close and then re-checks - by which time
+  // a wizard answer is stored and this stays hidden. Android only.
+  //
+  // Latched in state rather than recomputed each render: saying yes stores
+  // the answer BEFORE Android's dialog has been answered, and a re-render
+  // reading it then would close the prompt before it could say whether
+  // Android allowed them.
+  const needsNotificationAnswer = () => notificationsSupported() && !notificationChoiceMade();
+  const [showNotificationPrompt, setShowNotificationPrompt] = useState(() => !showOnboarding && needsNotificationAnswer());
 
   const [persistStatus, setPersistStatus] = useState<PersistStatus | null>(null);
   const [, forceNudgeRecheck] = useState(0);
@@ -143,7 +158,15 @@ function App() {
 
   return (
     <>
-      {showOnboarding && <FirstRunWizard onComplete={() => setShowOnboarding(false)} />}
+      {showOnboarding && (
+        <FirstRunWizard
+          onComplete={() => {
+            setShowOnboarding(false);
+            setShowNotificationPrompt(needsNotificationAnswer());
+          }}
+        />
+      )}
+      {showNotificationPrompt && <NotificationPrompt onClose={() => setShowNotificationPrompt(false)} />}
 
       {/* Renders the app's existing detail panels when a notification or a
           widget row is tapped. No UI of its own. */}

@@ -248,12 +248,29 @@ const movies: Movie[] = [
   // In cinemas last month, digital date unknown: not "available digitally" just
   // because the theatrical run has started.
   movie(8, "Cinemas Last Month", { releaseDate: "2026-09-25", theatricalReleaseDate: "2026-09-25" }),
-  // Watched: still listed, still tagged; the status line says Already Watched.
+  // Watched: not listed. Releasing this month is a watchlist.
   movie(9, "Seen It", { releaseDate: "2026-10-02", theatricalReleaseDate: "2026-10-02", digitalReleaseDate: null, watched: true, wantsToWatch: false }),
   movie(10, "Back Catalogue", { releaseDate: "2019-05-01", theatricalReleaseDate: "2019-05-01", digitalReleaseDate: "2019-08-01" }),
+  // The reported case: seen in cinemas in July, digital release this month.
+  // Still not listed - and it carries wantsToWatch from its import, which must
+  // not bring it back either.
+  movie(11, "Watched In Cinemas", {
+    releaseDate: "2026-07-31",
+    theatricalReleaseDate: "2026-07-31",
+    digitalReleaseDate: "2026-10-06",
+    watched: true,
+    wantsToWatch: true,
+  }),
+  // In the library but on neither list (a TV Time import can bring these):
+  // not on the watchlist, so not listed.
+  movie(12, "Not On Watchlist", { releaseDate: "2026-10-12", theatricalReleaseDate: "2026-10-12", wantsToWatch: false }),
+  // Past the old six-row cap: every eligible movie is listed.
+  movie(13, "Seventh Eligible", { releaseDate: "2026-10-30", theatricalReleaseDate: "2026-10-30", digitalReleaseDate: null }),
+  movie(14, "Eighth Eligible", { releaseDate: "2026-10-31", theatricalReleaseDate: null, digitalReleaseDate: "2026-10-31" }),
 ];
 
-const releasing = buildReleasingThisMonth(movies, MID_MONTH, 50);
+// The default limit, which is what Home uses.
+const releasing = buildReleasingThisMonth(movies, MID_MONTH);
 console.log(`\nReleasing this month, today = 2026-10-16\n`);
 for (const row of releasing) {
   console.log(`${row.movie.title.padEnd(22)} ${row.date}  ${row.releaseKind ?? "(no tag)"}`);
@@ -268,8 +285,12 @@ const expectedReleasing: Record<string, [string, string | null] | null> = {
   "Both This Month": ["2026-10-28", "digital"],
   "Day And Date": ["2026-10-09", "theatrical"],
   "Cinemas Last Month": null,
-  "Seen It": ["2026-10-02", "theatrical"],
+  "Seen It": null,
   "Back Catalogue": null,
+  "Watched In Cinemas": null,
+  "Not On Watchlist": null,
+  "Seventh Eligible": ["2026-10-30", "theatrical"],
+  "Eighth Eligible": ["2026-10-31", "digital"],
 };
 for (const [title, expected] of Object.entries(expectedReleasing)) {
   const row = releasing.find((r) => r.movie.title === title);
@@ -289,10 +310,27 @@ const late = releaseThisMonth(both, new Date(2026, 9, 30, 12));
 if (early?.releaseKind !== "theatrical") failures.push(`Releasing: before both dates should be theatrical, got ${early?.releaseKind}`);
 if (late?.releaseKind !== "digital") failures.push(`Releasing: after both dates should be the later (digital), got ${late?.releaseKind}`);
 
-// Lookups are spent only on movies that could be releasing this month and
-// have never been asked about.
-const needing = moviesNeedingTypedDates(movies, MID_MONTH).map((m) => m.title);
-const expectedNeeding = ["Not Looked Up", "Cinemas Last Month"];
+// Lookups are spent on movies whose release could matter now and whose dates
+// are missing or old - never looked up first, then nearest to today - and on
+// nothing else.
+const CHECKED_RECENTLY = "2026-10-14T12:00:00.000Z"; // two days before MID_MONTH
+const CHECKED_LONG_AGO = "2026-09-20T12:00:00.000Z"; // past the refresh interval
+const lookupMovies: Movie[] = [
+  movie(21, "Fresh", { releaseDate: "2026-10-24", theatricalReleaseDate: "2026-10-24", digitalReleaseDate: null, releaseDatesCheckedAt: CHECKED_RECENTLY }),
+  // Looked up once, a month ago, before its digital date was announced.
+  movie(22, "Stale", { releaseDate: "2026-09-12", theatricalReleaseDate: "2026-09-12", digitalReleaseDate: null, releaseDatesCheckedAt: CHECKED_LONG_AGO }),
+  movie(23, "Never Looked Up", { releaseDate: "2026-11-20" }),
+  // Looked up by a build that did not record when: refreshed once.
+  movie(24, "Looked Up, Undated Check", { releaseDate: "2026-10-02", theatricalReleaseDate: "2026-10-02", digitalReleaseDate: null }),
+  // Watched in cinemas: still looked up, its digital release is announced.
+  movie(25, "Watched, Digital To Come", { releaseDate: "2026-08-15", theatricalReleaseDate: "2026-08-15", digitalReleaseDate: null, releaseDatesCheckedAt: CHECKED_LONG_AGO, watched: true, wantsToWatch: false }),
+  movie(26, "Old Film", { releaseDate: "2019-05-01", theatricalReleaseDate: "2019-05-01", digitalReleaseDate: "2019-08-01", releaseDatesCheckedAt: CHECKED_LONG_AGO }),
+  // On the watchlist before TMDB dated it.
+  movie(27, "Announced, Undated", { releaseDate: null }),
+  movie(28, "Watched, Undated", { releaseDate: null, watched: true, wantsToWatch: false }),
+];
+const needing = moviesNeedingTypedDates(lookupMovies, MID_MONTH).map((m) => m.title);
+const expectedNeeding = ["Never Looked Up", "Announced, Undated", "Looked Up, Undated Check", "Stale", "Watched, Digital To Come"];
 if (needing.join() !== expectedNeeding.join()) {
   failures.push(`Typed-date lookups: expected ${expectedNeeding.join(", ")}, got ${needing.join(", ") || "none"}`);
 }

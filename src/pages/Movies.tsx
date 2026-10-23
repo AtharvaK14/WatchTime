@@ -4,8 +4,17 @@ import { db, type Movie } from "../db";
 import { TMDB_IMAGE_BASE, getMovieGenres, type Genre } from "../tmdb";
 import { useMovieStats, toDurationParts } from "../lib/stats";
 import { libraryKey, removalClass, useRemovalExit } from "../lib/libraryRemoval";
+import {
+  markMovieWatchedFromCard,
+  setMovieWatched,
+  useMovieWatchedExit,
+  watchedClass,
+  type WatchedSlot,
+} from "../lib/movieWatched";
+import { isOnWatchlist } from "../lib/watchlist";
 import { useFlipLayout } from "../lib/useFlipLayout";
 import DetailsPanel from "../components/DetailsPanel";
+import MovieWatchedOverlay from "../components/MovieWatchedOverlay";
 import PosterCaption from "../components/PosterCaption";
 import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
@@ -29,6 +38,7 @@ const SORT_OPTIONS: { value: SortKey; label: string }[] = [
 ];
 
 const movieKey = (movie: Movie) => libraryKey("movie", movie.tmdbId);
+const movieSlotKey = (slot: WatchedSlot<Movie>) => movieKey(slot.item);
 
 export default function Movies({
   initialFilter,
@@ -74,7 +84,7 @@ export default function Movies({
     let list = movies;
 
     if (filterKey === "watched") list = list.filter((m) => m.watched);
-    if (filterKey === "wantToWatch") list = list.filter((m) => !m.watched && m.wantsToWatch);
+    if (filterKey === "wantToWatch") list = list.filter(isOnWatchlist);
     if (genreFilter !== null) list = list.filter((m) => m.genreIds?.includes(genreFilter));
 
     if (query.trim()) {
@@ -110,18 +120,27 @@ export default function Movies({
     return sorted;
   }, [movies, query, sortKey, filterKey, genreFilter]);
 
-  // Same exit as the Shows grid: see lib/libraryRemoval.ts.
+  // Same exit as the Shows grid: see lib/libraryRemoval.ts. Under it, the
+  // watched hold (lib/movieWatched.ts): a movie ticked on the Want to watch
+  // filter shows the tick, then leaves; on All it shows the tick and stays.
   const gridRef = useRef<HTMLDivElement>(null);
   const captureGrid = useFlipLayout(gridRef);
-  const display = useRemovalExit(visible, movieKey, captureGrid);
+  const watchedDisplay = useMovieWatchedExit(visible, movieKey, captureGrid, filterKey);
+  const display = useRemovalExit(watchedDisplay, movieSlotKey, captureGrid);
+  const [watchError, setWatchError] = useState<string | null>(null);
 
   if (!movies) return <p className="muted">Loading...</p>;
 
   async function toggleWatched(tmdbId: number, currentlyWatched: boolean) {
-    await db.movies.update(tmdbId, {
-      watched: !currentlyWatched,
-      watchedAt: !currentlyWatched ? new Date().toISOString() : null,
-    });
+    setWatchError(null);
+    try {
+      // Unticking is not an event worth a sequence: the badge just clears,
+      // and the movie goes back on the watchlist.
+      if (currentlyWatched) await setMovieWatched(tmdbId, false);
+      else await markMovieWatchedFromCard(tmdbId);
+    } catch (e) {
+      setWatchError(e instanceof Error ? e.message : String(e));
+    }
   }
 
   const duration = toDurationParts(stats.totalMinutes);
@@ -209,12 +228,18 @@ export default function Movies({
 
           {display.length === 0 && <p className="muted">No movies match that search/filter.</p>}
 
+          {watchError && (
+            <p className="status-error small" role="alert">
+              Couldn't update that movie, so nothing changed. ({watchError})
+            </p>
+          )}
+
           <div className="show-grid" ref={gridRef}>
-            {display.map(({ item: m, removal }) => (
+            {display.map(({ item: { item: m, watched, staying }, removal }) => (
               <div
                 key={m.tmdbId}
                 data-flip-key={m.tmdbId}
-                className={`show-card movie-card${removalClass(removal)}`}
+                className={`show-card movie-card${removalClass(removal)}${watchedClass(watched, staying)}`}
                 role="button"
                 tabIndex={0}
                 onClick={() => setOpenDetails(m.tmdbId)}
@@ -241,6 +266,7 @@ export default function Movies({
                   &#10003;
                 </button>
                 <PosterCaption title={m.title} year={m.releaseYear} />
+                <MovieWatchedOverlay phase={watched} staying={staying} />
               </div>
             ))}
           </div>

@@ -3,16 +3,9 @@ import { checkTmdbKey, TMDB_API_KEY_STORAGE, type KeyCheckResult } from "../tmdb
 import { checkOmdbKey, OMDB_API_KEY_STORAGE, type OmdbKeyCheckResult } from "../omdb";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useBackHandler } from "../lib/backHandler";
-
-// Previous step for the Android back button, so back walks the wizard
-// backward instead of exiting the app mid-onboarding. Welcome has no
-// previous step (back does nothing there — onboarding is a first-run gate).
-const PREVIOUS_STEP: Record<Step, Step | null> = {
-  welcome: null,
-  tmdb: "welcome",
-  omdb: "tmdb",
-  done: "omdb",
-};
+import { notificationsSupported } from "../lib/notifications";
+import { notificationChoiceMade } from "../lib/notifications/prefs";
+import NotificationChoice from "./NotificationChoice";
 
 /**
  * First-run onboarding (Play Store prep, Phase 1). A stranger installing
@@ -26,9 +19,17 @@ const PREVIOUS_STEP: Record<Step, Step | null> = {
  * TVmaze deliberately has no step: it needs no key at all (it silently
  * provides per-episode runtimes), so the only mention is one line on the
  * final screen.
+ *
+ * Notifications are the last question, in the Android app only (the browser
+ * build has nowhere to deliver them). Earlier builds never asked at all: the
+ * feature started off and stayed off unless someone found the switch in
+ * Settings, which on Android 13+ also meant the OS permission was never
+ * requested. The step explains what they are for and lets the user choose;
+ * only a yes brings up Android's permission dialog, and either answer is
+ * kept, so it is not asked again. Skipping the key setup does not skip it.
  */
 
-type Step = "welcome" | "tmdb" | "omdb" | "done";
+type Step = "welcome" | "tmdb" | "omdb" | "notifications" | "done";
 
 type FieldStatus = "idle" | "checking" | "error";
 
@@ -48,12 +49,33 @@ const OMDB_ERRORS: Record<Exclude<OmdbKeyCheckResult, "valid" | "rate-limited">,
 export default function FirstRunWizard({ onComplete }: { onComplete: () => void }) {
   useLockBodyScroll();
   const [step, setStep] = useState<Step>("welcome");
+  // Decided once, at the start: whether this install gets the notification
+  // step at all. An install that already answered (in Settings, before
+  // onboarding existed) keeps its answer and is not asked again.
+  const [asksNotifications] = useState(() => notificationsSupported() && !notificationChoiceMade());
+  const [notificationAnswer, setNotificationAnswer] = useState<boolean | null>(null);
+  // "Skip setup for now" skips the keys, not the notification question; from
+  // there the wizard finishes as soon as it is answered.
+  const [skippedSetup, setSkippedSetup] = useState(false);
+  const totalSteps = asksNotifications ? 3 : 2;
 
-  // Android back walks the wizard backward rather than exiting the app.
+  // Previous step for the Android back button, so back walks the wizard
+  // backward instead of exiting the app mid-onboarding. Welcome has no
+  // previous step (back does nothing there — onboarding is a first-run gate).
+  const previousStep: Record<Step, Step | null> = {
+    welcome: null,
+    tmdb: "welcome",
+    omdb: "tmdb",
+    notifications: skippedSetup ? "welcome" : "omdb",
+    done: asksNotifications ? "notifications" : "omdb",
+  };
   useBackHandler(true, () => {
-    const prev = PREVIOUS_STEP[step];
+    const prev = previousStep[step];
     if (prev) setStep(prev);
   });
+
+  /** Where the key steps lead once they are done or skipped. */
+  const afterKeys: Step = asksNotifications ? "notifications" : "done";
 
   const [tmdbKey, setTmdbKey] = useState("");
   const [tmdbStatus, setTmdbStatus] = useState<FieldStatus>("idle");
@@ -99,10 +121,8 @@ export default function FirstRunWizard({ onComplete }: { onComplete: () => void 
       setOmdbStatus("idle");
       if (result === "rate-limited") {
         setOmdbNote("This key already hit its 1,000-requests-per-day limit today, so it's valid; ratings will start appearing tomorrow.");
-        setStep("done");
-      } else {
-        setStep("done");
       }
+      setStep(afterKeys);
     } else {
       setOmdbStatus("error");
       setOmdbError(OMDB_ERRORS[result]);
@@ -130,10 +150,26 @@ export default function FirstRunWizard({ onComplete }: { onComplete: () => void 
               later in Settings.
             </p>
             <div className="wizard-actions">
-              <button className="wizard-primary" onClick={() => setStep("tmdb")}>
+              <button
+                className="wizard-primary"
+                onClick={() => {
+                  setSkippedSetup(false);
+                  setStep("tmdb");
+                }}
+              >
                 Set up keys
               </button>
-              <button className="link-button" onClick={finish}>
+              <button
+                className="link-button"
+                onClick={() => {
+                  if (!asksNotifications) {
+                    finish();
+                    return;
+                  }
+                  setSkippedSetup(true);
+                  setStep("notifications");
+                }}
+              >
                 Skip setup for now
               </button>
             </div>
@@ -142,7 +178,7 @@ export default function FirstRunWizard({ onComplete }: { onComplete: () => void 
 
         {step === "tmdb" && (
           <>
-            <p className="wizard-step-label">Step 1 of 2 · required</p>
+            <p className="wizard-step-label">Step 1 of {totalSteps} · required</p>
             <h2>TMDB — the app's core data</h2>
             <p className="muted small">
               Provides search, posters, plots, and episode lists. Without it, the app can't look up any show or
@@ -190,7 +226,7 @@ export default function FirstRunWizard({ onComplete }: { onComplete: () => void 
 
         {step === "omdb" && (
           <>
-            <p className="wizard-step-label">Step 2 of 2 · recommended</p>
+            <p className="wizard-step-label">Step 2 of {totalSteps} · recommended</p>
             <h2>OMDb — IMDb &amp; Rotten Tomatoes ratings</h2>
             <p className="muted small">
               Provides IMDb ratings everywhere, plus Rotten Tomatoes scores for movies (RT doesn't publish scores
@@ -225,11 +261,22 @@ export default function FirstRunWizard({ onComplete }: { onComplete: () => void 
               >
                 {omdbStatus === "checking" ? "Checking with OMDb..." : "Verify & continue"}
               </button>
-              <button className="link-button" onClick={() => setStep("done")}>
+              <button className="link-button" onClick={() => setStep(afterKeys)}>
                 Skip — no IMDb or Rotten Tomatoes ratings without it
               </button>
             </div>
           </>
+        )}
+
+        {step === "notifications" && (
+          <NotificationChoice
+            stepLabel={skippedSetup ? "Notifications · optional" : `Step 3 of ${totalSteps} · optional`}
+            onDone={(enabled) => {
+              setNotificationAnswer(enabled);
+              if (skippedSetup) finish();
+              else setStep("done");
+            }}
+          />
         )}
 
         {step === "done" && (
@@ -247,6 +294,11 @@ export default function FirstRunWizard({ onComplete }: { onComplete: () => void 
               <li>TMDB: {tmdbSaved ? "connected" : "skipped — add it in Settings to enable search and posters"}</li>
               <li>OMDb: {omdbSaved ? "connected" : "skipped — no IMDb/RT ratings until added in Settings"}</li>
               <li>Episode runtimes come from TVmaze automatically — it needs no key.</li>
+              {notificationAnswer !== null && (
+                <li>
+                  Notifications: {notificationAnswer ? "on" : "off"} — change them any time in Settings → Notifications
+                </li>
+              )}
             </ul>
             <p className="muted small">
               Coming from TV Time? Settings → Import brings your whole history over. And once your library is in,

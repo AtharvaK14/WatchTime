@@ -460,6 +460,7 @@ export async function findByExternalId(
 // at home" only exists on the separate /release_dates endpoint, which
 // returns per-country lists of typed dates. Type 3 is Theatrical and type 4
 // is Digital, per TMDB's own release-type enumeration.
+export const TMDB_RELEASE_TYPE_THEATRICAL_LIMITED = 2;
 export const TMDB_RELEASE_TYPE_THEATRICAL = 3;
 export const TMDB_RELEASE_TYPE_DIGITAL = 4;
 
@@ -468,6 +469,12 @@ interface ReleaseDatesResponse {
     iso_3166_1: string;
     release_dates: { type: number; release_date: string }[];
   }[];
+}
+
+/** The movie object with its typed dates appended, so one request answers both questions. */
+interface MovieWithReleaseDates {
+  release_date: string | null;
+  release_dates?: ReleaseDatesResponse;
 }
 
 /**
@@ -485,12 +492,25 @@ interface ReleaseDatesResponse {
  * and another country's digital date does not change that. Falling back per
  * type used to borrow exactly that date, which mislabelled films as "Digital
  * Release" on Home and could announce one as available to watch early.
+ *
+ * Theatrical is the wide release (type 3), or the limited one (type 2) when
+ * that is the only cinema release listed. Both are a film playing in cinemas,
+ * and a film that only ever opened limited was otherwise left with no
+ * theatrical date at all.
+ *
+ * Fetched as the movie object with release_dates appended rather than from
+ * /release_dates alone, so the same single request also returns TMDB's
+ * current primary release_date. The primary date is what the untagged
+ * fallback on Home lists a movie under, and it moves (a delay, a date brought
+ * forward); re-reading it here is what keeps a refreshed movie from being
+ * listed in the wrong month off the date stored when it was added.
  */
 export async function getMovieReleaseDates(
   tmdbId: number,
   region = "US"
-): Promise<{ theatrical: string | null; digital: string | null }> {
-  const data = await tmdbGet<ReleaseDatesResponse>(`/movie/${tmdbId}/release_dates`);
+): Promise<{ primary: string | null; theatrical: string | null; digital: string | null }> {
+  const movie = await tmdbGet<MovieWithReleaseDates>(`/movie/${tmdbId}`, { append_to_response: "release_dates" });
+  const data: ReleaseDatesResponse = movie.release_dates ?? { results: [] };
 
   function earliest(type: number): string | null {
     const preferred = data.results.find((r) => r.iso_3166_1 === region);
@@ -508,7 +528,8 @@ export async function getMovieReleaseDates(
   }
 
   return {
-    theatrical: earliest(TMDB_RELEASE_TYPE_THEATRICAL),
+    primary: movie.release_date || null,
+    theatrical: earliest(TMDB_RELEASE_TYPE_THEATRICAL) ?? earliest(TMDB_RELEASE_TYPE_THEATRICAL_LIMITED),
     digital: earliest(TMDB_RELEASE_TYPE_DIGITAL),
   };
 }

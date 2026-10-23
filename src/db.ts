@@ -119,6 +119,13 @@ export interface Movie {
   // ever claimed from this field. Same undefined/null convention as
   // digitalReleaseDate. See lib/releaseDates.ts.
   theatricalReleaseDate?: string | null;
+  // ISO timestamp of the last typed-date lookup that succeeded. Release dates
+  // are not fixed - a digital date is usually announced weeks after the
+  // theatrical one, and either can move - so a lookup is repeated once this
+  // is old enough, rather than trusted forever. Undefined for rows looked up
+  // before it existed, which therefore get one fresh lookup. Not indexed, so
+  // no schema version: Dexie stores unindexed fields as-is.
+  releaseDatesCheckedAt?: string;
 }
 
 // Remembers how a raw TV Time title string was resolved, so re-running an
