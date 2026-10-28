@@ -45,12 +45,19 @@ export default function DeepLinkHost() {
 
   if (!target) return null;
 
+  // Every DetailsPanel below is keyed by the title it shows. This host is the
+  // one place a panel can be re-pointed while it is open - a second
+  // notification or widget tap lands on the same element - and without a key
+  // React kept the instance: the previous show's season list, cached episodes
+  // and watched ticks stayed on screen under the new show's name until its own
+  // load replaced them, and for a show not in the library they never were.
   if (target.kind === "show") {
     // seasonNumber is present only on a batch-release notification, which
     // opens the show ON the season that just landed. Every other show link
     // leaves it undefined and opens the panel collapsed.
     return (
       <DetailsPanel
+        key={`show:${target.tmdbId}`}
         kind="show"
         tmdbId={target.tmdbId}
         initialSeason={target.seasonNumber}
@@ -60,7 +67,9 @@ export default function DeepLinkHost() {
   }
 
   if (target.kind === "movie") {
-    return <DetailsPanel kind="movie" tmdbId={target.tmdbId} onClose={() => setTarget(null)} />;
+    return (
+      <DetailsPanel key={`movie:${target.tmdbId}`} kind="movie" tmdbId={target.tmdbId} onClose={() => setTarget(null)} />
+    );
   }
 
   // The episode row may not be cached yet (a notification for a show whose
@@ -68,7 +77,9 @@ export default function DeepLinkHost() {
   // is better than an empty overlay: it is still the right title, and opening
   // it triggers the season fetch that makes the episode available next time.
   if (!episode || !show) {
-    return <DetailsPanel kind="show" tmdbId={target.showId} onClose={() => setTarget(null)} />;
+    return (
+      <DetailsPanel key={`show:${target.showId}`} kind="show" tmdbId={target.showId} onClose={() => setTarget(null)} />
+    );
   }
 
   return (

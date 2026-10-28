@@ -140,7 +140,8 @@ export interface TvShowDetails {
   episode_run_time: number[]; // TMDB's array of common episode runtimes in minutes, often just one value, sometimes empty
   original_language?: string | null;
   genres: { id: number; name: string }[];
-  seasons: { season_number: number; episode_count: number; name: string }[];
+  // air_date is the season's premiere, null while TMDB has not dated any of it.
+  seasons: { season_number: number; episode_count: number; name: string; air_date?: string | null }[];
   external_ids?: { imdb_id: string | null };
 }
 

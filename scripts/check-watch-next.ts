@@ -146,8 +146,13 @@ for (let e = 1; e <= 6; e++) {
 }
 for (let e = 1; e <= 6; e++) episodes.push(ep(8, 2, e, 120));
 
-// 9. A show whose next episode has no air date at all. Unknown is not a
-//    release: it must not trigger reactivation.
+// 9. A show whose next season has no air date at all. Unknown is not a
+//    release: it must not trigger reactivation. Nor is it something to watch:
+//    a season with no date anywhere after the last dated one is not offered
+//    as "next" either (see unconfirmedSeasons), so the user is caught up and
+//    the show is on no list - not "stale" over an episode nobody can watch.
+//    It used to be expected here as stale/S2E1, which is the reading that put
+//    an undated, misfiled season under The Terminal List: Dark Wolf.
 shows.push(show(9, "Undated"));
 for (let e = 1; e <= 4; e++) {
   episodes.push(ep(9, 1, e, 800));
@@ -227,7 +232,6 @@ const expected: Record<string, [string, string]> = {
   "Never Begun": ["not-started", "S1E1"],
   "Dropped Then Returned": ["stale", "S1E6"],
   "Returned Long Ago": ["stale", "S2E1"],
-  Undated: ["stale", "S2E1"],
   "Slow Burn": ["watch-next", "S1E4"],
   // The refinement: a release reaches these two, and must not reactivate them.
   // Both fall back to the ordinary staleness rules, which is exactly where
@@ -255,6 +259,11 @@ for (const [name, [category, next]] of Object.entries(expected)) {
 
 if (byName.has("Caught Up")) {
   failures.push("Caught Up: should appear on no list — every released episode is watched");
+}
+if (byName.has("Undated")) {
+  const row = byName.get("Undated")!;
+  const next = row.nextEpisode ? `S${row.nextEpisode.seasonNumber}E${row.nextEpisode.episodeNumber}` : "none";
+  failures.push(`Undated: should appear on no list — its next season has no date at all, got ${row.category}/${next}`);
 }
 
 // The distinction the whole refinement turns on, asserted directly rather than

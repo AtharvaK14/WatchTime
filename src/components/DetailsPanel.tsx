@@ -3,7 +3,7 @@ import { db, type Episode, type Movie } from "../db";
 import { getTvShowDetails, getMovieDetails, TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE } from "../tmdb";
 import { getOmdbRatings, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbRatings } from "../omdb";
 import { averageRuntime } from "../lib/runtime";
-import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount } from "../lib/episodeSync";
+import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount, unconfirmedSeasons } from "../lib/episodeSync";
 import { ensureEpisodesWatched, recordEpisodeRewatch, recordMovieRewatch } from "../lib/watchEvents";
 import { isStoppedWatching, resumeWatchingShow, stopWatchingShow } from "../lib/stoppedWatching";
 import { cancelRemoval, holdRemoval, playRemoval, removeFromLibrary } from "../lib/libraryRemoval";
@@ -231,11 +231,16 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
             imdbId: d.external_ids?.imdb_id ?? null,
             genres: d.genres.map((g) => g.name),
           });
+          // Checked after every await, not just the first: a load superseded by
+          // another title must not go on to write this show's library state,
+          // seasons or episodes into the panel now showing the other one.
           const existing = await db.shows.get(tmdbId);
+          if (cancelled) return;
           setInLibrary(!!existing);
           setStopped(!!existing && isStoppedWatching(existing));
           const nums = await getSeasonNumbers(tmdbId);
-          if (!cancelled) setSeasonNumbers(nums);
+          if (cancelled) return;
+          setSeasonNumbers(nums);
           if (existing) {
             await refreshWatchedAndEpisodes();
           }
@@ -602,6 +607,9 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     else episodesBySeason.set(ep.seasonNumber, [ep]);
   }
   for (const list of episodesBySeason.values()) list.sort((a, b) => a.episodeNumber - b.episodeNumber);
+  // The same rule Up Next uses to leave these seasons out, so the panel can say
+  // why a listed season is not being offered as something to watch.
+  const unconfirmed = unconfirmedSeasons(episodesInDb);
 
   const showsSeasonBrowser = kind === "show" && seasonNumbers !== null;
 
@@ -814,6 +822,14 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                 Season {seasonNumber}
               </h3>
               <div className="season-header-right">
+                {unconfirmed.has(seasonNumber) && (
+                  <span
+                    className="muted small"
+                    title="TMDB lists this season without any air dates, so it isn't treated as released."
+                  >
+                    No air dates
+                  </span>
+                )}
                 {inLibrary && eps.length > 0 && (
                   <span className="muted small">
                     {watchedCount}/{eps.length}

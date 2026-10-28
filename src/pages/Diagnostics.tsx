@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, episodeKey, type Episode, type Show, type WatchedEpisode } from "../db";
-import { ensureEpisodesCached, findNextUnwatched } from "../lib/episodeSync";
+import { ensureEpisodesCached, findNextUnwatched, unconfirmedSeasons } from "../lib/episodeSync";
 import { daysSince, getStaleDaysThreshold } from "../lib/showStatus";
 import { lastProgressionAt } from "../lib/watchEvents";
 import { reactivationState, RELEASE_ACTIVATION_DAYS } from "../lib/releaseState";
@@ -48,7 +48,10 @@ function watchNextVerdict(
   const watchedKeys = new Set(watched.map((w) => w.key));
   const next = findNextUnwatched(episodes, watchedKeys);
   const today = new Date().toISOString().slice(0, 10);
-  const releasedUnwatched = episodes.filter((e) => (!e.airDate || e.airDate <= today) && !watchedKeys.has(e.key));
+  const unconfirmed = unconfirmedSeasons(episodes);
+  const releasedUnwatched = episodes.filter(
+    (e) => (!e.airDate || e.airDate <= today) && !unconfirmed.has(e.seasonNumber) && !watchedKeys.has(e.key)
+  );
 
   const activityDs = daysSince(show.lastWatchedAt); // last activity of any kind (rewatch bumps this)
   const progressedAt = lastProgressionAt(watched); // last first-watch of an unseen episode
@@ -62,6 +65,12 @@ function watchNextVerdict(
   lines.push(`Last activity (any watch/rewatch): ${show.lastWatchedAt ?? "(never)"}${activityDs !== null ? ` (${activityDs} days ago)` : ""}`);
   lines.push(`Last PROGRESSION (first-watch of an unseen ep): ${progressedAt ?? "(never)"}${progressionDs !== null ? ` (${progressionDs} days ago)` : ""} — this drives the split`);
   lines.push(`Cached episodes: ${episodes.length}, watched records: ${watched.length}, released-and-unwatched in cache: ${releasedUnwatched.length}`);
+  if (unconfirmed.size > 0) {
+    lines.push(
+      `Seasons with no air date anywhere, after the last dated season: ${[...unconfirmed].sort((a, b) => a - b).map((n) => `S${n}`).join(", ")} ` +
+        "— not treated as released (an announced season TMDB has not scheduled, or one filed under the wrong show)"
+    );
+  }
   lines.push(
     `Next unseen per cache: ${next ? `S${next.seasonNumber}E${next.episodeNumber} "${next.name}" (air_date=${next.airDate ?? "unknown"})` : "none"}`
   );
@@ -197,7 +206,7 @@ export default function Diagnostics() {
         lines.push(
           `  Of those, ${confirmedFuture.length} have a CONFIRMED future air_date (after ${today}) and are ` +
             `correctly excluded from Watch Next as not yet available. Everything else (including missing air_date) ` +
-            `is treated as available.`
+            `is treated as available, except as noted in the verdict below.`
         );
       }
     }
