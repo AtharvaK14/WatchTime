@@ -25,9 +25,10 @@ export interface Show {
   // this field existed, or added manually rather than imported.
   tvTimeStatus?: "not_started_yet" | "continuing" | "up_to_date" | "stopped" | "watch_later";
   // Sum of episode_count across TMDB's seasons array (season_number > 0),
-  // computed once at add/import time or by the v8 backfill below. Powers
-  // the watched/total progress bar on the Shows grid. Undefined for shows
-  // added before this field existed, until backfilled.
+  // computed at add/import time or by the v8 backfill below, and kept current
+  // by every episode sync (see episodeTotalToStore in lib/episodeSync.ts).
+  // Powers the watched/total progress bar on the Shows grid. Undefined for
+  // shows added before this field existed, until backfilled.
   numberOfEpisodes?: number | null;
   // TMDB's plot summary. Displayed live by DetailsPanel without ever being
   // stored, until v12: mood search needs a persisted per-title text to

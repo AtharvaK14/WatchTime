@@ -1,7 +1,48 @@
 import { db, episodeKey, type Episode } from "../db";
 import { getTvShowDetails, getSeasonDetails, type TvShowDetails } from "../tmdb";
 import { getTvmazeRuntimesByTvdbId } from "../tvmaze";
-import { daysAgoIso, todayIso } from "./releaseState";
+import { daysAgoIso, hasConfirmedAirDate, todayIso } from "./releaseState";
+
+/**
+ * Seasons TMDB lists without a single confirmed air date, after the last
+ * season it HAS dated. Nothing about such a season says it has been released.
+ *
+ * Two real shapes produce one. An announced season waiting on its schedule,
+ * which TMDB routinely lists as "Episode 1".."Episode 8" with no dates; and a
+ * season filed under the wrong show. The second is the Terminal List report:
+ * on the day The Terminal List's second season came out, a TMDB contributor
+ * also created an undated eight-episode "Season 2" under its spin-off, The
+ * Terminal List: Dark Wolf - a separate show with its own TMDB id, which this
+ * app never confused with the original. Nothing here can tell the two shapes
+ * apart, and nothing needs to: in neither is there anything to watch.
+ *
+ * isAvailableToWatch() reads a missing date as available, which is right for
+ * a gap inside a season that has started and wrong for a season with no date
+ * anywhere in it. Before this, such a season was offered in Up Next the moment
+ * the season before it was finished - which is how Dark Wolf came to show
+ * "S02 | E01 +7" on the same day The Terminal List did.
+ *
+ * Only seasons AFTER the last dated one: an undated season with a dated one
+ * after it has aired. And a show with no confirmed date anywhere gets nothing
+ * back, since there is no dated season to be after and so no evidence either
+ * way; its episodes keep the old reading.
+ *
+ * Takes rows shaped like an Episode so the same rule runs over cached episodes
+ * (Up Next and everything built on it) and over TMDB's season summaries, whose
+ * air_date is the season's premiere (the show's episode total).
+ */
+export function unconfirmedSeasons(rows: Pick<Episode, "seasonNumber" | "airDate">[]): Set<number> {
+  let lastDated = 0;
+  for (const row of rows) {
+    if (row.seasonNumber > lastDated && hasConfirmedAirDate(row)) lastDated = row.seasonNumber;
+  }
+  const unconfirmed = new Set<number>();
+  if (lastDated === 0) return unconfirmed;
+  for (const row of rows) {
+    if (row.seasonNumber > lastDated) unconfirmed.add(row.seasonNumber);
+  }
+  return unconfirmed;
+}
 
 /**
  * Sum of episode_count across real seasons (season_number > 0, excluding
@@ -10,9 +51,20 @@ import { daysAgoIso, todayIso } from "./releaseState";
  * powers the watched/total progress bar on the Shows grid, added at every
  * write site (DetailsPanel's handleAdd, both importers, and the stats.ts
  * backfill) since existing shows predate this field.
+ *
+ * Unconfirmed seasons are left out, for the same reason Up Next leaves them
+ * out: an undated placeholder season would otherwise turn a finished show into
+ * 7 of 15 watched.
+ *
+ * Also re-applied on every episode sync, by episodeTotalToStore() below.
  */
 export function totalEpisodeCount(seasons: TvShowDetails["seasons"]): number {
-  return seasons.filter((s) => s.season_number > 0).reduce((sum, s) => sum + s.episode_count, 0);
+  const unconfirmed = unconfirmedSeasons(
+    seasons.map((s) => ({ seasonNumber: s.season_number, airDate: s.air_date ?? null }))
+  );
+  return seasons
+    .filter((s) => s.season_number > 0 && !unconfirmed.has(s.season_number))
+    .reduce((sum, s) => sum + s.episode_count, 0);
 }
 
 // In-memory cache of TVmaze runtime lookups, keyed by tmdbId, for this
@@ -157,6 +209,53 @@ export function seasonsNeedingRefresh(
   return refresh;
 }
 
+/**
+ * Cached seasons TMDB no longer lists for the show at all.
+ *
+ * fetchSeasonInto() drops episodes that vanish from a season it re-reads, but
+ * a season deleted outright is never re-read, so its rows used to stay in the
+ * cache for good - still read by Up Next, the progress counts and the
+ * notification scheduler. That is how a correction upstream would have failed
+ * to reach the app: once the season misfiled under Dark Wolf is removed from
+ * TMDB, the eight rows cached from it have to go as well.
+ *
+ * Pure, like seasonsNeedingRefresh(), so the scenario scripts run the same
+ * decision. A response listing no real season at all is read as a bad
+ * response rather than as every season having been withdrawn, and prunes
+ * nothing.
+ */
+export function seasonsNoLongerListed(
+  details: Pick<TvShowDetails, "seasons">,
+  cachedBySeason: Map<number, Episode[]>
+): number[] {
+  const listed = new Set(details.seasons.filter((s) => s.season_number > 0).map((s) => s.season_number));
+  if (listed.size === 0) return [];
+  return [...cachedBySeason.keys()].filter((n) => !listed.has(n));
+}
+
+/**
+ * The episode total to store for a show after a sync, or null when the stored
+ * one is still right.
+ *
+ * Show.numberOfEpisodes used to be worked out once, when the show was added,
+ * and never again. A show that gained a season afterwards kept its old total,
+ * so The Terminal List, added with eight episodes, read 8 of 8 on the Shows
+ * grid with its whole second season still to watch. A total stored while an
+ * undated placeholder season was being counted is corrected the same way.
+ *
+ * Pure, like seasonsNoLongerListed(), and with the same guard: a response
+ * listing no real season is read as a bad response, not as a show with no
+ * episodes, and changes nothing.
+ */
+export function episodeTotalToStore(
+  stored: number | null | undefined,
+  details: Pick<TvShowDetails, "seasons">
+): number | null {
+  if (!details.seasons.some((s) => s.season_number > 0)) return null;
+  const total = totalEpisodeCount(details.seasons);
+  return total === stored ? null : total;
+}
+
 /** Replaces one season's cached episodes with a freshly fetched list. */
 async function fetchSeasonInto(tmdbId: number, seasonNumber: number, cached: Episode[]): Promise<void> {
   const season = await getSeasonDetails(tmdbId, seasonNumber);
@@ -197,12 +296,28 @@ export async function ensureEpisodesCached(tmdbId: number, now = new Date()): Pr
   const details = await getTvShowDetails(tmdbId);
   const seasonNumbers = details.seasons.filter((s) => s.season_number > 0).map((s) => s.season_number);
 
+  // Written only when it changed, so a sync with nothing new costs no write.
+  // A show not in the library has no row to update and is left alone.
+  const show = await db.shows.get(tmdbId);
+  if (show) {
+    const total = episodeTotalToStore(show.numberOfEpisodes, details);
+    if (total !== null) await db.shows.update(tmdbId, { numberOfEpisodes: total });
+  }
+
   const existing = await db.episodes.where("showId").equals(tmdbId).toArray();
   const cachedBySeason = new Map<number, Episode[]>();
   for (const ep of existing) {
     const list = cachedBySeason.get(ep.seasonNumber);
     if (list) list.push(ep);
     else cachedBySeason.set(ep.seasonNumber, [ep]);
+  }
+
+  // Only the episode cache, which TMDB can always send again. Watch history is
+  // never deleted for this: a watch recorded against a withdrawn season stays.
+  const withdrawn = seasonsNoLongerListed(details, cachedBySeason);
+  if (withdrawn.length > 0) {
+    await db.episodes.bulkDelete(withdrawn.flatMap((n) => (cachedBySeason.get(n) ?? []).map((ep) => ep.key)));
+    for (const n of withdrawn) cachedBySeason.delete(n);
   }
 
   for (const { seasonNumber } of seasonsNeedingRefresh(details, cachedBySeason, now)) {
@@ -263,12 +378,19 @@ export function isAvailableToWatch(airDate: string | null, today: string): boole
  * Next, and filed as stale (and so dropped from Upcoming Episodes) once the
  * break outlasted the staleness threshold.
  *
+ * The same goes for an undated episode in an unconfirmed season (see
+ * unconfirmedSeasons): a season with no date anywhere in it, after the last
+ * season that has one, is not a release however its missing dates would
+ * otherwise read.
+ *
  * Only undated episodes are inferred this way. A confirmed past date is still
- * believed wherever it sits, and an undated episode with nothing scheduled
- * before it is still available, which is the Spider-Noir case unchanged.
+ * believed wherever it sits, and an undated episode inside a season that has
+ * started, with nothing scheduled before it, is still available, which is the
+ * Spider-Noir case unchanged.
  */
 function availableInProgression(episodes: Episode[], today: string): Episode[] {
   const sorted = [...episodes].sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);
+  const unconfirmed = unconfirmedSeasons(episodes);
   const available: Episode[] = [];
   let afterAnUnairedEpisode = false;
   for (const ep of sorted) {
@@ -276,7 +398,7 @@ function availableInProgression(episodes: Episode[], today: string): Episode[] {
       afterAnUnairedEpisode = true;
       continue;
     }
-    if (!ep.airDate && afterAnUnairedEpisode) continue;
+    if (!ep.airDate && (afterAnUnairedEpisode || unconfirmed.has(ep.seasonNumber))) continue;
     available.push(ep);
   }
   return available;
