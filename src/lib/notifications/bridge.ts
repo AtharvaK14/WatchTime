@@ -67,8 +67,19 @@ export interface SchedulePayload {
  * whose version it does not understand rather than half-reading it, so a web
  * update that lands before the native one degrades to "no new notifications"
  * instead of malformed ones.
+ *
+ * Also bumped when the rule for WHAT may be announced changes, so a schedule
+ * decided under an older rule is never delivered by a build that knows better.
+ *
+ *  2: releases only for shows the user is actively following
+ *     (releaseAlertEligibility in lib/watchNext.ts). A version-1 schedule can
+ *     hold weeks of releases for shows the user never started, and an app
+ *     update re-arms the stored schedule (MY_PACKAGE_REPLACED) before the app
+ *     itself has run - so without the bump those kept firing until the next
+ *     time the app was opened. Native now ignores them, and the first run
+ *     replaces them with a schedule decided by this rule.
  */
-export const SCHEDULE_PAYLOAD_VERSION = 1;
+export const SCHEDULE_PAYLOAD_VERSION = 2;
 
 export function toScheduledNotification(
   event: NotificationEvent,

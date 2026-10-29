@@ -34,6 +34,7 @@ import ImportWizard from "./ImportWizard";
 import Diagnostics from "./Diagnostics";
 import About from "../components/About";
 import NotificationSettings from "../components/NotificationSettings";
+import { requestNotificationSync } from "../lib/notifications";
 
 type KeyStatus = "idle" | "checking" | "valid" | "invalid";
 
@@ -424,6 +425,9 @@ function WatchNextPreferences() {
   function save() {
     if (!valid) return;
     setStaleDaysThreshold(parsed);
+    // The threshold decides which shows count as Haven't Watched For a While,
+    // and so which releases may be announced.
+    requestNotificationSync();
     setSaved(true);
   }
 

@@ -288,8 +288,10 @@ async function main() {
     );
   }
 
-  // 3. Notifications, on release day. One event, for the original only.
-  const releaseDay = buildNotificationEvents(shows, episodes, [], at("2026-10-21"));
+  // 3. Notifications, on release day. One event, for the original only. Both
+  //    first seasons watched, so both shows are ones the user follows.
+  const followedHistory = [...watchedSeason(tl, 1, "2022-07-10T20:00:00.000Z"), ...watchedSeason(dw, 1, "2025-09-25T20:00:00.000Z")];
+  const releaseDay = buildNotificationEvents(shows, episodes, followedHistory, [], at("2026-10-21"));
   console.log(`\nNotifications on 2026-10-21: ${releaseDay.map((e) => `"${e.title}: ${e.body}" [${e.eventId}]`).join("; ") || "none"}`);
   check(releaseDay.length === 1, `Notifications: expected 1 event on release day, got ${releaseDay.length}`);
   const event = releaseDay[0];
@@ -300,7 +302,7 @@ async function main() {
     "Notifications: the event must open The Terminal List on Season 2"
   );
   check(
-    !buildNotificationEvents(shows, episodes, [], NOW).some((e) => e.eventId.includes(`:${DARK_WOLF}:`)),
+    !buildNotificationEvents(shows, episodes, followedHistory, [], NOW).some((e) => e.eventId.includes(`:${DARK_WOLF}:`)),
     "Notifications: Dark Wolf must never produce an event"
   );
 

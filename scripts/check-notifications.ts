@@ -29,7 +29,7 @@
  * emulator with notifications allowed.
  */
 
-import type { Episode, Movie, Show } from "../src/db";
+import type { Episode, Movie, Show, WatchedEpisode } from "../src/db";
 import { buildReleasingThisMonth } from "../src/lib/comingUp";
 import { IN_FLIGHT_REFRESH_MS, seasonsNeedingRefresh } from "../src/lib/episodeSync";
 import { buildNotificationEvents, type NotificationEvent } from "../src/lib/notifications/events";
@@ -134,6 +134,29 @@ function toEpisodes(data: ShowData, override?: (s: number, e: number, date: stri
   );
 }
 
+/**
+ * The user's history for a show they follow: every episode of seasons
+ * 1..`throughSeason`, watched long before anything checked here. Release
+ * notifications only go to shows the user is actively following, so a show
+ * with no history at all would be announced nothing (see
+ * check-notification-eligibility.ts for that side).
+ */
+function watchedThrough(data: ShowData, throughSeason: number): WatchedEpisode[] {
+  return data.seasons
+    .filter((s) => s.season_number >= 1 && s.season_number <= throughSeason)
+    .flatMap((s) =>
+      s.episodes.map((e) => ({
+        key: `${data.id}-${s.season_number}-${e.episode_number}`,
+        showId: data.id,
+        seasonNumber: s.season_number,
+        episodeNumber: e.episode_number,
+        watchedAt: "2023-01-01T00:00:00.000Z",
+        watchCount: 1,
+        lastWatchedAt: "2023-01-01T00:00:00.000Z",
+      }))
+    );
+}
+
 function bySeason(episodes: Episode[]): Map<number, Episode[]> {
   const map = new Map<number, Episode[]>();
   for (const ep of episodes) map.set(ep.seasonNumber, [...(map.get(ep.seasonNumber) ?? []), ep]);
@@ -186,10 +209,12 @@ async function main() {
     }
     const show = toShow(data);
     const episodes = toEpisodes(data);
+    // Caught up on everything before the new season, as the user is.
+    const history = watchedThrough(data, latest.season_number - 1);
 
     // 1. Detection with a current cache, five days out. One event for the
     //    whole season, as a season release, opening the show on that season.
-    const fiveDaysOut = buildNotificationEvents([show], episodes, [], at(daysBefore(releaseDay, 5)));
+    const fiveDaysOut = buildNotificationEvents([show], episodes, history, [], at(daysBefore(releaseDay, 5)));
     console.log("  cache current, 5 days before:");
     for (const e of fiveDaysOut) console.log(`    ${describe(e)}`);
     check(fiveDaysOut.length === 1, `${data.name}: expected 1 event for the batch release, got ${fiveDaysOut.length}`);
@@ -216,7 +241,7 @@ async function main() {
       false
     );
     const newRefresh = seasonsNeedingRefresh(detailsOf(data), bySeason(tbaCache), tbaNow, new Map());
-    const eventsFromStaleCache = buildNotificationEvents([show], tbaCache, [], tbaNow);
+    const eventsFromStaleCache = buildNotificationEvents([show], tbaCache, history, [], tbaNow);
     console.log(
       `  season cached while undated: old rule re-reads it: ${oldRefreshes ? "yes" : "NO"}; ` +
         `new rule: ${newRefresh.map((r) => `S${r.seasonNumber} (${r.reason})`).join(", ") || "nothing"}; ` +
@@ -242,19 +267,19 @@ async function main() {
 
     // 4. Learned on the day. The dates reached the cache on release day itself.
     //    Strictly-future scheduling dropped it; it is announced now.
-    const sameDay = buildNotificationEvents([show], episodes, [], at(releaseDay));
+    const sameDay = buildNotificationEvents([show], episodes, history, [], at(releaseDay));
     const oldSameDay = sameDay.filter((e) => e.date > releaseDay);
     console.log(`  dates learned on release day: old rule ${oldSameDay.length} events, new rule ${sameDay.length}`);
     check(sameDay.length === 1, `${data.name}: a release learned of on the day should still be announced that day`);
     check(sameDay[0]?.eventId === event?.eventId, `${data.name}: same-day event must keep the release's id`);
 
     // 5. The day after: not announced (Watch Next carries it as NEW instead).
-    const dayAfter = buildNotificationEvents([show], episodes, [], at(daysBefore(releaseDay, -1)));
+    const dayAfter = buildNotificationEvents([show], episodes, history, [], at(daysBefore(releaseDay, -1)));
     check(dayAfter.length === 0, `${data.name}: must not announce a release the day after`);
 
     // 6. Partial, then whole, on the same day: one id, so no second alert.
     const partial = toEpisodes(data, (s, e, date) => (s === latest.season_number && e > 1 ? null : date));
-    const partialEvent = buildNotificationEvents([show], partial, [], at(releaseDay))[0];
+    const partialEvent = buildNotificationEvents([show], partial, history, [], at(releaseDay))[0];
     check(
       partialEvent !== undefined && partialEvent.eventId === sameDay[0]?.eventId,
       `${data.name}: premiere-only and whole-season events on one day must share an id`
@@ -262,14 +287,14 @@ async function main() {
 
     // 7. Respecting the user's choices.
     check(
-      buildNotificationEvents([toShow(data, { isArchived: true })], episodes, [], tbaNow).length === 0,
+      buildNotificationEvents([toShow(data, { isArchived: true })], episodes, history, [], tbaNow).length === 0,
       `${data.name}: a stopped show must not notify`
     );
     check(
-      buildNotificationEvents([toShow(data, { isFollowed: false })], episodes, [], tbaNow).length === 0,
+      buildNotificationEvents([toShow(data, { isFollowed: false })], episodes, history, [], tbaNow).length === 0,
       `${data.name}: an unfollowed show must not notify`
     );
-    check(buildNotificationEvents([], episodes, [], tbaNow).length === 0, `${data.name}: not in the library, no notification`);
+    check(buildNotificationEvents([], episodes, history, [], tbaNow).length === 0, `${data.name}: not in the library, no notification`);
     console.log();
   }
 
@@ -282,7 +307,7 @@ async function main() {
       { season_number: 2, episodes: [0, 7, 14, 21].map((d, i) => ({ episode_number: i + 1, air_date: daysBefore("2026-11-01", -d) })) },
     ],
   };
-  const weeklyEvents = buildNotificationEvents([toShow(weekly)], toEpisodes(weekly), [], at("2026-10-25"));
+  const weeklyEvents = buildNotificationEvents([toShow(weekly)], toEpisodes(weekly), watchedThrough(weekly, 1), [], at("2026-10-25"));
   console.log("Weekly Show (synthetic), a season airing one episode a week:");
   for (const e of weeklyEvents) console.log(`  ${describe(e)}`);
   check(weeklyEvents.length === 4, `Weekly: expected 4 separate events, got ${weeklyEvents.length}`);
@@ -311,7 +336,7 @@ async function main() {
     console.log(`  Releasing this month in ${spider.digital.slice(0, 7)}: ${listed.length === 0 ? "not listed" : "LISTED"}`);
     check(listed.length === 0, "Spider-Man: a watched movie must not be listed in Releasing this month");
 
-    const notified = buildNotificationEvents([], [], [spiderMan], at(daysBefore(spider.digital, 5)));
+    const notified = buildNotificationEvents([], [], [], [spiderMan], at(daysBefore(spider.digital, 5)));
     for (const e of notified) console.log(`  ${describe(e)}`);
     check(
       notified.length === 1 && notified[0].kind === "movie-digital",
@@ -321,7 +346,7 @@ async function main() {
     check(unwatched.length === 1 && unwatched[0].releaseKind === "digital", "Spider-Man unwatched: listed as Digital Release");
   }
   if (spider.theatrical) {
-    const beforeCinemas = buildNotificationEvents([], [], [spiderMan], at(daysBefore(spider.theatrical, 3)));
+    const beforeCinemas = buildNotificationEvents([], [], [], [spiderMan], at(daysBefore(spider.theatrical, 3)));
     check(
       !beforeCinemas.some((e) => e.kind === "movie-theatrical"),
       "Spider-Man: no theatrical notification once it has been watched"
@@ -342,7 +367,7 @@ async function main() {
     theatricalReleaseDate: null,
     digitalReleaseDate: "2026-11-06",
   };
-  const originalEvents = buildNotificationEvents([], [], [original], at("2026-11-01"));
+  const originalEvents = buildNotificationEvents([], [], [], [original], at("2026-11-01"));
   check(
     originalEvents.length === 1 && originalEvents[0].kind === "movie-digital",
     `Streaming original: expected one digital event, got ${originalEvents.map((e) => e.kind).join(", ") || "none"}`

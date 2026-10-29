@@ -6,6 +6,9 @@ import { daysSince, getStaleDaysThreshold } from "../lib/showStatus";
 import { lastProgressionAt } from "../lib/watchEvents";
 import { reactivationState, RELEASE_ACTIVATION_DAYS } from "../lib/releaseState";
 import { isStoppedWatching } from "../lib/stoppedWatching";
+import { releaseAlertEligibility } from "../lib/watchNext";
+import { exclusionLabel, HORIZON_DAYS, planNotifications } from "../lib/notifications/events";
+import { lastExcludedReleases } from "../lib/notifications";
 
 export type HomeCategory =
   | "Watch Next"
@@ -221,6 +224,26 @@ export default function Diagnostics() {
       lines.push("");
       lines.push("--- Home category verdict (replicates Home.tsx exactly) ---");
       lines.push(...watchNextVerdict(show, cachedEpisodes, watched).lines);
+
+      // The scheduler's own functions, not a re-implementation: this is the
+      // decision that puts a release in the notification schedule or not.
+      lines.push("");
+      lines.push("--- Release notifications ---");
+      const now = new Date();
+      const verdict = releaseAlertEligibility(show, cachedEpisodes, watched, getStaleDaysThreshold(), now);
+      lines.push(
+        verdict.eligible
+          ? `Eligible today (${verdict.state}): releases are announced while the user is actively following it.`
+          : `NOT eligible today: ${exclusionLabel(verdict.reason!)}. Its releases are found but not announced.`
+      );
+      const plan = planNotifications([show], cachedEpisodes, watched, [], now, getStaleDaysThreshold());
+      if (plan.events.length === 0 && plan.excluded.length === 0) {
+        lines.push(`No confirmed release in the next ${HORIZON_DAYS} days.`);
+      }
+      for (const e of plan.events) lines.push(`  Would announce ${e.date}: ${e.body} [${e.eventId}]`);
+      for (const x of plan.excluded) {
+        lines.push(`  Left out ${x.date}: ${exclusionLabel(x.reason)}, judged on the release date [${x.eventId}]`);
+      }
     }
 
     setReport(lines.join("\n"));
@@ -315,6 +338,20 @@ export default function Diagnostics() {
       `(The four sections are mutually exclusive: ${inWatchNext} + ${inStale} + ${inNotStarted} + ${inStopped} = ` +
         `${inWatchNext + inStale + inNotStarted + inStopped} shows on Home, plus ${excludedFinished.length} finished.)`
     );
+
+    // What the scheduler itself last decided, rather than a recomputation.
+    // Empty on the browser build, which never schedules anything.
+    const skipped = lastExcludedReleases();
+    if (skipped.length > 0) {
+      const byReason = new Map<string, Set<string>>();
+      for (const x of skipped) {
+        const label = exclusionLabel(x.reason);
+        byReason.set(label, (byReason.get(label) ?? new Set()).add(x.title));
+      }
+      lines.push("");
+      lines.push(`Releases the last notification run found and did NOT schedule: ${skipped.length}`);
+      for (const [label, titles] of byReason) lines.push(`  ${label}: ${[...titles].join(", ")}`);
+    }
 
     setReport(lines.join("\n"));
     setLoading(false);
