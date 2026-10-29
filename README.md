@@ -128,11 +128,13 @@ flowchart TB
 
 ### Release notifications
 
-Local notifications, not push. The schedule is rebuilt from the library on launch, on resume and after each sync, so it always matches what you follow.
+Local notifications, not push. The schedule is rebuilt from the library on launch, on resume, after each sync and whenever you watch, stop, resume, add or remove something, so it always matches what you follow.
+
+Only shows you're actively following are announced: ones in Watch Next, or ones you're caught up on and waiting for, however long the wait. Shows under Haven't Yet Started, Haven't Watched For a While or Stopped Watching get no alerts, even when a new season comes out. Each release is judged as of its own release date, so a show that will have gone quiet by then isn't announced.
 
 ```mermaid
 flowchart TB
-    LIB["Followed shows<br/>and library movies"] --> EV{"What arrived<br/>that day?"}
+    LIB["Shows you're actively following<br/>and library movies"] --> EV{"What arrived<br/>that day?"}
     EV -- whole season --> ONE["One alert:<br/>'Season 2 is now available'"]
     EV -- weekly episode --> EACH["One alert per episode"]
     EV -- movie --> MOV["One alert each:<br/>in cinemas · at home"]
@@ -183,6 +185,8 @@ npm run cap:open   # open the project in Android Studio
 | `npm run check:watch-next` | Scenario checks for the Up Next categories |
 | `npm run check:coming-up` | Scenario checks for Coming Up and release tags |
 | `npm run check:notifications` | Scenario checks for release detection, using TMDB data |
+| `npm run check:notification-eligibility` | Scenario checks for which shows may be announced |
+| `npm run check:season-association` | Scenario checks that seasons stay with their own show |
 | `npm run check:streaming` | Provider-name normalisation checks |
 | `npm run build:mood-vocabulary` | Rebuild the precomputed mood-tag embeddings |
 | `npm run cap:sync` / `cap:open` | Sync and open the Android project |

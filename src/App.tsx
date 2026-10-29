@@ -22,7 +22,12 @@ import {
 } from "./lib/persistence";
 import { initNative } from "./lib/native";
 import DeepLinkHost from "./components/DeepLinkHost";
-import { initNotificationTapHandling, notificationsSupported, syncScheduledNotifications } from "./lib/notifications";
+import {
+  initNotificationRescheduling,
+  initNotificationTapHandling,
+  notificationsSupported,
+  syncScheduledNotifications,
+} from "./lib/notifications";
 import { notificationChoiceMade } from "./lib/notifications/prefs";
 import NotificationPrompt from "./components/NotificationPrompt";
 import { useWidgetSync } from "./lib/widget/sync";
@@ -125,12 +130,16 @@ function App() {
   // from whatever it was when the toggle was first flipped.
   useEffect(() => {
     const cleanup = initNotificationTapHandling();
+    // And whenever the library changes in a way that can make a show eligible
+    // or ineligible - stopped, resumed, started, removed - not just on resume.
+    const stopRescheduling = initNotificationRescheduling();
     syncScheduledNotifications().catch(() => {});
     const handle = CapacitorApp.addListener("appStateChange", ({ isActive }) => {
       if (isActive) syncScheduledNotifications().catch(() => {});
     });
     return () => {
       cleanup();
+      stopRescheduling();
       handle.then((h) => h.remove()).catch(() => {});
     };
   }, []);

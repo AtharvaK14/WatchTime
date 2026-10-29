@@ -230,6 +230,67 @@ export function isActivelyFollowing(state: ViewingState): boolean {
   return state === "watch-next" || state === "caught-up";
 }
 
+/**
+ * Why a show's releases are not announced. Every one but "not-followed" and
+ * "unknown-progress" is a Home tab, so a missing notification always has an
+ * answer the user can see in the app.
+ */
+export type ReleaseAlertExclusion = "not-followed" | "stopped" | "not-started" | "stale" | "unknown-progress";
+
+export interface ReleaseAlertEligibility {
+  eligible: boolean;
+  /** The show's viewing state at the moment judged, as Home would file it then. */
+  state: ViewingState;
+  /** Set exactly when `eligible` is false. */
+  reason: ReleaseAlertExclusion | null;
+}
+
+/**
+ * Whether a release of this show may be announced, judged at `at`: the moment
+ * the notification would be delivered.
+ *
+ * The rule is isActivelyFollowing() - the one Upcoming episodes uses - so a
+ * show that is watched now, or caught up and waiting however long, can be
+ * notified, and a show filed under Haven't Yet Started, Haven't Watched For a
+ * While or Stopped Watching cannot. Being in the library, having episodes
+ * scheduled, or having just had one released does not change that. Library
+ * membership alone was the rule here until this existed, which is how a show
+ * the user had never started was announced every week.
+ *
+ * Two things differ from Upcoming, both because a notification is delivered
+ * later than it is decided, and interrupts:
+ *
+ *  - It is judged at the release, not now. A show that would by then have
+ *    crossed into Haven't Watched For a While is not announced, because on
+ *    that day Home would not offer it either. A watch in the meantime
+ *    reschedules (lib/notifications/triggers.ts), so this only ever decides
+ *    the case where nothing changes - which is exactly the case a queued
+ *    notification would otherwise get wrong.
+ *  - Unknown is not eligible. categorize() files a started show with no usable
+ *    watch date under Watch Next, by default rather than by evidence. That is
+ *    a gentle default for a list and the wrong one for an alert, so it is
+ *    refused here unless a release reactivated the show on its own merits.
+ */
+export function releaseAlertEligibility(
+  show: Show,
+  episodes: Episode[],
+  watched: WatchedEpisode[],
+  staleThreshold: number,
+  at: Date
+): ReleaseAlertEligibility {
+  const { state, lastProgressedAt, release } = classifyShow(show, episodes, watched, staleThreshold, at);
+  if (!show.isFollowed) return { eligible: false, state, reason: "not-followed" };
+  if (!isActivelyFollowing(state)) {
+    // Everything isActivelyFollowing() refuses is one of these three.
+    return { eligible: false, state, reason: state as "stopped" | "not-started" | "stale" };
+  }
+  const progressKnown = !!lastProgressedAt && Number.isFinite(Date.parse(lastProgressedAt));
+  if (state === "watch-next" && !release.reactivates && !progressKnown) {
+    return { eligible: false, state, reason: "unknown-progress" };
+  }
+  return { eligible: true, state, reason: null };
+}
+
 /** Groups episode or watch rows by show, for callers that classify many shows at once. */
 export function groupByShow<T extends { showId: number }>(rows: T[]): Map<number, T[]> {
   const byShow = new Map<number, T[]>();

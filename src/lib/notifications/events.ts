@@ -1,16 +1,23 @@
 // Turns the library into the list of things worth notifying about.
 //
 // Deliberately a pure function over rows already in Dexie: the same
-// db.episodes cache Home's Watch Next and Coming Up read, plus db.shows and
-// db.movies. It issues no network requests of its own and, critically, has
-// no access to any TMDB discovery endpoint, so it is structurally incapable
-// of producing a notification for something outside the user's library.
-// That scoping guarantee is the point of keeping this separate from the
-// scheduler in index.ts, which handles permissions and platform plumbing.
+// db.episodes cache Home's Watch Next and Coming Up read, plus db.shows,
+// db.watchedEpisodes and db.movies. It issues no network requests of its own
+// and, critically, has no access to any TMDB discovery endpoint, so it is
+// structurally incapable of producing a notification for something outside
+// the user's library. That scoping guarantee is the point of keeping this
+// separate from the scheduler in index.ts, which handles permissions and
+// platform plumbing.
+//
+// Being in the library is necessary, not sufficient: which shows may be
+// announced is releaseAlertEligibility() in lib/watchNext.ts, the same
+// viewing states Home's tabs and Upcoming episodes are built from.
 
-import type { Episode, Movie, Show } from "../../db";
+import type { Episode, Movie, Show, WatchedEpisode } from "../../db";
 import { TMDB_IMAGE_BASE } from "../../tmdb";
 import { hasConfirmedAirDate, todayIso } from "../releaseState";
+import { DEFAULT_STALE_DAYS_THRESHOLD } from "../showStatus";
+import { groupByShow, releaseAlertEligibility, type ReleaseAlertExclusion } from "../watchNext";
 
 // Re-exported rather than redefined: release state now has one home
 // (lib/releaseState.ts) so a notification and Home's Watch Next cannot end up
@@ -102,7 +109,7 @@ interface ReleaseCluster {
  * cluster of ten, ten episodes a week apart is ten clusters of one.
  */
 function clusterEpisodeReleases(
-  followed: Map<number, Show>,
+  library: Map<number, Show>,
   episodes: Episode[],
   today: string,
   horizon: string
@@ -111,15 +118,15 @@ function clusterEpisodeReleases(
   // ones, so "did the whole season land at once" can be answered.
   const seasonSize = new Map<string, number>();
   for (const ep of episodes) {
-    if (ep.seasonNumber <= 0 || !followed.has(ep.showId)) continue;
+    if (ep.seasonNumber <= 0 || !library.has(ep.showId)) continue;
     const key = `${ep.showId}:${ep.seasonNumber}`;
     seasonSize.set(key, (seasonSize.get(key) ?? 0) + 1);
   }
 
   const clusters = new Map<string, ReleaseCluster>();
   for (const ep of episodes) {
-    const show = followed.get(ep.showId);
-    if (!show) continue; // not in the library, or archived — never notify
+    const show = library.get(ep.showId);
+    if (!show) continue; // not in the library — never notify. Whether it may be is decided per release, later.
     if (ep.seasonNumber <= 0) continue; // specials aren't part of the run
     if (!hasConfirmedAirDate(ep)) continue; // unknown is not "upcoming"
     // Today or later, never earlier. This is what stops a freshly synced back
@@ -224,13 +231,63 @@ function eventForCluster(cluster: ReleaseCluster): NotificationEvent {
   };
 }
 
+/** A release that was found and deliberately not announced, and why. */
+export interface ExcludedRelease {
+  /** The id the event would have had. */
+  eventId: string;
+  showId: number;
+  title: string;
+  date: string;
+  reason: ReleaseAlertExclusion;
+}
+
+export interface NotificationPlan {
+  /** What may be delivered, sorted by date. */
+  events: NotificationEvent[];
+  /** Episode releases found for library shows that are not eligible, kept so an exclusion can be explained. */
+  excluded: ExcludedRelease[];
+}
+
+/** An exclusion in the words the app uses for it. */
+export function exclusionLabel(reason: ReleaseAlertExclusion): string {
+  switch (reason) {
+    case "not-followed":
+      return "not followed";
+    case "stopped":
+      return "Stopped Watching";
+    case "not-started":
+      return "Haven't Yet Started";
+    case "stale":
+      return "Haven't Watched For a While";
+    case "unknown-progress":
+      return "watch history has no usable date";
+  }
+}
+
 /**
- * Every notifiable event in [today, today + HORIZON_DAYS], sorted by date.
+ * When a release on `date` would be delivered: midnight local on the day, or
+ * now for a release dated today, which native posts as soon as it has it.
+ */
+function deliveryMoment(date: string, now: Date): Date {
+  const midnight = new Date(`${date}T00:00:00`);
+  return midnight.getTime() > now.getTime() ? midnight : now;
+}
+
+/**
+ * Every notifiable event in [today, today + HORIZON_DAYS], sorted by date,
+ * plus the episode releases left out and why.
  *
- * Episodes: only for followed, unarchived shows (the exact same predicate
- * Home uses), and only episodes with a CONFIRMED air date of today or later. A
- * missing air date is not a confirmed date and never produces a notification —
- * the same reasoning as findNextUpcoming(), and the opposite of
+ * Episodes: only episodes with a CONFIRMED air date of today or later, of
+ * library shows that releaseAlertEligibility() accepts AT THE RELEASE - the
+ * moment the notification would arrive, not the moment it is scheduled. That
+ * is what keeps a queued notification honest: a show that will have gone
+ * stale by its release date is left out now, rather than announced on a day
+ * Home would no longer offer it. `watched` is every show's watch history and
+ * is required for this: without it every show reads as never started, and
+ * nothing is announced.
+ *
+ * A missing air date is not a confirmed date and never produces a
+ * notification — the same reasoning as findNextUpcoming(), and the opposite of
  * isAvailableToWatch(), which is about not HIDING things rather than about
  * claiming something is happening.
  *
@@ -245,23 +302,39 @@ function eventForCluster(cluster: ReleaseCluster): NotificationEvent {
  *    leaves watched movies out: one is a watchlist, the other is release news,
  *    and neither decision is allowed to stand in for the other.
  */
-export function buildNotificationEvents(
+export function planNotifications(
   shows: Show[],
   episodes: Episode[],
+  watched: WatchedEpisode[],
   movies: Movie[],
-  now = new Date()
-): NotificationEvent[] {
+  now = new Date(),
+  staleThreshold = DEFAULT_STALE_DAYS_THRESHOLD
+): NotificationPlan {
   const today = todayIso(now);
   const horizon = addDays(today, HORIZON_DAYS);
   const events: NotificationEvent[] = [];
+  const excluded: ExcludedRelease[] = [];
 
-  const followed = new Map<number, Show>();
-  for (const show of shows) {
-    if (show.isFollowed && !show.isArchived) followed.set(show.tmdbId, show);
-  }
+  const library = new Map<number, Show>();
+  for (const show of shows) library.set(show.tmdbId, show);
+  const episodesByShow = groupByShow(episodes);
+  const watchedByShow = groupByShow(watched);
 
-  for (const cluster of clusterEpisodeReleases(followed, episodes, today, horizon)) {
-    events.push(eventForCluster(cluster));
+  for (const cluster of clusterEpisodeReleases(library, episodes, today, horizon)) {
+    const event = eventForCluster(cluster);
+    const { tmdbId } = cluster.show;
+    const verdict = releaseAlertEligibility(
+      cluster.show,
+      episodesByShow.get(tmdbId) ?? [],
+      watchedByShow.get(tmdbId) ?? [],
+      staleThreshold,
+      deliveryMoment(cluster.date, now)
+    );
+    if (verdict.eligible) {
+      events.push(event);
+    } else {
+      excluded.push({ eventId: event.eventId, showId: tmdbId, title: event.title, date: event.date, reason: verdict.reason! });
+    }
   }
 
   for (const movie of movies) {
@@ -303,7 +376,37 @@ export function buildNotificationEvents(
   }
 
   events.sort((a, b) => a.date.localeCompare(b.date) || a.eventId.localeCompare(b.eventId));
-  return events;
+  excluded.sort((a, b) => a.date.localeCompare(b.date) || a.eventId.localeCompare(b.eventId));
+  return { events, excluded };
+}
+
+/** planNotifications() without the exclusions. */
+export function buildNotificationEvents(
+  shows: Show[],
+  episodes: Episode[],
+  watched: WatchedEpisode[],
+  movies: Movie[],
+  now = new Date(),
+  staleThreshold = DEFAULT_STALE_DAYS_THRESHOLD
+): NotificationEvent[] {
+  return planNotifications(shows, episodes, watched, movies, now, staleThreshold).events;
+}
+
+/**
+ * The events actually handed to native: the categories the user has left on,
+ * dated today or later, capped at `limit`.
+ *
+ * The date check is belt and braces - planNotifications() already emits only
+ * today and later - against a run that straddles midnight handing native a
+ * release from yesterday, which it would post.
+ */
+export function selectForDelivery(
+  events: NotificationEvent[],
+  isKindEnabled: (kind: NotificationKind) => boolean,
+  today: string,
+  limit: number
+): NotificationEvent[] {
+  return events.filter((e) => isKindEnabled(e.kind) && e.date >= today).slice(0, limit);
 }
 
 /**

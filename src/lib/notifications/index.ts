@@ -16,8 +16,17 @@ import { LocalNotifications, type PermissionStatus } from "@capacitor/local-noti
 import { db } from "../../db";
 import { backfillTypedReleaseDates } from "../releaseDates";
 import { requestDeepLink, parseDeepLinkTarget } from "../deepLink";
-import { buildNotificationEvents, notificationId, todayIso, type NotificationEvent } from "./events";
+import { getStaleDaysThreshold } from "../showStatus";
+import {
+  notificationId,
+  planNotifications,
+  selectForDelivery,
+  todayIso,
+  type ExcludedRelease,
+  type NotificationEvent,
+} from "./events";
 import { clearSchedule, openSystemNotificationSettings, pushSchedule, toScheduledNotification } from "./bridge";
+import { watchEligibilityInputs } from "./triggers";
 import {
   kindEnabled,
   markPermissionRequested,
@@ -188,6 +197,18 @@ let running: Promise<number> | null = null;
 let rerunRequested = false;
 
 /**
+ * Releases the last run found and left out, with the reason for each. Kept
+ * for Diagnostics, so "why was I not told about X" (or the reverse) has an
+ * answer from the run that actually decided it. Empty until a run happens,
+ * which on the browser build is never.
+ */
+let lastExcluded: ExcludedRelease[] = [];
+
+export function lastExcludedReleases(): readonly ExcludedRelease[] {
+  return lastExcluded;
+}
+
+/**
  * Reconciles the native schedule with what the library currently implies.
  *
  * Idempotent by construction: the payload REPLACES whatever was stored, and
@@ -234,20 +255,20 @@ async function reconcileSchedule(): Promise<number> {
     () => {}
   );
 
-  const [shows, episodes, movies] = await Promise.all([
+  const [shows, episodes, watched, movies] = await Promise.all([
     db.shows.toArray(),
     db.episodes.toArray(),
+    db.watchedEpisodes.toArray(),
     db.movies.toArray(),
   ]);
 
-  const today = todayIso();
-  const wanted = buildNotificationEvents(shows, episodes, movies)
-    .filter((e) => kindEnabled(e.kind))
-    // Belt and braces. buildNotificationEvents already emits only today and
-    // later; this keeps a date-boundary race (the run straddling midnight)
-    // from handing native a release from yesterday, which it would post.
-    .filter((e) => e.date >= today)
-    .slice(0, MAX_SCHEDULED);
+  // Watch history is read on every run, not cached between them: eligibility
+  // is decided here, from the library as it is now, and the result replaces
+  // the whole native schedule - so nothing queued by an earlier run, or by an
+  // earlier build, outlives the rule it was decided under.
+  const plan = planNotifications(shows, episodes, watched, movies, new Date(), getStaleDaysThreshold());
+  lastExcluded = plan.excluded;
+  const wanted = selectForDelivery(plan.events, kindEnabled, todayIso(), MAX_SCHEDULED);
 
   await pushSchedule(
     wanted.map((event) =>
@@ -283,6 +304,21 @@ export function requestNotificationSync(): void {
     resyncTimer = null;
     syncScheduledNotifications().catch(() => {});
   }, RESYNC_DEBOUNCE_MS);
+}
+
+/**
+ * Reschedules after any library write that can change which shows may be
+ * announced: a watch recorded or removed, a show stopped, resumed, added or
+ * removed, an import or a restore. See ./triggers.ts.
+ *
+ * Without it the schedule only caught up at the next resume, so a show the
+ * user had just stopped could still be announced by what was already queued.
+ * Registered once from App; only on the native build, where there is a
+ * schedule to keep current. Returns the cleanup.
+ */
+export function initNotificationRescheduling(): () => void {
+  if (!notificationsSupported()) return () => {};
+  return watchEligibilityInputs(requestNotificationSync);
 }
 
 /** Drops every queued notification. Called when the user turns the feature off. */

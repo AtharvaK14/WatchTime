@@ -14,6 +14,7 @@
     "check:streaming": "tsx scripts/check-streaming.ts",
     "check:notifications": "tsx scripts/check-notifications.ts",
     "check:season-association": "tsx scripts/check-season-association.ts",
+    "check:notification-eligibility": "tsx scripts/check-notification-eligibility.ts",
     "preview": "vite preview",
     "cap:sync": "npm run build && npx cap sync android",
     "cap:open": "npx cap open android"

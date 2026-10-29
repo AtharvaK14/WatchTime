@@ -60,8 +60,16 @@ public final class ReleaseNotifier {
     private static final String KEY_SCHEDULE = "schedule";
     private static final String KEY_POSTED = "posted";
 
-    /** Must match SCHEDULE_PAYLOAD_VERSION in src/lib/notifications/bridge.ts. */
-    private static final int SUPPORTED_VERSION = 1;
+    /**
+     * Must match SCHEDULE_PAYLOAD_VERSION in src/lib/notifications/bridge.ts.
+     *
+     * 2 is the version whose schedules only hold releases of shows the user is
+     * actively following. A version-1 schedule left by the previous build is
+     * deliberately unreadable here: it was decided under the old rule and can
+     * hold releases of shows never started, and MY_PACKAGE_REPLACED would
+     * otherwise deliver from it before the updated app had run once.
+     */
+    private static final int SUPPORTED_VERSION = 2;
 
     /**
      * Unchanged from the channel the Capacitor implementation created, so an
@@ -260,6 +268,15 @@ public final class ReleaseNotifier {
      */
     static List<Entry> deliverDue(Context context) {
         List<Entry> entries = schedule(context);
+        // Nothing readable to deliver - an empty schedule, or one an older
+        // build stored that this one will not deliver from. The posted set is
+        // left exactly as it is: pruning it against nothing would forget what
+        // was already shown today, and the schedule the app pushes next would
+        // then post it a second time.
+        if (entries.isEmpty()) {
+            arm(context);
+            return new ArrayList<>();
+        }
         Set<String> posted = readPosted(context);
         long now = System.currentTimeMillis();
 
