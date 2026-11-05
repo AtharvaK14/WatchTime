@@ -4,7 +4,8 @@ import { db, type Show } from "../db";
 import { TMDB_IMAGE_BASE, getTvGenres, type Genre } from "../tmdb";
 import { computeWatchStatus, type ShowWatchStatus } from "../lib/showWatchStatus";
 import { isStoppedWatching } from "../lib/stoppedWatching";
-import { useShowStats, toDurationParts } from "../lib/stats";
+import { useShowStats } from "../lib/stats";
+import StatTiles, { DurationValue } from "../components/StatTiles";
 import { libraryKey, removalClass, useRemovalExit } from "../lib/libraryRemoval";
 import { useFlipLayout } from "../lib/useFlipLayout";
 import DetailsPanel from "../components/DetailsPanel";
@@ -13,6 +14,10 @@ import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
 import { useIsMobile } from "../lib/useIsMobile";
+import { titleQuickActionProps } from "../lib/titleQuickActions";
+import { episodeWatchCount } from "../lib/watchHistory";
+import { searchOrBrowse } from "../lib/librarySearch";
+import { ShowStatsDialog } from "../components/StatsDialog";
 
 type SortKey = "name" | "mostWatched" | "recentlyWatched" | "recentlyAdded";
 type FilterKey = "all" | "following" | "stopped" | "currentlyWatching";
@@ -39,11 +44,18 @@ const showKey = (show: Show) => libraryKey("show", show.tmdbId);
 export default function Library() {
   const isMobile = useIsMobile();
   const shows = useLiveQuery(() => db.shows.toArray(), []);
+  // Per show: unique episodes watched (the progress bar: how far through the
+  // show you are) and viewing events (Most watched: rewatches count, since a
+  // show watched twice has been watched more than one watched once).
   const watchedCounts = useLiveQuery(async () => {
     const all = await db.watchedEpisodes.toArray();
-    const counts = new Map<number, number>();
-    for (const w of all) counts.set(w.showId, (counts.get(w.showId) ?? 0) + 1);
-    return counts;
+    const unique = new Map<number, number>();
+    const views = new Map<number, number>();
+    for (const w of all) {
+      unique.set(w.showId, (unique.get(w.showId) ?? 0) + 1);
+      views.set(w.showId, (views.get(w.showId) ?? 0) + episodeWatchCount(w));
+    }
+    return { unique, views };
   }, []);
   const [openDetails, setOpenDetails] = useState<number | null>(null);
   const [query, setQuery] = useState("");
@@ -64,6 +76,7 @@ export default function Library() {
   // the work still in progress.
   const [statusesReady, setStatusesReady] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
 
   const stats = useShowStats();
 
@@ -98,26 +111,29 @@ export default function Library() {
     };
   }, [shows]);
 
-  const visible = useMemo(() => {
-    if (!shows) return [];
-    let list = shows;
+  const { visible, searching } = useMemo(() => {
+    if (!shows) return { visible: [], searching: false };
 
-    if (filterKey === "following") list = list.filter((s) => s.isFollowed && !isStoppedWatching(s));
-    if (filterKey === "stopped") list = list.filter(isStoppedWatching);
-    // Stopped shows are excluded rather than merely not-preferred: computeWatchStatus
-    // only knows about episodes, so a stopped show with a backlog looks exactly
-    // like one in progress to it, and two filters claiming the same show say
-    // different things about what the user is doing.
-    if (filterKey === "currentlyWatching") {
-      list = list.filter((s) => !isStoppedWatching(s) && statusByShow.get(s.tmdbId) === "currently-watching");
-    }
-
-    if (genreFilter !== null) list = list.filter((s) => s.genreIds?.includes(genreFilter));
-
-    if (query.trim()) {
-      const q = query.trim().toLowerCase();
-      list = list.filter((s) => s.name.toLowerCase().includes(q));
-    }
+    // The browsing filters. A search sets these aside instead of narrowing
+    // them further (see lib/librarySearch.ts): the selection is kept, and
+    // applies again when the search is cleared.
+    const browse = (s: Show) => {
+      if (filterKey === "following" && !(s.isFollowed && !isStoppedWatching(s))) return false;
+      if (filterKey === "stopped" && !isStoppedWatching(s)) return false;
+      // Stopped shows are excluded rather than merely not-preferred: computeWatchStatus
+      // only knows about episodes, so a stopped show with a backlog looks exactly
+      // like one in progress to it, and two filters claiming the same show say
+      // different things about what the user is doing.
+      if (
+        filterKey === "currentlyWatching" &&
+        !(!isStoppedWatching(s) && statusByShow.get(s.tmdbId) === "currently-watching")
+      ) {
+        return false;
+      }
+      if (genreFilter !== null && !s.genreIds?.includes(genreFilter)) return false;
+      return true;
+    };
+    const { items: list, searching } = searchOrBrowse(shows, query, (s) => s.name, browse);
 
     const sorted = [...list];
     switch (sortKey) {
@@ -125,7 +141,7 @@ export default function Library() {
         sorted.sort((a, b) => a.name.localeCompare(b.name));
         break;
       case "mostWatched":
-        sorted.sort((a, b) => (watchedCounts?.get(b.tmdbId) ?? 0) - (watchedCounts?.get(a.tmdbId) ?? 0));
+        sorted.sort((a, b) => (watchedCounts?.views.get(b.tmdbId) ?? 0) - (watchedCounts?.views.get(a.tmdbId) ?? 0));
         break;
       case "recentlyWatched":
         sorted.sort((a, b) => (b.lastWatchedAt ?? "").localeCompare(a.lastWatchedAt ?? ""));
@@ -134,8 +150,9 @@ export default function Library() {
         sorted.sort((a, b) => b.addedAt.localeCompare(a.addedAt));
         break;
     }
-    return sorted;
+    return { visible: sorted, searching };
   }, [shows, query, sortKey, filterKey, genreFilter, watchedCounts, statusByShow]);
+  const filtersSetAside = searching && (filterKey !== "all" || genreFilter !== null);
 
   // A show removed through the panel this page opens keeps its card until the
   // panel closes; the card is then highlighted, leaves, and the grid closes
@@ -146,26 +163,34 @@ export default function Library() {
 
   if (!shows) return <p className="muted">Loading...</p>;
 
-  const duration = toDurationParts(stats.totalMinutes);
-
   return (
     <div className="panel">
       <h1 className="sr-only">Shows</h1>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-value">
-            {duration.months}<span className="stat-unit">mo</span> {duration.days}
-            <span className="stat-unit">d</span> {duration.hours}
-            <span className="stat-unit">h</span>
-          </div>
-          <div className="stat-label">TV time</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{stats.loading ? "..." : stats.distinctEpisodesWatched.toLocaleString()}</div>
-          <div className="stat-label">Episodes watched</div>
-        </div>
-      </div>
+      {/* The two headline numbers; everything else (unique episodes,
+          rewatches, show states, seasons, most watched, by month) is one tap
+          away in the statistics dialog, from the same calculations. Episodes
+          watched counts viewing events, rewatches included - the same count
+          TV time is built from; the unique figure is in the dialog. */}
+      <StatTiles
+        label="Show statistics: TV time and episodes watched. Open for details"
+        onOpen={() => setStatsOpen(true)}
+        tiles={[
+          { label: "TV time", value: <DurationValue minutes={stats.totalMinutes} /> },
+          {
+            label: "Episodes watched",
+            value: stats.loading ? "..." : stats.episodeWatchEvents.toLocaleString(),
+          },
+        ]}
+      />
+      {statsOpen && (
+        <ShowStatsDialog
+          totalMinutes={stats.totalMinutes}
+          statusByShow={statusByShow}
+          statusesReady={statusesReady}
+          onClose={() => setStatsOpen(false)}
+        />
+      )}
       {stats.backfilling && stats.backfillProgress && (
         <p className="muted small">
           Fetching runtime data for shows added before this feature existed: {stats.backfillProgress.done} /{" "}
@@ -230,8 +255,18 @@ export default function Library() {
             </FilterSheet>
           </div>
 
+          {/* Said once, quietly, so a search that finds a stopped or finished
+              show does not look like the filter stopped working. */}
+          {filtersSetAside && (
+            <p className="muted small search-scope-note">
+              Searching all your shows. Your filters apply again when you clear the search.
+            </p>
+          )}
+
           {display.length === 0 &&
-            (filterKey === "currentlyWatching" && !statusesReady ? (
+            (searching ? (
+              <p className="muted">No shows in your library match &ldquo;{query.trim()}&rdquo;.</p>
+            ) : filterKey === "currentlyWatching" && !statusesReady ? (
               <p className="muted">Working out which shows you're currently watching...</p>
             ) : (
               <p className="muted">No shows match that search/filter.</p>
@@ -245,6 +280,12 @@ export default function Library() {
                 className={`show-card${removalClass(removal)}`}
                 role="button"
                 tabIndex={0}
+                {...titleQuickActionProps({
+                  kind: "show",
+                  tmdbId: show.tmdbId,
+                  name: show.name,
+                  onViewDetails: () => setOpenDetails(show.tmdbId),
+                })}
                 onClick={() => setOpenDetails(show.tmdbId)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
@@ -267,7 +308,7 @@ export default function Library() {
                   <div className="poster-progress">
                     <span
                       style={{
-                        width: `${Math.min(100, ((watchedCounts?.get(show.tmdbId) ?? 0) / show.numberOfEpisodes) * 100)}%`,
+                        width: `${Math.min(100, ((watchedCounts?.unique.get(show.tmdbId) ?? 0) / show.numberOfEpisodes) * 100)}%`,
                       }}
                     />
                   </div>

@@ -1,10 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { db, type Episode, type Movie } from "../db";
+import { db, type Episode, type WatchedEpisode } from "../db";
 import { getTvShowDetails, getMovieDetails, TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE } from "../tmdb";
 import { getOmdbRatings, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbRatings } from "../omdb";
 import { averageRuntime } from "../lib/runtime";
 import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount, unconfirmedSeasons } from "../lib/episodeSync";
-import { ensureEpisodesWatched, recordEpisodeRewatch, recordMovieRewatch } from "../lib/watchEvents";
+import {
+  ensureEpisodesWatched,
+  markEpisodesUnwatched,
+  recordEpisodeRewatch,
+  recordMovieRewatch,
+  removeLatestEpisodeViewing,
+  removeLatestMovieViewing,
+  setEpisodesWatchedOnce,
+  setMovieWatchedOnce,
+} from "../lib/watchEvents";
+import { episodeWatchCount, movieWatchCount, repeatLabel, summarize, summarizeShow, viewingsInWords } from "../lib/watchHistory";
+import { movieRecord, showRecord } from "../lib/library";
+import { contextActionProps, rectAnchor, type MenuAnchor } from "../lib/contextActions";
+import { episodeActions, seasonActions, viewingStatusActions, type QuickActionSpec } from "../lib/quickActions";
+import { openQuickMenu, type QuickMenuEntry } from "../lib/quickMenu";
+import { showErrorToast } from "../lib/toast";
 import { isStoppedWatching, resumeWatchingShow, stopWatchingShow } from "../lib/stoppedWatching";
 import { cancelRemoval, holdRemoval, playRemoval, removeFromLibrary } from "../lib/libraryRemoval";
 // Aliased: this component's own movieWatched state setter has the same name.
@@ -13,6 +28,7 @@ import {
   holdMovieWatched,
   playMovieWatched,
   setMovieWatched as writeMovieWatched,
+  type MovieMark,
 } from "../lib/movieWatched";
 import { requestNotificationSync } from "../lib/notifications";
 import { useDraggableSheet, DISMISS_ANIMATION_MS } from "../lib/useDraggableSheet";
@@ -24,9 +40,26 @@ import { prefersReducedMotion, useAnimatedDismiss } from "../lib/useAnimatedDism
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
 import ExpandableText from "./ExpandableText";
 import StreamingCapsules from "./StreamingCapsules";
+import { KebabIcon } from "./icons";
+import WatchMark from "./WatchMark";
 
 /** Matches the reverse of the desktop-modal-in keyframes in index.css. */
 const DESKTOP_MODAL_EXIT_MS = 180;
+/** Matches .watch-toggle.is-confirmed in index.css. */
+const WATCH_CONFIRM_MS = 420;
+/** How long a removed viewing's "-1" stays in the tick before the new count. */
+const WATCH_MINUS_MS = 900;
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const episodeCode = (ep: Pick<Episode, "seasonNumber" | "episodeNumber">) => `S${ep.seasonNumber} | E${ep.episodeNumber}`;
+
+/** Quick-action specs to menu entries, keeping only the ones this context can run. */
+function toEntries(specs: QuickActionSpec[], runs: Partial<Record<string, QuickMenuEntry["run"]>>): QuickMenuEntry[] {
+  return specs.flatMap((spec) => {
+    const run = runs[spec.id];
+    return run ? [{ id: spec.id, label: spec.label, danger: spec.danger, checked: spec.checked, run }] : [];
+  });
+}
 
 interface Props {
   kind: "show" | "movie";
@@ -131,6 +164,9 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   const [error, setError] = useState<string | null>(null);
 
   const [seasonNumbers, setSeasonNumbers] = useState<number[] | null>(null);
+  // TMDB's own season titles, from the details response this panel already
+  // loads. Shown beside "Season N" only when they say something more.
+  const [seasonNames, setSeasonNames] = useState<ReadonlyMap<number, string>>(new Map());
   const [expandedSeason, setExpandedSeason] = useState<number | null>(null);
   const [loadingSeason, setLoadingSeason] = useState<number | null>(null);
   const [episodesInDb, setEpisodesInDb] = useState<Episode[]>([]);
@@ -138,7 +174,25 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // Total watch events per episode key, so the episode panel can show a live
   // rewatch count (+N) as "Watch again" is pressed.
   const [watchCountByKey, setWatchCountByKey] = useState<Map<string, number>>(new Map());
+  // The rows themselves, for the show-level counts (lib/watchHistory.ts).
+  const [watchedRows, setWatchedRows] = useState<WatchedEpisode[]>([]);
   const [openEpisode, setOpenEpisode] = useState<Episode | null>(null);
+  // Episodes with a write in flight. A second tap on the same tick (or a menu
+  // choice for it) while the first is still saving is ignored, so a double tap
+  // can never record two viewings or race a "Not watched" against a rewatch.
+  // A ref, not state: it is checked synchronously by the very next tap.
+  const busyKeys = useRef(new Set<string>());
+  // Ticks acknowledging a change made from the tick menu: "pop" plays the
+  // "it saved" pop, "minus" shows "-1" in place of the count for a moment
+  // after a viewing is removed.
+  const [confirmedKeys, setConfirmedKeys] = useState<ReadonlyMap<string, "pop" | "minus">>(new Map());
+  const confirmTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (confirmTimer.current !== null) window.clearTimeout(confirmTimer.current);
+    },
+    []
+  );
 
   // Collapsing returns the sheet to the top of its content.
   //
@@ -163,10 +217,14 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // lists it no longer belongs on once the panel is gone.
   const removedHere = useRef(false);
   const watchedHere = useRef(false);
+  // What the held card shows when the panel closes: the green tick or count,
+  // "-1", or the red X for a movie unmarked here. The last change made in the
+  // panel decides it.
+  const heldMark = useRef<MovieMark>({ kind: "watched", count: 1 });
   useEffect(() => {
     return () => {
       if (removedHere.current) playRemoval(kind, tmdbId);
-      if (watchedHere.current) playMovieWatched(tmdbId);
+      if (watchedHere.current) playMovieWatched(tmdbId, heldMark.current);
       removedHere.current = false;
       watchedHere.current = false;
     };
@@ -231,6 +289,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
             imdbId: d.external_ids?.imdb_id ?? null,
             genres: d.genres.map((g) => g.name),
           });
+          setSeasonNames(new Map(d.seasons.map((season) => [season.season_number, season.name])));
           // Checked after every await, not just the first: a load superseded by
           // another title must not go on to write this show's library state,
           // seasons or episodes into the panel now showing the other one.
@@ -300,7 +359,8 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     ]);
     setEpisodesInDb(eps);
     setWatchedKeys(new Set(watched.map((w) => w.key)));
-    setWatchCountByKey(new Map(watched.map((w) => [w.key, w.watchCount ?? 1])));
+    setWatchCountByKey(new Map(watched.map((w) => [w.key, episodeWatchCount(w)])));
+    setWatchedRows(watched);
   }
 
   async function toggleExpand(seasonNumber: number) {
@@ -342,21 +402,74 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     null
   );
 
+  /**
+   * Every episode write in this panel goes through here: skipped (resolving
+   * undefined) while any of the same episodes is already saving, and followed
+   * by a re-read, so what the panel shows is always what the database holds -
+   * after a failure as much as after a success. Rejects when the write failed;
+   * nothing is drawn as saved before it has been.
+   */
+  async function episodeWrite<T>(eps: { key: string }[], write: () => Promise<T>): Promise<T | undefined> {
+    if (eps.length === 0 || eps.some((e) => busyKeys.current.has(e.key))) return undefined;
+    for (const e of eps) busyKeys.current.add(e.key);
+    try {
+      return await write();
+    } finally {
+      for (const e of eps) busyKeys.current.delete(e.key);
+      await refreshWatchedAndEpisodes().catch(() => {});
+    }
+  }
+
+  /**
+   * The tick's acknowledgement, for changes that would otherwise be easy to
+   * miss: the "it saved" pop, or "-1" for a removed viewing (held a little
+   * longer, so it can be read before the new count replaces it). Only called
+   * after a write lands.
+   */
+  function confirmVisually(keys: string[], how: "pop" | "minus" = "pop") {
+    if (confirmTimer.current !== null) window.clearTimeout(confirmTimer.current);
+    setConfirmedKeys(new Map(keys.map((k) => [k, how])));
+    confirmTimer.current = window.setTimeout(
+      () => {
+        confirmTimer.current = null;
+        setConfirmedKeys(new Map());
+      },
+      how === "minus" ? WATCH_MINUS_MS : WATCH_CONFIRM_MS
+    );
+  }
+
   // Idempotent "make these count as watched" via the shared write path:
   // already-watched rows keep their history (the old inline bulkPut reset
   // imported watchCounts back to 1), and Show.lastWatchedAt gets bumped so
   // panel-marked activity counts as activity for the Watch Next split
   // (previously only Home's checkmark did that).
-  async function markEpisodesWatched(eps: Episode[]) {
-    await ensureEpisodesWatched(tmdbId, eps);
-    await refreshWatchedAndEpisodes();
+  function markEpisodesWatched(eps: Episode[]) {
+    return episodeWrite(eps, () => ensureEpisodesWatched(tmdbId, eps));
   }
 
   // One more watch EVENT for already-watched episodes: watchCount + latest
   // date bump, one row per episode forever.
-  async function rewatchEpisodes(eps: Episode[]) {
-    await recordEpisodeRewatch(tmdbId, eps);
-    await refreshWatchedAndEpisodes();
+  function rewatchEpisodes(eps: Episode[]) {
+    return episodeWrite(eps, () => recordEpisodeRewatch(tmdbId, eps));
+  }
+
+  /** Back to one viewing each, keeping the original viewing date. */
+  function setWatchedOnce(eps: Episode[]) {
+    return episodeWrite(eps, () => setEpisodesWatchedOnce(tmdbId, eps));
+  }
+
+  /** Remove last viewing: undoes the most recent rewatch only; the episode stays watched (see removeLatestEpisodeViewing). */
+  async function removeLastViewing(ep: Episode) {
+    const count = await episodeWrite([ep], () => removeLatestEpisodeViewing(tmdbId, ep));
+    if (count !== undefined) confirmVisually([ep.key], "minus");
+    return count;
+  }
+
+  /** Not watched: the rows go, which is what unwatched is in this data model (see markEpisodesUnwatched). */
+  async function unmarkEpisodes(eps: Episode[]) {
+    const removed = await episodeWrite(eps, () => markEpisodesUnwatched(tmdbId, eps));
+    if (removed !== undefined) setCatchUpOffer(null);
+    return removed;
   }
 
   /**
@@ -379,15 +492,17 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     });
   }
 
-  async function toggleEpisodeWatched(ep: Episode) {
-    if (!inLibrary) return;
+  /**
+   * The episode panel's Mark as Watched / Mark as Unwatched, and the first
+   * tap on an unwatched tick. A first watch keeps the catch-up offer it has
+   * always had. Rejects if the write failed.
+   */
+  async function toggleEpisodeWatched(ep: Episode): Promise<boolean> {
+    if (!inLibrary) return false;
     if (watchedKeys.has(ep.key)) {
-      await db.watchedEpisodes.delete(ep.key);
-      await refreshWatchedAndEpisodes();
-      setCatchUpOffer(null);
-      return;
+      return (await unmarkEpisodes([ep])) !== undefined;
     }
-    await markEpisodesWatched([ep]);
+    if ((await markEpisodesWatched([ep])) === undefined) return false;
 
     const seasonEps = episodesBySeason.get(ep.seasonNumber) ?? [];
     const episodesInSeason = seasonEps.filter((e) => e.episodeNumber < ep.episodeNumber && !watchedKeys.has(e.key));
@@ -397,75 +512,172 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
         ? { episodesInSeason, earlierSeasonNumbers }
         : null
     );
+    return true;
   }
 
-  async function toggleSeasonWatched(seasonEpisodes: Episode[], markWatched: boolean) {
-    if (!inLibrary) return;
+  /** Rejects if the write failed; resolves false if it was skipped because the season was already saving. */
+  async function toggleSeasonWatched(seasonEpisodes: Episode[], markWatched: boolean): Promise<boolean> {
+    if (!inLibrary) return false;
     if (markWatched) {
-      await markEpisodesWatched(seasonEpisodes);
+      if ((await markEpisodesWatched(seasonEpisodes)) === undefined) return false;
       const thisSeason = seasonEpisodes[0]?.seasonNumber;
       const earlierSeasonNumbers = thisSeason === undefined ? [] : earlierSeasonsNeedingCatchUp(thisSeason);
       setCatchUpOffer(earlierSeasonNumbers.length > 0 ? { episodesInSeason: [], earlierSeasonNumbers } : null);
-    } else {
-      await db.watchedEpisodes.bulkDelete(seasonEpisodes.map((ep) => ep.key));
-      await refreshWatchedAndEpisodes();
-      setCatchUpOffer(null);
+      return true;
     }
+    return (await unmarkEpisodes(seasonEpisodes)) !== undefined;
+  }
+
+  /**
+   * The season's "Watch again": one more viewing of every episode in it, so
+   * its season watch count goes up by exactly one. Only offered once the
+   * whole season has been watched. Returns the confirmation, or undefined if
+   * the season was already saving.
+   */
+  async function rewatchSeason(seasonNumber: number, seasonEpisodes: Episode[]): Promise<string | undefined> {
+    const before = summarize(seasonEpisodes, new Map(watchedRows.map((w) => [w.key, w])));
+    if ((await rewatchEpisodes(seasonEpisodes)) === undefined) return undefined;
+    confirmVisually(seasonEpisodes.map((e) => e.key));
+    return `Season ${seasonNumber} marked as watched again. Watched ${before.completions + 1}× in total.`;
+  }
+
+  /**
+   * The indicator on a watched episode (its green tick, or its viewing count):
+   * the viewing-status choices instead of an instant unmark - the same list a
+   * watched movie's indicator offers (viewingStatusActions). Opening or
+   * dismissing the menu changes nothing; only a choice writes, and the tick
+   * acknowledges it only once that write has landed.
+   */
+  function openTickMenu(ep: Episode, el: HTMLElement) {
+    const count = watchCountByKey.get(ep.key) ?? 0;
+    openQuickMenu({
+      anchor: rectAnchor(el),
+      target: el,
+      label: `${episodeCode(ep)} ${ep.name}: viewing status`,
+      title: ep.name,
+      subtitle: `${episodeCode(ep)} · ${viewingsInWords(count)}`,
+      entries: toEntries(viewingStatusActions(count), {
+        "watched-once": async () => {
+          if (count === 1) return; // already the case: nothing to write
+          if ((await setWatchedOnce([ep])) !== undefined) confirmVisually([ep.key]);
+        },
+        "watched-again": async () => {
+          if ((await rewatchEpisodes([ep])) !== undefined) confirmVisually([ep.key]);
+        },
+        "remove-last": async () => void (await removeLastViewing(ep)),
+        "not-watched": async () => void (await unmarkEpisodes([ep])),
+      }),
+    });
+  }
+
+  /** Quick Actions on an episode row: the same operations as its tick and its panel. */
+  function openEpisodeMenu(ep: Episode, anchor: MenuAnchor, el: HTMLElement) {
+    const count = watchCountByKey.get(ep.key) ?? 0;
+    openQuickMenu({
+      anchor,
+      target: el,
+      label: `${episodeCode(ep)} ${ep.name}: quick actions`,
+      title: ep.name,
+      subtitle: `${episodeCode(ep)}${inLibrary ? ` · ${viewingsInWords(count)}` : ""}`,
+      entries: toEntries(episodeActions({ inLibrary, watchCount: count }), {
+        "mark-watched": async () => {
+          if (!(await toggleEpisodeWatched(ep))) return;
+          return `${episodeCode(ep)} marked as watched.`;
+        },
+        "watched-again": async () => {
+          if ((await rewatchEpisodes([ep])) === undefined) return;
+          confirmVisually([ep.key]);
+          return `${episodeCode(ep)} watched again. ${count + 1}× in total.`;
+        },
+        "remove-last": async () => {
+          const now = await removeLastViewing(ep);
+          if (now === undefined) return;
+          return `Removed the last viewing of ${episodeCode(ep)}. ${viewingsInWords(now)} now.`;
+        },
+        "mark-unwatched": async () => {
+          if ((await unmarkEpisodes([ep])) === undefined) return;
+          return `${episodeCode(ep)} marked as unwatched.`;
+        },
+        "episode-details": () => setOpenEpisode(ep),
+      }),
+    });
+  }
+
+  /**
+   * Quick Actions on a season header. Its episodes are read (and fetched, the
+   * first time) when the menu opens, so the choices match the season as it
+   * is, including one that has never been expanded.
+   */
+  async function openSeasonMenu(seasonNumber: number, anchor: MenuAnchor, el: HTMLElement) {
+    let eps: Episode[] = [];
+    let watched: (WatchedEpisode | undefined)[] = [];
+    try {
+      if (inLibrary) {
+        await ensureSeasonCached(tmdbId, seasonNumber);
+        eps = (await db.episodes.where("[showId+seasonNumber]").equals([tmdbId, seasonNumber]).toArray()).sort(
+          (a, b) => a.episodeNumber - b.episodeNumber
+        );
+        watched = await db.watchedEpisodes.bulkGet(eps.map((e) => e.key));
+      }
+    } catch (e) {
+      showErrorToast(e, "open the menu");
+      return;
+    }
+    const watchedCount = watched.filter(Boolean).length;
+    const viewOpen = () => {
+      if (expandedSeason !== seasonNumber) void toggleExpand(seasonNumber);
+      el.scrollIntoView({ block: "nearest" });
+    };
+    openQuickMenu({
+      anchor,
+      target: el,
+      label: `Season ${seasonNumber}: quick actions`,
+      title: `Season ${seasonNumber}`,
+      subtitle: inLibrary && eps.length > 0 ? `${watchedCount} of ${plural(eps.length, "episode")} watched` : undefined,
+      entries: toEntries(seasonActions({ inLibrary, total: eps.length, watched: watchedCount }), {
+        "mark-watched": async () => {
+          if (!(await toggleSeasonWatched(eps, true))) return;
+          return `Season ${seasonNumber} marked as watched.`;
+        },
+        "watched-again": () => rewatchSeason(seasonNumber, eps),
+        "mark-unwatched": async () => {
+          if (!(await toggleSeasonWatched(eps, false))) return;
+          return `Season ${seasonNumber} marked as unwatched.`;
+        },
+        "season-details": viewOpen,
+      }),
+    });
   }
 
   async function acceptCatchUp() {
     if (!catchUpOffer) return;
-    for (const seasonNumber of catchUpOffer.earlierSeasonNumbers) {
-      await ensureSeasonCached(tmdbId, seasonNumber);
+    try {
+      for (const seasonNumber of catchUpOffer.earlierSeasonNumbers) {
+        await ensureSeasonCached(tmdbId, seasonNumber);
+      }
+      const freshEpisodes =
+        catchUpOffer.earlierSeasonNumbers.length > 0
+          ? await db.episodes.where("showId").equals(tmdbId).toArray()
+          : [];
+      const fromEarlierSeasons = freshEpisodes.filter((e) => catchUpOffer.earlierSeasonNumbers.includes(e.seasonNumber));
+      if ((await markEpisodesWatched([...catchUpOffer.episodesInSeason, ...fromEarlierSeasons])) === undefined) return;
+    } catch (e) {
+      showErrorToast(e);
+      return;
     }
-    const freshEpisodes =
-      catchUpOffer.earlierSeasonNumbers.length > 0
-        ? await db.episodes.where("showId").equals(tmdbId).toArray()
-        : [];
-    const fromEarlierSeasons = freshEpisodes.filter((e) => catchUpOffer.earlierSeasonNumbers.includes(e.seasonNumber));
-    await markEpisodesWatched([...catchUpOffer.episodesInSeason, ...fromEarlierSeasons]);
     setCatchUpOffer(null);
-  }
-
-  // Shared by "Add to Movies" (unwatched) and "Add & mark watched": one
-  // record shape, so the two paths can't drift apart.
-  function buildMovieRecord(watched: boolean, d: CoreDetails): Movie {
-    return {
-      tmdbId,
-      title: d.name,
-      posterPath: d.posterPath,
-      releaseYear: d.releaseDate ? Number(d.releaseDate.slice(0, 4)) : null,
-      releaseDate: d.releaseDate ?? null,
-      watched,
-      watchedAt: watched ? new Date().toISOString() : null,
-      wantsToWatch: !watched,
-      runtimeMinutes: d.runtimeMinutes ?? null,
-      imdbId: d.imdbId ?? null,
-      addedAt: new Date().toISOString(),
-    };
   }
 
   async function handleAdd() {
     if (!details) return;
+    // The record shapes live in lib/library.ts, shared with Quick Actions'
+    // Add on a Discover or For You card, so the two adds cannot drift apart.
     if (kind === "show") {
-      await db.shows.put({
-        tmdbId,
-        name: details.name,
-        posterPath: details.posterPath,
-        firstAirYear: details.releaseDate ? Number(details.releaseDate.slice(0, 4)) : null,
-        status: details.status ?? "",
-        addedAt: new Date().toISOString(),
-        isFollowed: true,
-        isArchived: false,
-        lastWatchedAt: null,
-        episodeRuntimeMinutes: details.episodeRuntimeMinutes ?? null,
-        numberOfEpisodes: details.numberOfEpisodes ?? null,
-        imdbId: details.imdbId ?? null,
-      });
+      await db.shows.put(showRecord(tmdbId, details));
       await refreshWatchedAndEpisodes();
       setStopped(false);
     } else {
-      await db.movies.put(buildMovieRecord(false, details));
+      await db.movies.put(movieRecord(tmdbId, false, details));
     }
     setInLibrary(true);
     setAdded(true);
@@ -487,48 +699,98 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
    * the library on neither list, mirroring the Home rail round trip.
    */
   async function toggleMovieWatched() {
-    if (kind !== "movie" || !details || savingWatched) return;
+    if (kind !== "movie" || !details) return;
     const marking = !inLibrary || !movieWatched;
-    setSavingWatched(true);
-    setWatchError(null);
-    // Held before the write, for the same reason as a removal: the lists can
-    // re-render without the movie before the write's promise resolves.
-    if (marking) holdMovieWatched(tmdbId);
-    try {
-      if (!inLibrary) {
-        await db.movies.put(buildMovieRecord(true, details));
+    const wasInLibrary = inLibrary;
+    const done = await moviePanelWrite(async () => {
+      if (!wasInLibrary) {
+        await db.movies.put(movieRecord(tmdbId, true, details));
         requestNotificationSync();
-      } else {
-        // The shared write path, so this and the card ticks cannot disagree
-        // about what "watched" does to the watchlist.
-        await writeMovieWatched(tmdbId, marking);
+        return { kind: "watched", count: 1 };
       }
-    } catch (e) {
-      // Nothing changed, so this attempt's hold is released and nothing
-      // animates for it. A failed UNmark leaves an earlier mark standing, and
-      // with it that mark's hold: the movie is still watched.
-      if (marking) {
-        cancelMovieWatched(tmdbId);
-        watchedHere.current = false;
-      }
-      setWatchError(e instanceof Error ? e.message : String(e));
-      setSavingWatched(false);
-      return;
-    }
-    if (marking) {
-      watchedHere.current = true;
-    } else if (watchedHere.current) {
-      // Marked and unmarked again before closing: nothing to show.
-      cancelMovieWatched(tmdbId);
-      watchedHere.current = false;
-    }
-    if (!inLibrary) {
+      // The shared write path, so this and the card ticks cannot disagree
+      // about what "watched" does to the watchlist.
+      await writeMovieWatched(tmdbId, marking);
+      if (!marking) return { kind: "unwatched" };
+      const stored = await db.movies.get(tmdbId);
+      return { kind: "watched", count: stored ? movieWatchCount(stored) : 1 };
+    });
+    if (done && !wasInLibrary) {
       setInLibrary(true);
       setAdded(true);
       keepInLibrary();
     }
-    setMovieWatched(marking);
-    setSavingWatched(false);
+  }
+
+  // Where the movie stood when this panel first changed it, so changing it
+  // and changing it back before closing plays nothing on the card.
+  const movieStart = useRef<{ watched: boolean; count: number } | null>(null);
+
+  /**
+   * Every change to a movie's viewings made in this panel: watched, not
+   * watched, watched again, remove last viewing, watched once.
+   *
+   * The movie's card is under the panel, so it is held from BEFORE the write
+   * (the lists can re-render without it before the write's promise resolves)
+   * and plays the acknowledgement the last change earned - the green tick or
+   * count, "-1", or the red X - once the panel closes. A failed write releases
+   * a hold it started and says why; nothing animates for a change that did
+   * not happen. The panel's own state is re-read from the database after.
+   */
+  async function moviePanelWrite(write: () => Promise<MovieMark>): Promise<boolean> {
+    if (kind !== "movie" || savingWatched) return false;
+    setSavingWatched(true);
+    setWatchError(null);
+    const alreadyHeld = watchedHere.current;
+    if (!alreadyHeld) {
+      movieStart.current = { watched: inLibrary && movieWatched, count: inLibrary && movieWatched ? movieRewatchCount + 1 : 0 };
+      holdMovieWatched(tmdbId);
+    }
+    try {
+      const mark = await write();
+      const stored = await db.movies.get(tmdbId);
+      const now = { watched: !!stored?.watched, count: stored ? movieWatchCount(stored) : 0 };
+      setMovieWatched(now.watched);
+      setMovieRewatchCount(stored?.rewatchCount ?? 0);
+      const start = movieStart.current;
+      if (start && start.watched === now.watched && start.count === now.count) {
+        // Changed and changed back before closing: nothing to show.
+        cancelMovieWatched(tmdbId);
+        watchedHere.current = false;
+      } else {
+        heldMark.current = mark;
+        watchedHere.current = true;
+      }
+      return true;
+    } catch (e) {
+      if (!alreadyHeld) cancelMovieWatched(tmdbId);
+      setWatchError(e instanceof Error ? e.message : String(e));
+      return false;
+    } finally {
+      setSavingWatched(false);
+    }
+  }
+
+  /** The watched movie's indicator in this panel: the same viewing-status choices as its poster's. */
+  function openMovieStatusMenu(el: HTMLElement) {
+    if (!details) return;
+    const count = movieRewatchCount + 1;
+    openQuickMenu({
+      anchor: rectAnchor(el),
+      target: el,
+      label: `${details.name}: viewing status`,
+      title: details.name,
+      subtitle: viewingsInWords(count),
+      entries: toEntries(viewingStatusActions(count), {
+        "watched-once": async () => {
+          if (count > 1) await moviePanelWrite(async () => ({ kind: "watched", count: await setMovieWatchedOnce(tmdbId) }));
+        },
+        "watched-again": async () => void (await movieWatchAgain()),
+        "remove-last": async () =>
+          void (await moviePanelWrite(async () => ({ kind: "decrement", count: await removeLatestMovieViewing(tmdbId) }))),
+        "not-watched": async () => void (await toggleMovieWatched()),
+      }),
+    });
   }
 
   /**
@@ -592,7 +854,17 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     setMovieRewatchCount(0);
     setWatchedKeys(new Set());
     setWatchCountByKey(new Map());
+    setWatchedRows([]);
     setCatchUpOffer(null);
+  }
+
+  /**
+   * The movie's "Watch again". Shows the count the database now holds, not a
+   * locally incremented one, and says so when the write fails instead of
+   * counting a viewing that was never saved.
+   */
+  function movieWatchAgain() {
+    return moviePanelWrite(async () => ({ kind: "watched", count: await recordMovieRewatch(tmdbId) }));
   }
 
   function cancelRemove() {
@@ -612,6 +884,33 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   const unconfirmed = unconfirmedSeasons(episodesInDb);
 
   const showsSeasonBrowser = kind === "show" && seasonNumbers !== null;
+
+  /** TMDB's title for a season, when it is more than "Season N" (e.g. "Book One: Water"); otherwise null. */
+  function seasonTitle(n: number): string | null {
+    const name = seasonNames.get(n)?.trim();
+    if (!name || /^season\s*\d+$/i.test(name)) return null;
+    return name;
+  }
+
+  // The show's own counts, derived from the same rows as everything else (see
+  // lib/watchHistory.ts). "Watched in full" needs every season's episode list
+  // to know what "every episode" is, so it is only claimed once all are cached
+  // here; until then the total comes from TMDB's episode count instead.
+  const watchedByKey = new Map(watchedRows.map((w) => [w.key, w]));
+  const allSeasonsCached =
+    seasonNumbers !== null && seasonNumbers.length > 0 && seasonNumbers.every((n) => episodesBySeason.has(n));
+  let showWatchLine: string | null = null;
+  if (kind === "show" && inLibrary && watchedRows.length > 0) {
+    const s = summarizeShow(episodesInDb, watchedRows);
+    const outOf = allSeasonsCached ? s.released : details?.numberOfEpisodes;
+    showWatchLine = [
+      outOf ? `${s.uniqueWatched} of ${plural(outOf, "episode")} watched` : `${plural(s.uniqueWatched, "episode")} watched`,
+      plural(s.views, "view"),
+      allSeasonsCached && s.completions >= 2 ? `watched in full ${s.completions}×` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
 
   const ratingsRowContent = details && (
     <div className="ratings-row">
@@ -647,6 +946,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                 : " Marked as watched."
               : ""}
           </p>
+          {showWatchLine && <p className="muted small watch-summary">{showWatchLine}</p>}
           {/* Says what the state actually does, because "stopped" could
               otherwise be read as something that removed or hid the show. */}
           {kind === "show" && stopped && (
@@ -681,11 +981,29 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
             </div>
           ) : (
             <div className="field-row">
-              {kind === "movie" && (
-                <button onClick={toggleMovieWatched} disabled={savingWatched}>
-                  {movieWatched ? "Mark unwatched" : "Mark watched"}
-                </button>
-              )}
+              {/* Watched: the green indicator - the tick, or the number of
+                  viewings - opens the same viewing-status choices as the
+                  movie's poster and an episode's tick. Unwatched: the plain
+                  Mark watched it always was. */}
+              {kind === "movie" &&
+                (movieWatched ? (
+                  <button
+                    className="movie-watched-status"
+                    onClick={(e) => openMovieStatusMenu(e.currentTarget)}
+                    aria-haspopup="menu"
+                    aria-label={`${viewingsInWords(movieRewatchCount + 1)}. Change viewing status`}
+                    aria-disabled={savingWatched}
+                  >
+                    <span className="watch-indicator on" aria-hidden="true">
+                      <WatchMark count={movieRewatchCount + 1} />
+                    </span>
+                    Watched
+                  </button>
+                ) : (
+                  <button onClick={toggleMovieWatched} disabled={savingWatched}>
+                    Mark watched
+                  </button>
+                ))}
               {/* Beside Remove rather than among the season controls: both are
                   decisions about the show as a whole, and this is the gentler of
                   the two — which is the point of it sitting there, next to the
@@ -694,12 +1012,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                 <button onClick={toggleStopped}>{stopped ? "Resume watching" : "Stop watching"}</button>
               )}
               {kind === "movie" && movieWatched && (
-                <button
-                  onClick={async () => {
-                    await recordMovieRewatch(tmdbId);
-                    setMovieRewatchCount((c) => c + 1);
-                  }}
-                >
+                <button onClick={movieWatchAgain} disabled={savingWatched}>
                   Watch again
                 </button>
               )}
@@ -798,7 +1111,10 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
         const isExpanded = expandedSeason === seasonNumber;
         const eps = episodesBySeason.get(seasonNumber) ?? [];
         const watchedCount = eps.filter((e) => watchedKeys.has(e.key)).length;
-        const allWatched = eps.length > 0 && watchedCount === eps.length;
+        // How many times the whole season has been watched: the lowest count
+        // among its episodes. Shown from the second time on, so watching it
+        // again visibly registers; a few rewatched episodes do not move it.
+        const seasonRepeat = inLibrary ? repeatLabel(summarize(eps, watchedByKey).completions) : null;
 
         return (
           <div key={seasonNumber} className="season-block">
@@ -807,6 +1123,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
               role="button"
               tabIndex={0}
               aria-expanded={isExpanded}
+              {...contextActionProps((anchor, el) => void openSeasonMenu(seasonNumber, anchor, el))}
               onClick={() => toggleExpand(seasonNumber)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -815,12 +1132,22 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                 }
               }}
             >
-              <h3>
+              {/* Left: the season, in the app's "Season N" form, with TMDB's
+                  own title beside it when the season has a real one (not just
+                  "Season N" again). */}
+              <h3 className="season-title">
                 <span className={`season-caret ${isExpanded ? "open" : ""}`} aria-hidden="true">
                   &#9656;
                 </span>{" "}
                 Season {seasonNumber}
+                {seasonTitle(seasonNumber) && <span className="season-name"> &middot; {seasonTitle(seasonNumber)}</span>}
               </h3>
+              {/* Right: progress, how many times the whole season has been
+                  watched (from the second time on), and a menu holding the
+                  season's actions. The Mark watched / Mark unwatched / Watch
+                  again links that used to sit here are in that menu: the same
+                  season menu a long-press or right-click on this header opens,
+                  offering only what the season's state allows. */}
               <div className="season-header-right">
                 {unconfirmed.has(seasonNumber) && (
                   <span
@@ -831,30 +1158,30 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                   </span>
                 )}
                 {inLibrary && eps.length > 0 && (
-                  <span className="muted small">
+                  <span className="muted small season-count">
                     {watchedCount}/{eps.length}
+                    {seasonRepeat && (
+                      <span className="season-times" title={`Whole season watched ${seasonRepeat}`}>
+                        {" "}&middot; {seasonRepeat}
+                        <span className="sr-only"> watched</span>
+                      </span>
+                    )}
                   </span>
                 )}
-                {inLibrary && isExpanded && eps.length > 0 && (
+                {inLibrary && (
                   <button
-                    className="link-button"
+                    type="button"
+                    className="season-kebab"
+                    aria-label={`Season ${seasonNumber} actions`}
+                    aria-haspopup="menu"
                     onClick={(e) => {
                       e.stopPropagation();
-                      toggleSeasonWatched(eps, !allWatched);
+                      const el = e.currentTarget;
+                      void openSeasonMenu(seasonNumber, rectAnchor(el), el);
                     }}
+                    onKeyDown={(e) => e.stopPropagation()}
                   >
-                    {allWatched ? "Mark unwatched" : "Mark watched"}
-                  </button>
-                )}
-                {inLibrary && isExpanded && eps.length > 0 && allWatched && (
-                  <button
-                    className="link-button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      rewatchEpisodes(eps);
-                    }}
-                  >
-                    Watch again
+                    <KebabIcon size={18} />
                   </button>
                 )}
               </div>
@@ -870,51 +1197,72 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
               <>
                 {loadingSeason === seasonNumber && <p className="muted small">Fetching episodes...</p>}
                 <ul className="episode-list">
-                  {eps.map((ep) => (
-                    <li key={ep.key} className={`episode-row ${watchedKeys.has(ep.key) ? "watched" : ""}`}>
-                      {ep.stillPath ? (
-                        <img
-                          src={`${TMDB_IMAGE_BASE}${ep.stillPath}`}
-                          alt=""
-                          aria-hidden="true"
-                          className="episode-thumb"
-                          onClick={() => setOpenEpisode(ep)}
-                        />
-                      ) : (
-                        <div
-                          className="episode-thumb poster-placeholder"
-                          aria-hidden="true"
-                          onClick={() => setOpenEpisode(ep)}
-                        />
-                      )}
-                      <div
-                        className="episode-row-body"
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => setOpenEpisode(ep)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
-                            setOpenEpisode(ep);
-                          }
-                        }}
+                  {eps.map((ep) => {
+                    const watched = watchedKeys.has(ep.key);
+                    const count = watchCountByKey.get(ep.key) ?? 0;
+                    const flash = confirmedKeys.get(ep.key);
+                    return (
+                      <li
+                        key={ep.key}
+                        className={`episode-row ${watched ? "watched" : ""}`}
+                        {...contextActionProps((anchor, el) => openEpisodeMenu(ep, anchor, el))}
                       >
-                        <span className="ep-number">
-                          S{ep.seasonNumber} | E{ep.episodeNumber}
-                        </span>
-                        <span className="ep-name">{ep.name}</span>
-                      </div>
-                      {inLibrary && (
-                        <button
-                          className={`watch-toggle ${watchedKeys.has(ep.key) ? "on" : ""}`}
-                          onClick={() => toggleEpisodeWatched(ep)}
-                          aria-label={watchedKeys.has(ep.key) ? "Mark unwatched" : "Mark watched"}
+                        {ep.stillPath ? (
+                          <img
+                            src={`${TMDB_IMAGE_BASE}${ep.stillPath}`}
+                            alt=""
+                            aria-hidden="true"
+                            className="episode-thumb"
+                            onClick={() => setOpenEpisode(ep)}
+                          />
+                        ) : (
+                          <div
+                            className="episode-thumb poster-placeholder"
+                            aria-hidden="true"
+                            onClick={() => setOpenEpisode(ep)}
+                          />
+                        )}
+                        <div
+                          className="episode-row-body"
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => setOpenEpisode(ep)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              setOpenEpisode(ep);
+                            }
+                          }}
                         >
-                          &#10003;
-                        </button>
-                      )}
-                    </li>
-                  ))}
+                          <span className="ep-number">
+                            S{ep.seasonNumber} | E{ep.episodeNumber}
+                          </span>
+                          <span className="ep-name">{ep.name}</span>
+                        </div>
+                        {/* Unwatched: one tap marks it watched, exactly as before
+                            (same fill transition, same catch-up offer). Watched
+                            once: the green tick. Watched more: the number of
+                            viewings in the tick's place - no separate badge.
+                            Either way, tapping it opens the viewing-status
+                            choices instead of unmarking on the spot. */}
+                        {inLibrary && (
+                          <button
+                            className={`watch-toggle ${watched ? "on" : ""}${flash === "pop" ? " is-confirmed" : ""}${
+                              flash === "minus" ? " is-minus" : ""
+                            }`}
+                            onClick={(e) => {
+                              if (watched) openTickMenu(ep, e.currentTarget);
+                              else toggleEpisodeWatched(ep).catch((err) => showErrorToast(err));
+                            }}
+                            aria-haspopup={watched ? "menu" : undefined}
+                            aria-label={watched ? `${viewingsInWords(count)}. Change viewing status` : "Mark watched"}
+                          >
+                            <WatchMark count={count} minus={flash === "minus"} />
+                          </button>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               </>
             )}
@@ -945,6 +1293,8 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
       // watched toggle and the live rewatch count (+N) update in place.
       onToggleWatched={() => toggleEpisodeWatched(openEpisode)}
       onWatchAgain={() => rewatchEpisodes([openEpisode])}
+      onWatchedOnce={() => setWatchedOnce([openEpisode])}
+      onRemoveLatestViewing={() => removeLastViewing(openEpisode)}
       onClose={() => setOpenEpisode(null)}
     />
   );

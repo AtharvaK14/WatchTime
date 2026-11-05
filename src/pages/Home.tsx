@@ -15,7 +15,14 @@ import {
 } from "../lib/comingUp";
 import { backfillTypedReleaseDates, moviesNeedingTypedDates } from "../lib/releaseDates";
 import { getStaleDaysThreshold } from "../lib/showStatus";
-import { markNextEpisodeWatched, recordEpisodeRewatch } from "../lib/watchEvents";
+import {
+  markEpisodesUnwatched,
+  markNextEpisodeWatched,
+  recordEpisodeRewatch,
+  removeLatestEpisodeViewing,
+  setEpisodesWatchedOnce,
+} from "../lib/watchEvents";
+import { titleQuickActionProps } from "../lib/titleQuickActions";
 import { useIsMobile } from "../lib/useIsMobile";
 import DetailsPanel from "../components/DetailsPanel";
 import EpisodeDetailsPanel from "../components/EpisodeDetailsPanel";
@@ -116,7 +123,15 @@ function EpisodeRow({
   const isPremiere = row.nextEpisode?.episodeNumber === 1;
   const stopped = row.category === "stopped";
   return (
-    <div className={`watch-next-row${transition ? ` is-${transition.phase}` : ""}${removalClass(removal)}`}>
+    <div
+      className={`watch-next-row${transition ? ` is-${transition.phase}` : ""}${removalClass(removal)}`}
+      {...titleQuickActionProps({
+        kind: "show",
+        tmdbId: row.showId,
+        name: row.showName,
+        onViewDetails: () => onOpenShow(row.showId),
+      })}
+    >
       {row.posterPath ? (
         <img src={`${TMDB_IMAGE_BASE}${row.posterPath}`} alt={row.showName} onClick={() => onOpenShow(row.showId)} />
       ) : (
@@ -489,10 +504,12 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
           // the panel re-renders from live data so the tick and the rewatch
           // count update in place.
           onToggleWatched={async () => {
-            if (openEpisodeWatch) await db.watchedEpisodes.delete(openEpisode.episode.key);
+            if (openEpisodeWatch) await markEpisodesUnwatched(openEpisode.showId, [openEpisode.episode]);
             else await markNextEpisodeWatched(openEpisode.showId, openEpisode.episode);
           }}
           onWatchAgain={() => recordEpisodeRewatch(openEpisode.showId, [openEpisode.episode])}
+          onWatchedOnce={() => setEpisodesWatchedOnce(openEpisode.showId, [openEpisode.episode])}
+          onRemoveLatestViewing={() => removeLatestEpisodeViewing(openEpisode.showId, openEpisode.episode)}
           onClose={() => setOpenEpisode(null)}
         />
       )}
@@ -588,6 +605,12 @@ function ComingUp() {
               className={`up-row${removalClass(removal)}`}
               role="button"
               tabIndex={0}
+              {...titleQuickActionProps({
+                kind: "show",
+                tmdbId: row.showId,
+                name: row.showName,
+                onViewDetails: () => setOpenShow(row.showId),
+              })}
               onClick={() => setOpenEpisode(row)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -622,6 +645,12 @@ function ComingUp() {
               className={`up-row${removalClass(removal)}${watchedClass(watched, staying)}`}
               role="button"
               tabIndex={0}
+              {...titleQuickActionProps({
+                kind: "movie",
+                tmdbId: m.tmdbId,
+                name: m.title,
+                onViewDetails: () => setOpenMovie(m.tmdbId),
+              })}
               onClick={() => setOpenMovie(m.tmdbId)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") {
@@ -652,7 +681,7 @@ function ComingUp() {
                 </p>
               </div>
               <span className="up-row-date">{formatUpcomingDate(date)}</span>
-              <MovieWatchedOverlay phase={watched} staying={staying} />
+              <MovieWatchedOverlay phase={watched} staying={staying} tmdbId={m.tmdbId} />
             </div>
           ))}
         </div>
@@ -800,6 +829,12 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
               key={m.tmdbId}
               data-flip-key={m.tmdbId}
               className={`mtw-card${removalClass(removal)}${watchedClass(watched, staying)}`}
+              {...titleQuickActionProps({
+                kind: "movie",
+                tmdbId: m.tmdbId,
+                name: m.title,
+                onViewDetails: () => setOpenDetails(m.tmdbId),
+              })}
             >
               {m.posterPath ? (
                 <img
@@ -836,7 +871,7 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
               <p className="show-name mtw-name" title={m.title} onClick={() => setOpenDetails(m.tmdbId)}>
                 {m.title}
               </p>
-              <MovieWatchedOverlay phase={watched} staying={staying} />
+              <MovieWatchedOverlay phase={watched} staying={staying} tmdbId={m.tmdbId} />
             </div>
           ))}
           {hasMore && (

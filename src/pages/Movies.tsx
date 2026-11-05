@@ -1,14 +1,15 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Movie } from "../db";
 import { TMDB_IMAGE_BASE, getMovieGenres, type Genre } from "../tmdb";
-import { useMovieStats, toDurationParts } from "../lib/stats";
-import { libraryKey, removalClass, useRemovalExit } from "../lib/libraryRemoval";
+import { useMovieStats } from "../lib/stats";
+import StatTiles, { DurationValue } from "../components/StatTiles";
+import { libraryKey, removalClass, useRemovalExit, type RemovalPhase } from "../lib/libraryRemoval";
 import {
   markMovieWatchedFromCard,
-  setMovieWatched,
   useMovieWatchedExit,
   watchedClass,
+  type MovieWatchedPhase,
   type WatchedSlot,
 } from "../lib/movieWatched";
 import { isOnWatchlist } from "../lib/watchlist";
@@ -20,6 +21,11 @@ import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
 import { useIsMobile } from "../lib/useIsMobile";
+import { openMovieViewingMenu, titleQuickActionProps } from "../lib/titleQuickActions";
+import { movieWatchCount, viewingsInWords } from "../lib/watchHistory";
+import WatchMark from "../components/WatchMark";
+import { searchOrBrowse } from "../lib/librarySearch";
+import { MovieStatsDialog } from "../components/StatsDialog";
 
 type SortKey = "title" | "releaseYear" | "recentlyWatched" | "recentlyAdded" | "rating";
 type FilterKey = "all" | "watched" | "wantToWatch";
@@ -61,6 +67,7 @@ export default function Movies({
   const [genreFilter, setGenreFilter] = useState<number | null>(null);
   const [genres, setGenres] = useState<Genre[]>([]);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  const [statsOpen, setStatsOpen] = useState(false);
 
   // One-shot: applies the filter Home's "View all" link requested, then
   // tells App.tsx it's been consumed so navigating back here later
@@ -79,18 +86,19 @@ export default function Movies({
     getMovieGenres().then(setGenres).catch(() => setGenres([]));
   }, []);
 
-  const visible = useMemo(() => {
-    if (!movies) return [];
-    let list = movies;
+  const { visible, searching } = useMemo(() => {
+    if (!movies) return { visible: [], searching: false };
 
-    if (filterKey === "watched") list = list.filter((m) => m.watched);
-    if (filterKey === "wantToWatch") list = list.filter(isOnWatchlist);
-    if (genreFilter !== null) list = list.filter((m) => m.genreIds?.includes(genreFilter));
-
-    if (query.trim()) {
-      const q = query.trim().toLowerCase();
-      list = list.filter((m) => m.title.toLowerCase().includes(q));
-    }
+    // The browsing filters, which a search sets aside rather than narrowing
+    // (see lib/librarySearch.ts): a watched movie is found by name even on
+    // the Want to watch filter, and the filter is still selected afterwards.
+    const browse = (m: Movie) => {
+      if (filterKey === "watched" && !m.watched) return false;
+      if (filterKey === "wantToWatch" && !isOnWatchlist(m)) return false;
+      if (genreFilter !== null && !m.genreIds?.includes(genreFilter)) return false;
+      return true;
+    };
+    const { items: list, searching } = searchOrBrowse(movies, query, (m) => m.title, browse);
 
     const sorted = [...list];
     switch (sortKey) {
@@ -117,8 +125,9 @@ export default function Movies({
         sorted.sort((a, b) => a.title.localeCompare(b.title));
         break;
     }
-    return sorted;
+    return { visible: sorted, searching };
   }, [movies, query, sortKey, filterKey, genreFilter]);
+  const filtersSetAside = searching && (filterKey !== "all" || genreFilter !== null);
 
   // Same exit as the Shows grid: see lib/libraryRemoval.ts. Under it, the
   // watched hold (lib/movieWatched.ts): a movie ticked on the Want to watch
@@ -129,40 +138,46 @@ export default function Movies({
   const display = useRemovalExit(watchedDisplay, movieSlotKey, captureGrid);
   const [watchError, setWatchError] = useState<string | null>(null);
 
-  if (!movies) return <p className="muted">Loading...</p>;
-
-  async function toggleWatched(tmdbId: number, currentlyWatched: boolean) {
+  /**
+   * The poster's indicator. Unwatched, one tap marks it watched, as before.
+   * Watched, it opens the viewing-status menu (Watched again, Remove last
+   * viewing, Watched once, Not watched) instead of unmarking on the spot - the
+   * same choices an episode's green tick offers - and each choice plays its
+   * own acknowledgement on the card.
+   *
+   * Stable (it only uses a state setter and module functions), so the
+   * memoised cards below are not re-rendered just because this page was.
+   */
+  const onIndicator = useCallback(async (movie: Movie, el: HTMLElement) => {
     setWatchError(null);
+    if (movie.watched) {
+      void openMovieViewingMenu(movie.tmdbId, movie.title, el);
+      return;
+    }
     try {
-      // Unticking is not an event worth a sequence: the badge just clears,
-      // and the movie goes back on the watchlist.
-      if (currentlyWatched) await setMovieWatched(tmdbId, false);
-      else await markMovieWatchedFromCard(tmdbId);
+      await markMovieWatchedFromCard(movie.tmdbId);
     } catch (e) {
       setWatchError(e instanceof Error ? e.message : String(e));
     }
-  }
+  }, []);
 
-  const duration = toDurationParts(stats.totalMinutes);
+  if (!movies) return <p className="muted">Loading...</p>;
 
   return (
     <div className="panel">
       <h1 className="sr-only">Movies</h1>
 
-      <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-value">
-            {duration.months}<span className="stat-unit">mo</span> {duration.days}
-            <span className="stat-unit">d</span> {duration.hours}
-            <span className="stat-unit">h</span>
-          </div>
-          <div className="stat-label">Movie time</div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-value">{stats.loading ? "..." : stats.moviesWatched.toLocaleString()}</div>
-          <div className="stat-label">Movies watched</div>
-        </div>
-      </div>
+      {/* The two headline numbers; viewings, rewatches, unwatched and most
+          rewatched are one tap away in the statistics dialog. */}
+      <StatTiles
+        label="Movie statistics: movie time and movies watched. Open for details"
+        onOpen={() => setStatsOpen(true)}
+        tiles={[
+          { label: "Movie time", value: <DurationValue minutes={stats.totalMinutes} /> },
+          { label: "Movies watched", value: stats.loading ? "..." : stats.moviesWatched.toLocaleString() },
+        ]}
+      />
+      {statsOpen && <MovieStatsDialog totalMinutes={stats.totalMinutes} onClose={() => setStatsOpen(false)} />}
       {stats.backfilling && stats.backfillProgress && (
         <p className="muted small">
           Fetching runtime data for movies added before this feature existed: {stats.backfillProgress.done} /{" "}
@@ -226,7 +241,18 @@ export default function Movies({
             </FilterSheet>
           </div>
 
-          {display.length === 0 && <p className="muted">No movies match that search/filter.</p>}
+          {filtersSetAside && (
+            <p className="muted small search-scope-note">
+              Searching all your movies. Your filters apply again when you clear the search.
+            </p>
+          )}
+
+          {display.length === 0 &&
+            (searching ? (
+              <p className="muted">No movies in your library match &ldquo;{query.trim()}&rdquo;.</p>
+            ) : (
+              <p className="muted">No movies match that search/filter.</p>
+            ))}
 
           {watchError && (
             <p className="status-error small" role="alert">
@@ -236,38 +262,15 @@ export default function Movies({
 
           <div className="show-grid" ref={gridRef}>
             {display.map(({ item: { item: m, watched, staying }, removal }) => (
-              <div
+              <MovieGridCard
                 key={m.tmdbId}
-                data-flip-key={m.tmdbId}
-                className={`show-card movie-card${removalClass(removal)}${watchedClass(watched, staying)}`}
-                role="button"
-                tabIndex={0}
-                onClick={() => setOpenDetails(m.tmdbId)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault();
-                    setOpenDetails(m.tmdbId);
-                  }
-                }}
-              >
-                {m.posterPath ? (
-                  <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.title} />
-                ) : (
-                  <div className="poster-placeholder" />
-                )}
-                <button
-                  className={`watched-badge ${m.watched ? "on" : ""}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleWatched(m.tmdbId, m.watched);
-                  }}
-                  aria-label={m.watched ? "Mark unwatched" : "Mark watched"}
-                >
-                  &#10003;
-                </button>
-                <PosterCaption title={m.title} year={m.releaseYear} />
-                <MovieWatchedOverlay phase={watched} staying={staying} />
-              </div>
+                movie={m}
+                watched={watched}
+                staying={staying}
+                removal={removal}
+                onOpen={setOpenDetails}
+                onIndicator={onIndicator}
+              />
             ))}
           </div>
         </>
@@ -277,3 +280,70 @@ export default function Movies({
     </div>
   );
 }
+
+/**
+ * One poster in the grid. Memoised: a watched sequence or a removal changes
+ * one card's phase several times in under a second (saving, confirm, exit,
+ * gone), and each change re-renders this page. Re-rendering every poster for
+ * each of those - a few hundred on a long watchlist - is what a phone could
+ * not do inside the 460ms the green veil is on screen, so the acknowledgement
+ * arrived late and the exit was cut short. Now only the card whose phase
+ * changed re-renders; the rest compare props and stop.
+ */
+const MovieGridCard = memo(function MovieGridCard({
+  movie: m,
+  watched,
+  staying,
+  removal,
+  onOpen,
+  onIndicator,
+}: {
+  movie: Movie;
+  watched: MovieWatchedPhase | undefined;
+  staying: boolean | undefined;
+  removal: RemovalPhase | undefined;
+  onOpen: (tmdbId: number) => void;
+  onIndicator: (movie: Movie, el: HTMLElement) => void;
+}) {
+  const count = movieWatchCount(m);
+  return (
+    <div
+      data-flip-key={m.tmdbId}
+      className={`show-card movie-card${removalClass(removal)}${watchedClass(watched, staying)}`}
+      role="button"
+      tabIndex={0}
+      {...titleQuickActionProps({
+        kind: "movie",
+        tmdbId: m.tmdbId,
+        name: m.title,
+        onViewDetails: () => onOpen(m.tmdbId),
+      })}
+      onClick={() => onOpen(m.tmdbId)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onOpen(m.tmdbId);
+        }
+      }}
+    >
+      {m.posterPath ? (
+        <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.title} />
+      ) : (
+        <div className="poster-placeholder" />
+      )}
+      <button
+        className={`watched-badge ${m.watched ? "on" : ""}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          void onIndicator(m, e.currentTarget);
+        }}
+        aria-haspopup={m.watched ? "menu" : undefined}
+        aria-label={m.watched ? `${viewingsInWords(count)}. Change viewing status` : `Mark ${m.title} watched`}
+      >
+        <WatchMark count={count} />
+      </button>
+      <PosterCaption title={m.title} year={m.releaseYear} />
+      <MovieWatchedOverlay phase={watched} staying={staying} tmdbId={m.tmdbId} />
+    </div>
+  );
+});

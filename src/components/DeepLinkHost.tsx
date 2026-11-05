@@ -4,7 +4,13 @@ import { db } from "../db";
 import DetailsPanel from "./DetailsPanel";
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
 import { onDeepLink, type DeepLinkTarget } from "../lib/deepLink";
-import { markNextEpisodeWatched, recordEpisodeRewatch } from "../lib/watchEvents";
+import {
+  markEpisodesUnwatched,
+  markNextEpisodeWatched,
+  recordEpisodeRewatch,
+  removeLatestEpisodeViewing,
+  setEpisodesWatchedOnce,
+} from "../lib/watchEvents";
 
 /**
  * Opens the app's existing detail panels in response to a tapped notification
@@ -101,10 +107,12 @@ export default function DeepLinkHost() {
       streamingShowId={show.tmdbId}
       // Stays open on toggle, exactly as it does when opened from Watch Next.
       onToggleWatched={async () => {
-        if (watch) await db.watchedEpisodes.delete(episode.key);
+        if (watch) await markEpisodesUnwatched(show.tmdbId, [episode]);
         else await markNextEpisodeWatched(show.tmdbId, episode);
       }}
       onWatchAgain={() => recordEpisodeRewatch(show.tmdbId, [episode])}
+      onWatchedOnce={() => setEpisodesWatchedOnce(show.tmdbId, [episode])}
+      onRemoveLatestViewing={() => removeLatestEpisodeViewing(show.tmdbId, episode)}
       onClose={() => setTarget(null)}
     />
   );

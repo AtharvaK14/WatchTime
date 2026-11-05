@@ -17,6 +17,7 @@ import { useLibraryIds } from "../lib/useLibraryIds";
 import { libraryKey, removalClass, useLibraryRemovals } from "../lib/libraryRemoval";
 import { useMovieWatchedPhases, watchedClass } from "../lib/movieWatched";
 import MovieWatchedOverlay from "../components/MovieWatchedOverlay";
+import { titleQuickActionProps } from "../lib/titleQuickActions";
 
 /**
  * "Already in your library", shown directly on the artwork so the user no
@@ -90,6 +91,7 @@ function TitleCard({
   return (
     <button
       className={`show-card${removal === "highlight" ? removalClass(removal) : ""}${watchedClass(watched, true)}`}
+      {...titleQuickActionProps({ kind, tmdbId, name, onViewDetails: onOpen })}
       onClick={onOpen}
     >
       {posterPath ? (
@@ -104,7 +106,7 @@ function TitleCard({
       {inLibrary && <InLibraryBadge />}
       <PosterCaption title={name} year={year} />
       {inLibrary && <span className="sr-only">In your library</span>}
-      <MovieWatchedOverlay phase={watched} staying />
+      <MovieWatchedOverlay phase={watched} staying tmdbId={tmdbId} />
     </button>
   );
 }

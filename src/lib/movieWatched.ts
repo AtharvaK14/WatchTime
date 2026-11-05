@@ -26,6 +26,8 @@ import { libraryKey } from "./libraryRemoval";
 import { requestNotificationSync } from "./notifications";
 import { prefersReducedMotion } from "./useAnimatedDismiss";
 import { WATCHED_CONFIRM_MS } from "./useWatchedTransitions";
+import { recordMovieRewatch, removeLatestMovieViewing, setMovieWatchedOnce } from "./watchEvents";
+import { movieWatchCount } from "./watchHistory";
 
 // ---- The write ------------------------------------------------------------
 
@@ -37,21 +39,37 @@ import { WATCHED_CONFIRM_MS } from "./useWatchedTransitions";
  * panel ended up on neither list. Everyone uses the panel's rule now:
  *
  *  - watched: watched, dated now, and no longer wanted (it has been seen);
- *  - unwatched: undated, and back on the watchlist rather than stranded.
+ *  - unwatched: no viewings, and back on the watchlist rather than stranded.
  *
- * Watch history the movie already has - rewatchCount - is left alone either
- * way, and nothing is ever deleted.
+ * "Not watched" means zero viewings, the same as for an episode (whose watch
+ * row is deleted). It used to leave rewatchCount (and later firstWatchedAt)
+ * in place, which was invisible while the app showed no counts; with the
+ * count now ON the indicator, a movie watched three times, marked not
+ * watched and then watched again would have come back as "3" with a first
+ * viewing from before it was unwatched. A movie marked watched again starts
+ * from one viewing. The movie itself always stays in the library.
+ *
+ * Resolves to the viewings the stored row now holds (0 once unwatched), read
+ * back from the same row the check below uses, so a card's acknowledgement
+ * needs no second read queued behind every list's re-query of the library.
  *
  * Rejects if the movie is not in the library, or the stored row does not
  * read back as asked: the animation only plays for a write that is known to
  * have happened.
  */
-export async function setMovieWatched(tmdbId: number, watched: boolean): Promise<void> {
+export async function setMovieWatched(tmdbId: number, watched: boolean): Promise<number> {
   await db.movies.update(
     tmdbId,
     watched
       ? { watched: true, watchedAt: new Date().toISOString(), wantsToWatch: false }
-      : { watched: false, watchedAt: null, wantsToWatch: true }
+      : {
+          watched: false,
+          watchedAt: null,
+          wantsToWatch: true,
+          rewatchCount: 0,
+          firstWatchedAt: undefined,
+          latestBeforeRewatch: undefined,
+        }
   );
   const stored = await db.movies.get(tmdbId);
   if (!stored) throw new Error("This movie is no longer in your library.");
@@ -59,6 +77,7 @@ export async function setMovieWatched(tmdbId: number, watched: boolean): Promise
   // A watched movie stops getting its theatrical notification (its digital
   // one stays); the schedule is rebuilt to match without waiting for a resume.
   requestNotificationSync();
+  return movieWatchCount(stored);
 }
 
 // ---- The sequence ----------------------------------------------------------
@@ -74,16 +93,38 @@ export async function setMovieWatched(tmdbId: number, watched: boolean): Promise
  */
 export type MovieWatchedPhase = "saving" | "held" | "confirm" | "exit";
 
+/**
+ * What the acknowledgement says, decided by what was written:
+ *  - watched: green veil, the tick for one viewing, the count for more;
+ *  - decrement: "-1" over the poster, after which the card's indicator shows
+ *    the new count (or the tick, back at one viewing);
+ *  - unwatched: red veil and a red X. The movie is still in the library; the
+ *    card only leaves a list (the Watched filter) it no longer belongs on.
+ */
+export type MovieMark =
+  | { kind: "watched"; count: number }
+  | { kind: "decrement"; count: number }
+  | { kind: "unwatched" };
+
 /** Same acknowledgement length as an episode card's green state. */
 export const MOVIE_WATCHED_CONFIRM_MS = WATCHED_CONFIRM_MS;
 /** Must match .is-watched-exit in index.css (the removal exit's 240ms). */
 export const MOVIE_WATCHED_EXIT_MS = 240;
 
 let phases: ReadonlyMap<string, MovieWatchedPhase> = new Map();
+// Set when a sequence starts playing, dropped with its phase. Read at render
+// time by MovieWatchedOverlay; every change to it comes with a phase change,
+// which is what re-renders the cards.
+const marks = new Map<string, MovieMark>();
 const listeners = new Set<() => void>();
 const timers = new Map<string, number[]>();
 
 const keyFor = (tmdbId: number) => libraryKey("movie", tmdbId);
+
+/** The acknowledgement a movie's card is showing, if any. */
+export function movieMarkFor(tmdbId: number): MovieMark | undefined {
+  return marks.get(keyFor(tmdbId));
+}
 
 function clearTimers(key: string): void {
   for (const id of timers.get(key) ?? []) window.clearTimeout(id);
@@ -93,7 +134,10 @@ function clearTimers(key: string): void {
 function setPhase(key: string, phase: MovieWatchedPhase | null): void {
   const next = new Map(phases);
   if (phase) next.set(key, phase);
-  else next.delete(key);
+  else {
+    next.delete(key);
+    marks.delete(key);
+  }
   phases = next;
   for (const listener of listeners) listener();
 }
@@ -139,7 +183,7 @@ export function cancelMovieWatched(tmdbId: number): void {
  * sequence and the removal exit: the CSS durations are ~0 there, and waiting
  * them out would be a delay with nothing in it.
  */
-export function playMovieWatched(tmdbId: number): void {
+export function playMovieWatched(tmdbId: number, mark: MovieMark = { kind: "watched", count: 1 }): void {
   const key = keyFor(tmdbId);
   const current = phases.get(key);
   if (current !== "saving" && current !== "held") return;
@@ -147,6 +191,7 @@ export function playMovieWatched(tmdbId: number): void {
     setPhase(key, null);
     return;
   }
+  marks.set(key, mark);
   setPhase(key, "confirm");
   const toExit = window.setTimeout(() => setPhase(key, "exit"), MOVIE_WATCHED_CONFIRM_MS);
   const toGone = window.setTimeout(() => {
@@ -157,28 +202,61 @@ export function playMovieWatched(tmdbId: number): void {
 }
 
 /**
- * The tick on a movie card: write, then - only once it has landed - play the
- * sequence. A failed write releases the card exactly as the database has it
- * and rejects, so the caller can say what went wrong; nothing green is ever
- * shown for a change that did not happen.
+ * Every viewing change made on a movie card - the tick, its viewing-status
+ * menu, and Quick Actions - runs through here: hold the card, write, and only
+ * once the write has landed play the acknowledgement it earned. A failed write
+ * releases the card exactly as the database has it and rejects, so the caller
+ * can say what went wrong; nothing is ever shown for a change that did not
+ * happen.
  *
- * A second press while the first is still playing is ignored rather than
- * queued, the same as the episode cards.
+ * A second press while a card's sequence is still playing is ignored rather
+ * than queued, the same as the episode cards, and resolves false so callers
+ * do not report a change that was not made.
  */
-export async function markMovieWatchedFromCard(tmdbId: number): Promise<void> {
-  if (phases.has(keyFor(tmdbId))) return;
+async function runCardSequence(tmdbId: number, write: () => Promise<MovieMark>): Promise<boolean> {
+  if (phases.has(keyFor(tmdbId))) return false;
   if (prefersReducedMotion()) {
-    await setMovieWatched(tmdbId, true);
-    return;
+    await write();
+    return true;
   }
   holdMovieWatched(tmdbId, "saving");
+  let mark: MovieMark;
   try {
-    await setMovieWatched(tmdbId, true);
+    mark = await write();
   } catch (error) {
     cancelMovieWatched(tmdbId);
     throw error;
   }
-  playMovieWatched(tmdbId);
+  playMovieWatched(tmdbId, mark);
+  return true;
+}
+
+/** The tick on an unwatched movie's card. Green veil with the tick (or the count, if earlier viewings were kept). */
+export function markMovieWatchedFromCard(tmdbId: number): Promise<boolean> {
+  return runCardSequence(tmdbId, async () => ({ kind: "watched", count: await setMovieWatched(tmdbId, true) }));
+}
+
+/** "Not watched": red veil and a red X, then the card leaves a watched-only list. It stays in the library. */
+export function markMovieUnwatchedFromCard(tmdbId: number): Promise<boolean> {
+  return runCardSequence(tmdbId, async () => {
+    await setMovieWatched(tmdbId, false);
+    return { kind: "unwatched" };
+  });
+}
+
+/** "Watched again": green veil with the new viewing count. */
+export function rewatchMovieFromCard(tmdbId: number): Promise<boolean> {
+  return runCardSequence(tmdbId, async () => ({ kind: "watched", count: await recordMovieRewatch(tmdbId) }));
+}
+
+/** "Remove last viewing": "-1", then the card's indicator shows the new count (the tick at one). */
+export function removeLatestMovieViewingFromCard(tmdbId: number): Promise<boolean> {
+  return runCardSequence(tmdbId, async () => ({ kind: "decrement", count: await removeLatestMovieViewing(tmdbId) }));
+}
+
+/** "Watched once": green veil with the tick. */
+export function setMovieWatchedOnceFromCard(tmdbId: number): Promise<boolean> {
+  return runCardSequence(tmdbId, async () => ({ kind: "watched", count: await setMovieWatchedOnce(tmdbId) }));
 }
 
 // ---- The lists -------------------------------------------------------------

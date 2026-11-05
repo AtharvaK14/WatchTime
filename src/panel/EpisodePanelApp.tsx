@@ -2,7 +2,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Episode, type Show } from "../db";
 import EpisodeDetailsPanel, { type EpisodePanelTransition } from "../components/EpisodeDetailsPanel";
-import { markNextEpisodeWatched, recordEpisodeRewatch } from "../lib/watchEvents";
+import {
+  markEpisodesUnwatched,
+  markNextEpisodeWatched,
+  recordEpisodeRewatch,
+  removeLatestEpisodeViewing,
+  setEpisodesWatchedOnce,
+} from "../lib/watchEvents";
 import { canOpenInApp, closePanel, openEpisodeInApp, openSeriesInApp } from "../lib/widget/panelHost";
 import { pushSnapshot } from "../lib/widget/bridge";
 import { buildWidgetSnapshot, type WidgetSnapshot } from "../lib/widget/snapshot";
@@ -259,7 +265,7 @@ export default function EpisodePanelApp({
         if (watch) {
           // Un-marking is a correction, not the end of the interaction: the
           // panel stays open and updates in place, exactly as before.
-          await db.watchedEpisodes.delete(episode.key);
+          await markEpisodesUnwatched(show.tmdbId, [episode]);
           await refreshWidgets();
           return;
         }
@@ -267,6 +273,14 @@ export default function EpisodePanelApp({
       }}
       onWatchAgain={async () => {
         await recordEpisodeRewatch(show.tmdbId, [episode]);
+        await refreshWidgets();
+      }}
+      onWatchedOnce={async () => {
+        await setEpisodesWatchedOnce(show.tmdbId, [episode]);
+        await refreshWidgets();
+      }}
+      onRemoveLatestViewing={async () => {
+        await removeLatestEpisodeViewing(show.tmdbId, episode);
         await refreshWidgets();
       }}
       onClose={closePanel}
