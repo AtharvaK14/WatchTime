@@ -134,3 +134,128 @@ export function ForYouIcon({ size = 20, className }: IconProps) {
     </svg>
   );
 }
+
+// ---- Quick Actions ----------------------------------------------------------
+// Small glyphs beside menu labels (see ActionMenu). Same 24-unit grid and 2px
+// stroke as the nav icons, drawn at 16px, so they read as the same family.
+
+export function InfoIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 11v5" />
+      <path d="M12 7.5v.5" />
+    </svg>
+  );
+}
+
+export function CheckIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+/** Watched again: a loop, the common "repeat" mark. */
+export function RepeatIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <path d="M17 3l3 3-3 3" />
+      <path d="M4 12V10a4 4 0 0 1 4-4h12" />
+      <path d="M7 21l-3-3 3-3" />
+      <path d="M20 12v2a4 4 0 0 1-4 4H4" />
+    </svg>
+  );
+}
+
+/** Not watched: an empty ring, the unticked state of the watched control. */
+export function UnwatchedIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M8.5 15.5l7-7" />
+    </svg>
+  );
+}
+
+export function PlayIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <path d="M8 5.5v13l10-6.5z" />
+    </svg>
+  );
+}
+
+export function StopIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <rect x="6.5" y="6.5" width="11" height="11" rx="2" />
+    </svg>
+  );
+}
+
+export function PlusIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+export function TrashIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <path d="M4 7h16" />
+      <path d="M9 7V4.5h6V7" />
+      <path d="M6.5 7l1 13h9l1-13" />
+    </svg>
+  );
+}
+
+/** Watch history: a clock with a backwards arrow. */
+export function HistoryIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <path d="M3.5 12a8.5 8.5 0 1 0 2.5-6" />
+      <path d="M3 4v4h4" />
+      <path d="M12 8v4l3 2" />
+    </svg>
+  );
+}
+
+/** A season's episode list. */
+export function ListIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <path d="M9 6h11" />
+      <path d="M9 12h11" />
+      <path d="M9 18h11" />
+      <path d="M4.5 6h.01" />
+      <path d="M4.5 12h.01" />
+      <path d="M4.5 18h.01" />
+    </svg>
+  );
+}
+
+/** A vertical three-dot menu, for a row's secondary actions. Filled dots: at 18px a stroked dot is a smudge. */
+export function KebabIcon({ size = 18, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <circle cx="12" cy="5.5" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="18.5" r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/** Remove last viewing: a minus in a ring, the counterpart of Watched again's loop. */
+export function MinusCircleIcon({ size = 16, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className}>
+      <circle cx="12" cy="12" r="8" />
+      <path d="M8.5 12h7" />
+    </svg>
+  );
+}

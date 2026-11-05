@@ -388,7 +388,7 @@ export function isAvailableToWatch(airDate: string | null, today: string): boole
  * started, with nothing scheduled before it, is still available, which is the
  * Spider-Noir case unchanged.
  */
-function availableInProgression(episodes: Episode[], today: string): Episode[] {
+export function availableInProgression(episodes: Episode[], today: string): Episode[] {
   const sorted = [...episodes].sort((a, b) => a.seasonNumber - b.seasonNumber || a.episodeNumber - b.episodeNumber);
   const unconfirmed = unconfirmedSeasons(episodes);
   const available: Episode[] = [];

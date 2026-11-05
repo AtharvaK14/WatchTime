@@ -72,6 +72,13 @@ export interface WatchedEpisode {
   // stay stable while activity recency stays truthful. Undefined for
   // records written before v10; readers must treat that as watchedAt.
   lastWatchedAt?: string;
+  // For each rewatch recorded in the app, oldest first: what lastWatchedAt was
+  // just before it. "Remove last viewing" pops one and restores that date, so
+  // removing a rewatch undoes exactly that viewing and leaves the first one
+  // and every earlier one as they were. Undefined until a rewatch is recorded
+  // here; imported rewatches (a count with no per-viewing dates) have no
+  // entry. Unindexed, so no schema version. See lib/watchHistory.ts.
+  latestBeforeRewatch?: string[];
 }
 
 export interface Movie {
@@ -87,6 +94,17 @@ export interface Movie {
   wantsToWatch: boolean; // from TV Time's 'follow'/'towatch' events, true even before watched
   runtimeMinutes?: number | null; // undefined until backfilled for pre-existing rows
   rewatchCount?: number; // additional watches beyond the first, from counted 'rewatch' events (verified more reliable than TV Time's own rewatch_count field)
+  // ISO timestamp of the FIRST watch, kept once a rewatch moves watchedAt on
+  // to the latest one, so an original viewing stays distinguishable from a
+  // rewatch. Undefined while the movie has never been rewatched (watchedAt is
+  // then the first watch), and for rewatches recorded before this field
+  // existed, whose first date was already overwritten. Not indexed, so no
+  // schema version: Dexie stores unindexed fields as-is, and backups carry
+  // whole rows. See lib/watchHistory.ts.
+  firstWatchedAt?: string;
+  // The movie counterpart of WatchedEpisode.latestBeforeRewatch: for each
+  // rewatch recorded in the app, what watchedAt was just before it.
+  latestBeforeRewatch?: string[];
   genreIds?: number[]; // TMDB genre IDs, for the genre filter
   imdbId?: string | null; // from TMDB's external_ids, used for accurate OMDb lookups instead of title matching
   // Full release_date from TMDB, not just the year. Powers "releasing this

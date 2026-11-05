@@ -18,7 +18,9 @@ import { prefersReducedMotion } from "./useAnimatedDismiss";
  * one; children that appear or disappear are left to their own entrance and
  * exit. The container's height is animated as well, which is what keeps the
  * content BELOW the list from jumping the moment a row is removed while the
- * rows themselves are still gliding up.
+ * rows themselves are still gliding up. A grid container needs
+ * align-content: start for this (see .show-grid): otherwise the height still
+ * to be given back is spread over its rows and every child moves with it.
  *
  * Positions are taken relative to the container, so a page that scrolls
  * between the capture and the commit does not register as movement.
@@ -42,19 +44,37 @@ const FLIP_LAYOUT_EASING = "cubic-bezier(0.2, 0, 0, 1)";
  */
 const CAPTURE_TTL_MS = 500;
 
+/**
+ * How far outside the viewport a child still counts as on screen. A glide
+ * that starts or ends within this band is (or is about to be) visible.
+ */
+const ON_SCREEN_MARGIN_PX = 120;
+
 interface Layout {
   height: number;
-  positions: Map<string, { x: number; y: number }>;
+  /** `seen`: on screen (or within the margin) when measured. */
+  positions: Map<string, { x: number; y: number; seen: boolean }>;
 }
 
 function measure(container: HTMLElement): Layout {
   const origin = container.getBoundingClientRect();
-  const positions = new Map<string, { x: number; y: number }>();
+  const viewW = window.innerWidth;
+  const viewH = window.innerHeight;
+  // A viewport that reports no size (a hidden webview) says nothing about
+  // what is visible, so everything counts as seen there.
+  const known = viewW > 0 && viewH > 0;
+  const positions = new Map<string, { x: number; y: number; seen: boolean }>();
   for (const child of Array.from(container.children)) {
     const key = (child as HTMLElement).dataset.flipKey;
     if (key === undefined) continue;
     const rect = child.getBoundingClientRect();
-    positions.set(key, { x: rect.left - origin.left, y: rect.top - origin.top });
+    const seen =
+      !known ||
+      (rect.bottom > -ON_SCREEN_MARGIN_PX &&
+        rect.top < viewH + ON_SCREEN_MARGIN_PX &&
+        rect.right > -ON_SCREEN_MARGIN_PX &&
+        rect.left < viewW + ON_SCREEN_MARGIN_PX);
+    positions.set(key, { x: rect.left - origin.left, y: rect.top - origin.top, seen });
   }
   return { height: origin.height, positions };
 }
@@ -104,6 +124,11 @@ export function useFlipLayout(containerRef: RefObject<HTMLElement | null>): () =
       const from = key === undefined ? undefined : before.positions.get(key);
       const to = key === undefined ? undefined : after.positions.get(key);
       if (!from || !to) continue;
+      // Off screen before AND after: nobody sees it move. On a library of a
+      // few hundred posters, removing one near the top used to start a glide
+      // on every tile below it - hundreds of simultaneous animations on a
+      // phone, for the dozen that are actually visible.
+      if (!from.seen && !to.seen) continue;
       const dx = from.x - to.x;
       const dy = from.y - to.y;
       if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;

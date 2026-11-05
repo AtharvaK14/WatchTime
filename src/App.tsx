@@ -22,6 +22,7 @@ import {
 } from "./lib/persistence";
 import { initNative } from "./lib/native";
 import DeepLinkHost from "./components/DeepLinkHost";
+import QuickActionsHost from "./components/QuickActionsHost";
 import {
   initNotificationRescheduling,
   initNotificationTapHandling,
@@ -180,6 +181,11 @@ function App() {
       {/* Renders the app's existing detail panels when a notification or a
           widget row is tapped. No UI of its own. */}
       <DeepLinkHost />
+
+      {/* The one Quick Actions menu (long-press / right-click on a title,
+          season or episode), the watch history sheet it opens, and the
+          confirmation toasts. Portalled above every panel. */}
+      <QuickActionsHost />
 
       <nav className="side-rail">
         <span className="side-rail-mark" aria-hidden="true"><BrandMark size={22} /></span>

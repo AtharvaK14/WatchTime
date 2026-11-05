@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Episode } from "../db";
 import { TMDB_STILL_BASE } from "../tmdb";
 import { getOmdbEpisodeRating, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbEpisodeRating } from "../omdb";
@@ -6,7 +6,28 @@ import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useDismissKeyboardOnOpen } from "../lib/keyboard";
 import { useBackHandler } from "../lib/backHandler";
 import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
+import { rectAnchor } from "../lib/contextActions";
 import StreamingCapsules from "./StreamingCapsules";
+import ActionMenu from "./ActionMenu";
+import { CheckIcon, MinusCircleIcon, RepeatIcon, UnwatchedIcon } from "./icons";
+import WatchMark from "./WatchMark";
+import { viewingsInWords } from "../lib/watchHistory";
+import { viewingStatusActions } from "../lib/quickActions";
+
+/** Matches .ep-action-btn.is-confirmed in index.css. */
+const WATCH_CONFIRM_MS = 420;
+/** How long a removed viewing's "-1" shows before the new count. */
+const WATCH_MINUS_MS = 900;
+
+const STATUS_ICONS: Record<string, ReactNode> = {
+  "watched-once": <CheckIcon />,
+  "watched-again": <RepeatIcon />,
+  "remove-last": <MinusCircleIcon />,
+  "not-watched": <UnwatchedIcon />,
+};
+
+/** What a viewing-status callback may return: nothing, or a promise that rejects when the write failed. */
+type WatchAction = () => void | Promise<unknown>;
 
 /**
  * How long the panel's own exit animation runs. Must match the
@@ -34,11 +55,16 @@ interface Props {
   // Drives the visible rewatch count; 0 when unwatched.
   watchCount: number;
   canToggleWatched?: boolean;
-  onToggleWatched: () => void;
+  /** Mark as Watched when unwatched, and the menu's "Not watched" when watched. */
+  onToggleWatched: WatchAction;
   // Rewatch support: records one more watch EVENT for an already-watched
   // episode (watchCount + latest date), never a duplicate row. Optional so
   // preview contexts without library membership simply don't offer it.
-  onWatchAgain?: () => void;
+  onWatchAgain?: WatchAction;
+  /** "Watched once": the count back to one, keeping the original viewing. Offered in the watched menu when supplied. */
+  onWatchedOnce?: WatchAction;
+  /** "Remove last viewing": undoes the most recent rewatch only. Offered from two viewings when supplied. */
+  onRemoveLatestViewing?: WatchAction;
   /**
    * Widget overlay only. When supplied, the episode title becomes a control
    * that leaves the overlay and opens THIS EPISODE's own detail panel in the
@@ -101,6 +127,8 @@ export default function EpisodeDetailsPanel({
   canToggleWatched = true,
   onToggleWatched,
   onWatchAgain,
+  onWatchedOnce,
+  onRemoveLatestViewing,
   onOpenEpisodeInApp,
   onOpenSeries,
   dismissOnOpenSeries = false,
@@ -124,8 +152,59 @@ export default function EpisodeDetailsPanel({
   useBackHandler(true, requestClose);
 
   const [rating, setRating] = useState<OmdbEpisodeRating | null | "loading">("loading");
-  // Extra watches beyond the first, shown as "+N".
-  const rewatches = Math.max(0, watchCount - 1);
+
+  // The viewing-status controls. One write at a time (a second tap while the
+  // first is saving is ignored, so it cannot record a viewing twice), the
+  // green pop only once a write has landed, and the reason in words when one
+  // did not.
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [confirmed, setConfirmed] = useState<"status" | "again" | "minus" | null>(null);
+  // Which optional viewing-status callbacks this context supplied.
+  const statusCallbacks: Partial<Record<string, WatchAction>> = {
+    "watched-once": onWatchedOnce,
+    "watched-again": onWatchAgain,
+    "remove-last": onRemoveLatestViewing,
+  };
+  const [statusMenu, setStatusMenu] = useState<HTMLElement | null>(null);
+  const confirmTimer = useRef<number | null>(null);
+  useEffect(
+    () => () => {
+      if (confirmTimer.current !== null) window.clearTimeout(confirmTimer.current);
+    },
+    []
+  );
+  // The widget overlay keeps this panel mounted while it advances to the next
+  // episode, so an error or an open menu from the last one must not carry over.
+  useEffect(() => {
+    setSaveError(null);
+    setStatusMenu(null);
+  }, [episode.key]);
+
+  async function runWatchAction(action: WatchAction | undefined, pop: "status" | "again" | "minus" | null) {
+    if (!action || savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await action();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+      return;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+    if (pop) {
+      if (confirmTimer.current !== null) window.clearTimeout(confirmTimer.current);
+      setConfirmed(pop);
+      confirmTimer.current = window.setTimeout(() => {
+        confirmTimer.current = null;
+        setConfirmed(null);
+      }, pop === "minus" ? WATCH_MINUS_MS : WATCH_CONFIRM_MS);
+    }
+  }
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -293,29 +372,86 @@ export default function EpisodeDetailsPanel({
               navigation capsules above it. Once watched, marking it back is a
               correction rather than the main path, so it drops to the outlined
               treatment it shares with "Watch Again". */}
+          {/* Once watched, the first control is the green tick itself - the
+              same one as the season list - and opens the same three choices
+              (Watched once / Watched again / Not watched) instead of unmarking
+              on the spot. Unwatched, it is the plain Mark as Watched it always
+              was. */}
           {canToggleWatched && (
             <>
               <div className="episode-actions">
-                <button
-                  className={`ep-action-btn ${watched ? "" : "ep-action-primary"}`}
-                  onClick={onToggleWatched}
-                >
-                  {watched ? "Mark as Unwatched" : "Mark as Watched"}
-                </button>
+                {watched ? (
+                  <button
+                    className={`ep-action-btn ep-watched-status${confirmed === "status" ? " is-confirmed" : ""}`}
+                    onClick={(e) => setStatusMenu(e.currentTarget)}
+                    aria-disabled={saving}
+                    aria-haspopup="menu"
+                    aria-expanded={statusMenu !== null}
+                    aria-label={`${viewingsInWords(watchCount)}. Change viewing status`}
+                  >
+                    {/* The same indicator as the season list's: the tick for
+                        one viewing, the number of viewings from two, "-1" for
+                        a moment after one is removed. */}
+                    <span className="watch-indicator on" aria-hidden="true">
+                      <WatchMark count={watchCount} minus={confirmed === "minus"} />
+                    </span>
+                    Watched
+                  </button>
+                ) : (
+                  <button
+                    className="ep-action-btn ep-action-primary"
+                    onClick={() => runWatchAction(onToggleWatched, null)}
+                    aria-disabled={saving}
+                  >
+                    Mark as Watched
+                  </button>
+                )}
                 {watched && onWatchAgain && (
-                  <button className="ep-action-btn" onClick={onWatchAgain}>
+                  <button
+                    className={`ep-action-btn${confirmed === "again" ? " is-confirmed" : ""}`}
+                    onClick={() => runWatchAction(onWatchAgain, "again")}
+                    aria-disabled={saving}
+                  >
                     Watch Again
-                    {rewatches > 0 && <span className="rewatch-badge">+{rewatches}</span>}
                   </button>
                 )}
               </div>
-              {watched && rewatches > 0 && (
-                <p className="muted small">Watched {watchCount} times.</p>
+              {saveError && (
+                <p className="status-error small" role="alert">
+                  Couldn't save that, so nothing changed. ({saveError})
+                </p>
               )}
             </>
           )}
         </div>
       </div>
+
+      {/* The viewing-status choices, by the shared rule (viewingStatusActions)
+          so they match the season list's tick and a movie's indicator; an
+          entry is left out where this context has no callback for it. */}
+      {statusMenu && (
+        <ActionMenu
+          anchor={rectAnchor(statusMenu)}
+          label={`${episode.name}: viewing status`}
+          title={episode.name}
+          subtitle={`${seasonEp} · ${viewingsInWords(watchCount)}`}
+          returnFocusTo={statusMenu}
+          anchorEl={statusMenu}
+          items={viewingStatusActions(watchCount)
+            .filter((a) => a.id === "not-watched" || statusCallbacks[a.id] !== undefined)
+            .map((a) => ({ id: a.id, label: a.label, danger: a.danger, checked: a.checked, icon: STATUS_ICONS[a.id] }))}
+          onSelect={(id) => {
+            setStatusMenu(null);
+            if (id === "watched-once") {
+              // Already watched exactly once: choosing it again writes nothing.
+              if (watchCount > 1) void runWatchAction(onWatchedOnce, "status");
+            } else if (id === "watched-again") void runWatchAction(onWatchAgain, "status");
+            else if (id === "remove-last") void runWatchAction(onRemoveLatestViewing, "minus");
+            else void runWatchAction(onToggleWatched, null);
+          }}
+          onClose={() => setStatusMenu(null)}
+        />
+      )}
 
       {/* The "it worked" beat of the widget's mark-watched hand-off. Without it
           the panel just leaves and the user has to infer from the widget behind
@@ -328,7 +464,7 @@ export default function EpisodeDetailsPanel({
           unaffected by the card's exit transform, so the tick holds still
           while the card lifts away. role="status" so the confirmation is
           announced rather than only drawn. */}
-      {transition === "leave-watched" && (
+            {transition === "leave-watched" && (
         <div className="episode-watched-flash" role="status">
           <span className="episode-watched-flash-mark" aria-hidden="true">
             &#10003;

@@ -12,6 +12,7 @@ import { libraryKey, removalClass, useRemovalExit, type RemovalPhase } from "../
 import { useMovieWatchedPhases, watchedClass } from "../lib/movieWatched";
 import { useFlipLayout } from "../lib/useFlipLayout";
 import MovieWatchedOverlay from "./MovieWatchedOverlay";
+import { titleQuickActionProps } from "../lib/titleQuickActions";
 
 const itemKey = (item: SectionItem) => libraryKey(item.kind, item.tmdbId);
 
@@ -63,6 +64,12 @@ function Poster({
     <button
       className={`rail-card${removalClass(removal)}${watchedClass(watched, true)}`}
       data-flip-key={itemKey(item)}
+      {...titleQuickActionProps({
+        kind: item.kind,
+        tmdbId: item.tmdbId,
+        name: item.name,
+        onViewDetails: () => onOpen(item),
+      })}
       onClick={() => onOpen(item)}
       title={item.name}
     >
@@ -74,7 +81,7 @@ function Poster({
         )}
         {item.note && <span className="rail-pill">{item.note}</span>}
         {showOwnedMarker && <span className="rail-owned" aria-hidden="true" />}
-        <MovieWatchedOverlay phase={watched} staying />
+        <MovieWatchedOverlay phase={watched} staying tmdbId={item.tmdbId} />
       </span>
       <span className="rail-name">{item.name}</span>
       {/* The visual markers above are decorative; the same facts go to

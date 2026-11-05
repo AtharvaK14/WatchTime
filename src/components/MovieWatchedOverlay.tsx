@@ -1,8 +1,15 @@
-import type { MovieWatchedPhase } from "../lib/movieWatched";
+import { movieMarkFor, type MovieWatchedPhase } from "../lib/movieWatched";
 
 /**
- * The acknowledgement a movie card shows once it has been marked watched: a
- * translucent green veil over the poster with a tick in the middle.
+ * The acknowledgement a movie card shows once a change to its viewings has
+ * landed, over the poster:
+ *
+ *   watched    translucent green veil, the tick in the middle - or the
+ *              viewing count, for a movie now watched more than once
+ *   decrement  "-1" on a dark veil: one viewing removed, the movie still
+ *              watched; the card's own indicator then shows the new count
+ *   unwatched  translucent red veil and a red X: back to unwatched (the movie
+ *              stays in the library)
  *
  * The same mark as an Up Next episode card's (.wn-watched-mark: the white fill
  * of the tick control, popped into the middle), so a watched movie and a
@@ -17,20 +24,43 @@ import type { MovieWatchedPhase } from "../lib/movieWatched";
 export default function MovieWatchedOverlay({
   phase,
   staying,
+  tmdbId,
 }: {
   phase: MovieWatchedPhase | undefined;
   /** The card stays in its list, so at "exit" the veil fades instead of the card leaving. */
   staying: boolean | undefined;
+  /** Which movie, to read what the acknowledgement says. Without it the plain tick is shown. */
+  tmdbId?: number;
 }) {
   if (phase !== "confirm" && phase !== "exit") return null;
+  const mark = tmdbId === undefined ? undefined : movieMarkFor(tmdbId);
+  const kind = mark?.kind ?? "watched";
+  let glyph: string;
+  let words: string;
+  if (mark?.kind === "unwatched") {
+    glyph = "✕";
+    words = "Marked as not watched";
+  } else if (mark?.kind === "decrement") {
+    glyph = "−1";
+    words = mark.count === 1 ? "Viewing removed. Watched once" : `Viewing removed. Watched ${mark.count} times`;
+  } else {
+    const count = mark?.count ?? 1;
+    // The same "N×" as the poster's own indicator (WatchMark).
+    glyph = count >= 2 ? `${count > 99 ? "99+" : count}×` : "✓";
+    words = count >= 2 ? `Marked as watched. Watched ${count} times` : "Marked as watched";
+  }
+  const wide = glyph.length > 2;
   // A span, not a div: on Discover and For You the card is a <button>, which
   // may only contain phrasing content. The CSS makes it a flex box either way.
   return (
-    <span className={`movie-watched-overlay${phase === "exit" && staying ? " is-fading" : ""}`} role="status">
-      <span className="wn-watched-mark" aria-hidden="true">
-        &#10003;
+    <span
+      className={`movie-watched-overlay is-${kind}${phase === "exit" && staying ? " is-fading" : ""}`}
+      role="status"
+    >
+      <span className={`wn-watched-mark is-${kind}${wide ? " is-wide" : ""}`} aria-hidden="true">
+        {glyph}
       </span>
-      <span className="sr-only">Marked as watched</span>
+      <span className="sr-only">{words}</span>
     </span>
   );
 }
