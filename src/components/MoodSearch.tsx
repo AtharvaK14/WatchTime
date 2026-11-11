@@ -34,6 +34,7 @@ export default function MoodSearch({
   onClear,
   onCancelSetup,
   resultCount,
+  placeholder = "Search shows & movies",
 }: {
   setup: SetupPhase;
   filter: MoodFilter | null;
@@ -43,6 +44,8 @@ export default function MoodSearch({
   onClear: () => void;
   onCancelSetup: () => void;
   resultCount: number;
+  /** What the box searches, in the page's own words: Home says "your shows" or "your movies". */
+  placeholder?: string;
 }) {
   const [text, setText] = useState("");
 
@@ -74,8 +77,8 @@ export default function MoodSearch({
         <SearchField
           className="mood-search-input"
           value={text}
-          placeholder="Search shows & movies"
-          aria-label="Search shows and movies"
+          placeholder={placeholder}
+          aria-label={placeholder}
           onChange={(e) => setText(e.target.value)}
           clearable={Boolean(text || filter)}
           onClear={clear}

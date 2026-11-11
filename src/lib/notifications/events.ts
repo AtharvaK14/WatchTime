@@ -254,11 +254,11 @@ export function exclusionLabel(reason: ReleaseAlertExclusion): string {
     case "not-followed":
       return "not followed";
     case "stopped":
-      return "Stopped Watching";
+      return "Stopped";
     case "not-started":
-      return "Haven't Yet Started";
+      return "Not started";
     case "stale":
-      return "Haven't Watched For a While";
+      return "Lapsed";
     case "unknown-progress":
       return "watch history has no usable date";
   }

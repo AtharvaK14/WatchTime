@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ComponentType } from "react";
+import { useState, useEffect, useRef, type ComponentType, type CSSProperties } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { App as CapacitorApp } from "@capacitor/app";
 import { db } from "./db";
@@ -23,6 +23,8 @@ import {
 import { initNative } from "./lib/native";
 import DeepLinkHost from "./components/DeepLinkHost";
 import QuickActionsHost from "./components/QuickActionsHost";
+import HomeMediaSwitch from "./components/HomeMediaSwitch";
+import { readHomeMedia, storeHomeMedia, type HomeMedia } from "./lib/homeMedia";
 import {
   initNotificationRescheduling,
   initNotificationTapHandling,
@@ -53,6 +55,12 @@ const TAB_LABELS: Record<Tab, string> = {
   settings: "Settings",
 };
 
+/** Left-to-right position of each destination, which decides the direction a new tab slides in from. Settings sits past the last nav tab. */
+const TAB_POSITION: Record<Tab, number> = { home: 0, shows: 1, movies: 2, discover: 3, forYou: 4, settings: 5 };
+
+/** How the incoming tab enters: from the right when moving right, from the left when moving back, plain fade on launch. */
+type TabDirection = "none" | "forward" | "back";
+
 const TAB_ICONS: Record<Tab, ComponentType<IconProps>> = {
   home: HomeIcon,
   shows: ShowsIcon,
@@ -64,7 +72,30 @@ const TAB_ICONS: Record<Tab, ComponentType<IconProps>> = {
 
 function App() {
   const [tab, setTab] = useState<Tab>("home");
+  // Which way the last tab change went. Derived while rendering (React's
+  // "adjust state when a value changes" pattern) rather than in every one of
+  // the places that call setTab: the nav, the header, Android back, Home's
+  // links. The tab view is keyed on the tab, so it remounts with the new
+  // direction already set and plays the matching entrance.
+  const [shownTab, setShownTab] = useState<Tab>(tab);
+  const [tabDirection, setTabDirection] = useState<TabDirection>("none");
+  if (shownTab !== tab) {
+    setShownTab(tab);
+    setTabDirection(TAB_POSITION[tab] > TAB_POSITION[shownTab] ? "forward" : "back");
+  }
+  // The nav tab that is selected, for the sliding capsule; -1 on Settings,
+  // which is not in the nav, and the capsule fades out.
+  const navIndex = TAB_ORDER.indexOf(tab);
   const [moviesInitialFilter, setMoviesInitialFilter] = useState<"wantToWatch" | null>(null);
+  // Home's Shows / Movies filter. Lives here rather than in Home because the
+  // phone placement of the switch is rendered next to the bottom nav, outside
+  // the tab view, and because Home remounts on every tab switch and the
+  // choice has to outlive that. Remembered across launches.
+  const [homeMedia, setHomeMediaState] = useState<HomeMedia>(readHomeMedia);
+  function setHomeMedia(value: HomeMedia) {
+    setHomeMediaState(value);
+    storeHomeMedia(value);
+  }
 
   // Phase 0 durability: ask the browser/WebView for persistent storage once
   // per launch, and re-evaluate the backup nudge whenever a backup or
@@ -187,7 +218,14 @@ function App() {
           confirmation toasts. Portalled above every panel. */}
       <QuickActionsHost />
 
-      <nav className="side-rail">
+      <nav
+        className={`side-rail${navIndex >= 0 ? " has-selection" : ""}`}
+        style={{ "--nav-index": Math.max(navIndex, 0) } as CSSProperties}
+      >
+        {/* One capsule that slides to the selected item, rather than each
+            item drawing its own: moving between tabs then reads as one
+            motion from where you were to where you are. */}
+        <span className="rail-indicator" aria-hidden="true" />
         <span className="side-rail-mark" aria-hidden="true"><BrandMark size={22} /></span>
         {TAB_ORDER.map((t) => {
           const Icon = TAB_ICONS[t];
@@ -205,7 +243,7 @@ function App() {
         })}
       </nav>
 
-      <div className="app-shell">
+      <div className={`app-shell${tab === "home" ? " has-home-switch" : ""}`}>
         <header className="app-header">
           {/* Logo only. The app name is redundant once someone is inside
               the app, and dropping it lets the mark carry the identity at a
@@ -214,7 +252,7 @@ function App() {
               here, so the wordmark leaving the header changes nothing for
               screen readers. */}
           <span className="brand" aria-label={APP_NAME}>
-            <BrandMark size={48} />
+            <BrandMark size={44} />
           </span>
           {/* aria-current marks it as the active page when Settings is open,
               since it is the only way in now that it has left the nav. */}
@@ -246,8 +284,15 @@ function App() {
               adds a transition without changing what is rendered or when.
               Nothing is keyed inside a page, so state within a tab is
               untouched. */}
-          <div key={tab} className="tab-view">
-            {tab === "home" && <Home onViewAllMovies={viewAllWantToWatchMovies} />}
+          <div key={tab} className={`tab-view is-${tabDirection}`}>
+            {tab === "home" && (
+              <Home
+                media={homeMedia}
+                onMediaChange={setHomeMedia}
+                onViewAllMovies={viewAllWantToWatchMovies}
+                onOpenDiscover={() => setTab("discover")}
+              />
+            )}
             {tab === "shows" && <Library />}
             {tab === "movies" && (
               <Movies initialFilter={moviesInitialFilter} onInitialFilterConsumed={() => setMoviesInitialFilter(null)} />
@@ -258,14 +303,25 @@ function App() {
           </div>
         </main>
 
+        {/* Home only, and phones only (CSS): docked just above the bottom nav.
+            Wider screens get the inline copy Home renders beside its search. */}
+        {tab === "home" && <HomeMediaSwitch value={homeMedia} onChange={setHomeMedia} placement="docked" />}
+
         {/* display:none above 640px via CSS, this is the mobile-only nav. */}
-        <nav className="bottom-nav">
+        <nav
+          className={`bottom-nav${navIndex >= 0 ? " has-selection" : ""}`}
+          style={{ "--nav-index": Math.max(navIndex, 0), "--nav-count": TAB_ORDER.length } as CSSProperties}
+        >
+          {/* The selected capsule, as one element that slides between tabs.
+              See .nav-indicator. */}
+          <span className="nav-indicator" aria-hidden="true" />
           {TAB_ORDER.map((t) => {
             const Icon = TAB_ICONS[t];
             return (
               <button
                 key={t}
                 className={`bottom-nav-item ${tab === t ? "active" : ""}`}
+                aria-current={tab === t ? "page" : undefined}
                 onClick={() => setTab(t)}
               >
                 <Icon size={22} />

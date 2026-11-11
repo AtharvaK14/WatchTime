@@ -157,6 +157,15 @@ export function CheckIcon({ size = 16, className }: IconProps) {
   );
 }
 
+/** The outlined star beside a TMDB rating. */
+export function StarIcon({ size = 12, className }: IconProps) {
+  return (
+    <svg {...baseProps(size)} className={className} aria-hidden="true">
+      <path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.8-5.2 2.8 1-5.8-4.3-4.1 5.9-.9z" />
+    </svg>
+  );
+}
+
 /** Watched again: a loop, the common "repeat" mark. */
 export function RepeatIcon({ size = 16, className }: IconProps) {
   return (

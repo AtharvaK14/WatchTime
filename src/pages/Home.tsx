@@ -51,8 +51,33 @@ import { markMovieWatchedFromCard, useMovieWatchedExit, watchedClass, type Watch
 import { isOnWatchlist } from "../lib/watchlist";
 import { requestNotificationSync } from "../lib/notifications";
 import MovieWatchedOverlay from "../components/MovieWatchedOverlay";
+import HomeMediaSwitch from "../components/HomeMediaSwitch";
+import type { HomeMedia } from "../lib/homeMedia";
+import { CheckIcon, StarIcon } from "../components/icons";
+import { backfillMovieRatings, formatRating, moviesNeedingRating } from "../lib/ratings";
 
 type UpNextTab = "next" | "stale" | "not-started" | "stopped";
+
+/** "S3 E1": the episode code every redesigned Home row uses. */
+function episodeCode(seasonNumber: number, episodeNumber: number): string {
+  return `S${seasonNumber} E${episodeNumber}`;
+}
+
+/**
+ * The empty state for a whole Home mode: one sentence of what will appear
+ * here, and the one place to go to make it appear.
+ */
+function HomeEmpty({ title, body, onOpenDiscover }: { title: string; body: string; onOpenDiscover: () => void }) {
+  return (
+    <div className="home-empty">
+      <p className="home-empty-title">{title}</p>
+      <p className="home-empty-body">{body}</p>
+      <button type="button" className="home-empty-action" onClick={onOpenDiscover}>
+        Open Discover
+      </button>
+    </div>
+  );
+}
 
 /**
  * How long the app can be away before coming back re-syncs episode lists.
@@ -122,6 +147,8 @@ function EpisodeRow({
 }) {
   const isPremiere = row.nextEpisode?.episodeNumber === 1;
   const stopped = row.category === "stopped";
+  const premiere = isPremiere && !stopped ? (row.nextEpisode?.seasonNumber === 1 ? "Series premiere" : "Season premiere") : null;
+  const more = row.additionalCount > 0 ? `+${row.additionalCount} more` : "";
   return (
     <div
       className={`watch-next-row${transition ? ` is-${transition.phase}` : ""}${removalClass(removal)}`}
@@ -138,9 +165,11 @@ function EpisodeRow({
         <div className="poster-placeholder wn-poster" onClick={() => onOpenShow(row.showId)} />
       )}
       <div className="wn-body">
-        <span className="show-pill" onClick={() => onOpenShow(row.showId)}>
-          {row.showName} &rsaquo;
-        </span>
+        {/* Plain text in the card's title style, not a capsule: the show name
+            is the card's heading. Still a control, and now a real button. */}
+        <button type="button" className="wn-show-name" onClick={() => onOpenShow(row.showId)}>
+          {row.showName}
+        </button>
         {row.nextEpisode ? (
           <>
             {/* The episode block opens the same episode panel the season
@@ -148,40 +177,56 @@ function EpisodeRow({
                 it is keyboard reachable and announced as a control. */}
             <button type="button" className="wn-episode-button" onClick={() => onOpenEpisode(row)}>
               <span className="wn-episode-line">
-                S{String(row.nextEpisode.seasonNumber).padStart(2, "0")} | E
-                {String(row.nextEpisode.episodeNumber).padStart(2, "0")}
-                {row.additionalCount > 0 && <span className="muted"> +{row.additionalCount}</span>}
+                <span className="wn-episode-code">
+                  {episodeCode(row.nextEpisode.seasonNumber, row.nextEpisode.episodeNumber)}
+                </span>
+                <span className="wn-episode-name">
+                  <span aria-hidden="true">· </span>
+                  {row.nextEpisode.name}
+                </span>
               </span>
-              <span className="muted small wn-episode-name">{row.nextEpisode.name}</span>
               <span className="sr-only">Episode details</span>
             </button>
-            {/* Two different claims, so two different tags, and a row can
-                carry both. PREMIERE describes the episode being offered (it
-                opens a season); NEW describes the SHOW (something has been
-                released that the user has not seen). They coincide on a
-                premiere that just dropped and diverge on a returning series
-                the user had not finished — where the row still offers the
-                next episode in progression and NEW is the only thing
-                explaining why the show is back in this list at all. */}
-            {row.newlyAvailable && (
-              <span className="new-tag" title={`Latest release: ${row.newlyAvailableAt}`}>
-                NEW
-              </span>
+            {/* One quiet metadata line instead of filled tags. Still two
+                different claims and a row can carry both: New describes the
+                SHOW (something has been released that the user has not seen),
+                the premiere describes the EPISODE being offered (it opens a
+                season). They coincide on a premiere that just dropped and
+                diverge on a returning series the user had not finished, where
+                New is the only thing explaining why the show is back in this
+                list at all. Only "New" keeps the accent colour. */}
+            {(more || row.newlyAvailable || premiere) && (
+              <p className="wn-meta">
+                {more}
+                {row.newlyAvailable && (
+                  <>
+                    {more && " · "}
+                    <span className="wn-new" title={`Latest release: ${row.newlyAvailableAt}`}>
+                      New
+                    </span>
+                  </>
+                )}
+                {premiere && (
+                  <>
+                    {(more || row.newlyAvailable) && " · "}
+                    {premiere}
+                  </>
+                )}
+              </p>
             )}
-            {isPremiere && !stopped && <span className="premiere-tag">PREMIERE</span>}
             {/* Why a show with new episodes is not in Watch Next. Without
                 this the categorisation looks exactly like the bug it used to
                 be — the honest reason is that the user never finished what was
                 already out, and the row is pointing at that, not at the new
                 episode. */}
             {row.releasedButBehind && (
-              <p className="muted small wn-behind-note">
+              <p className="wn-meta wn-behind-note">
                 New episodes have aired, but there are earlier ones you haven't watched.
               </p>
             )}
           </>
         ) : (
-          <p className="muted small">
+          <p className="wn-meta">
             {row.category === "not-started"
               ? "Not started yet"
               : "More to watch (couldn't match the exact next episode against TMDB)"}
@@ -203,7 +248,7 @@ function EpisodeRow({
           aria-label={row.category === "not-started" ? "Start watching" : "Mark watched"}
           disabled={!row.nextEpisode}
         >
-          &#10003;
+          <CheckIcon size={20} />
         </button>
       )}
       {/* Over the card for the green state and while it flips away. Gone by
@@ -226,7 +271,30 @@ function markEntered(e: AnimationEvent<HTMLDivElement>) {
   if (e.target === e.currentTarget) e.currentTarget.dataset.entered = "";
 }
 
-function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => void; filter: MoodFilter | null }) {
+/** The four Up Next lists, in the order the tabs show them. Short labels so all four fit a phone. */
+const UP_NEXT_TABS: { value: UpNextTab; label: string }[] = [
+  { value: "next", label: "Watch next" },
+  { value: "stale", label: "Lapsed" },
+  { value: "not-started", label: "Not started" },
+  { value: "stopped", label: "Stopped" },
+];
+
+const UP_NEXT_EMPTY: Record<UpNextTab, string> = {
+  next: "Nothing queued up. If shows seem to be missing, Settings › Diagnostics can help.",
+  stale: "Nothing here. Everything you've started was watched recently.",
+  "not-started": "Every show in your library has been started.",
+  stopped: "Shows you stop watching appear here and can be resumed.",
+};
+
+function ShowsHome({
+  onOpenShow,
+  filter,
+  onOpenDiscover,
+}: {
+  onOpenShow: (tmdbId: number) => void;
+  filter: MoodFilter | null;
+  onOpenDiscover: () => void;
+}) {
   // Archived shows are deliberately INCLUDED now. They are the Stopped
   // Watching tab, and a state the user set is one they have to be able to see
   // and undo; filtering them out of the query was what made stopping a show a
@@ -401,39 +469,39 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
 
   if (!shows || !allEpisodes || !allWatched) return <p className="muted">Loading...</p>;
 
-  const { next: watchNext, stale, "not-started": notStarted, stopped } = lists;
+  if (shows.length === 0) {
+    return (
+      <HomeEmpty
+        title="No shows yet"
+        body="Shows you add from Discover appear here with the next episode to watch."
+        onOpenDiscover={onOpenDiscover}
+      />
+    );
+  }
 
   return (
     <>
       {/* This heading is not decoration. .section-title:first-of-type drops the
           divider and top margin from whichever heading comes first, so while
-          this section had none, "Movies to Watch" inherited that treatment and
-          the sections ran together with nothing between them. */}
+          this section had none, "Coming Up" inherited that treatment and the
+          sections ran together with nothing between them. */}
       <h2 className="section-title">Up Next</h2>
 
-      <div className="pill-tabs">
-        <button className={`pill-tab ${tab === "next" ? "active" : ""}`} onClick={() => selectTab("next")}>
-          Watch Next{watchNext.length > 0 ? ` (${watchNext.length})` : ""}
-        </button>
-        <button className={`pill-tab ${tab === "stale" ? "active" : ""}`} onClick={() => selectTab("stale")}>
-          Haven't Watched For a While{stale.length > 0 ? ` (${stale.length})` : ""}
-        </button>
-        <button
-          className={`pill-tab ${tab === "not-started" ? "active" : ""}`}
-          onClick={() => selectTab("not-started")}
-        >
-          Haven't Yet Started{notStarted.length > 0 ? ` (${notStarted.length})` : ""}
-        </button>
-        {/* The fourth state, in the same control as the other three rather
-            than off in a menu of its own: these are four answers to one
-            question, and the row already scrolls sideways for the three that
-            do not fit a phone. */}
-        <button
-          className={`pill-tab ${tab === "stopped" ? "active" : ""}`}
-          onClick={() => selectTab("stopped")}
-        >
-          Stopped Watching{stopped.length > 0 ? ` (${stopped.length})` : ""}
-        </button>
+      {/* Four answers to one question, in one control. The row scrolls
+          sideways if a phone is too narrow for all four. */}
+      <div className="pill-tabs" role="group" aria-label="Up Next lists">
+        {UP_NEXT_TABS.map(({ value, label }) => (
+          <button
+            key={value}
+            type="button"
+            className={`pill-tab ${tab === value ? "active" : ""}`}
+            aria-pressed={tab === value}
+            onClick={() => selectTab(value)}
+          >
+            {label}
+            {lists[value].length > 0 && <span className="pill-tab-count">{lists[value].length}</span>}
+          </button>
+        ))}
       </div>
 
       {syncing && <p className="muted small">Syncing episode data from TMDB...</p>}
@@ -456,17 +524,7 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
         <p className="muted">Nothing in this list matches that search. Clear it to see everything again.</p>
       )}
 
-      {display.length === 0 && !syncing && !filter && (
-        <p className="muted">
-          {tab === "next"
-            ? "Nothing queued up. If you're sure some shows should be here, check Diagnostics in Settings, or re-import using the newer TV Time export format."
-            : tab === "stale"
-              ? "Nothing here, everything you've started has been watched recently."
-              : tab === "not-started"
-                ? "Nothing here, every show in your library has been started."
-                : "Nothing here. Shows you mark as stopped watching appear in this tab, and can be resumed from it."}
-        </p>
-      )}
+      {display.length === 0 && !syncing && !filter && <p className="muted">{UP_NEXT_EMPTY[tab]}</p>}
 
       <div className="watch-next-list" ref={listRef}>
         {display.map(({ item: { row, transition }, removal }) => (
@@ -525,7 +583,7 @@ function ShowsHome({ onOpenShow, filter }: { onOpenShow: (tmdbId: number) => voi
  * issuing new network requests, this only reads db.episodes, which
  * ShowsHome's sync effect already keeps populated for every followed show.
  */
-function ComingUp() {
+function ComingUp({ section }: { section: "episodes" | "releases" }) {
   const shows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(), []);
   const allEpisodes = useLiveQuery(() => db.episodes.toArray(), []);
   // Watch history decides which shows are actively followed: Upcoming
@@ -562,7 +620,9 @@ function ComingUp() {
   const moviesForBackfill = useRef(movies);
   moviesForBackfill.current = movies;
   useEffect(() => {
-    if (!typedDatesNeeded || !moviesForBackfill.current) return;
+    // Home mounts one ComingUp per mode; only the one that shows releases
+    // looks dates up, so the requests are never made twice.
+    if (section !== "releases" || !typedDatesNeeded || !moviesForBackfill.current) return;
     let cancelled = false;
     // A refreshed date can move a release into or out of the notification
     // window as well as this list.
@@ -572,7 +632,7 @@ function ComingUp() {
     return () => {
       cancelled = true;
     };
-  }, [typedDatesNeeded]);
+  }, [typedDatesNeeded, section]);
 
   // Removed titles leave these columns the same way they leave every other
   // list: held until their panel closes, then highlighted and gone. A movie
@@ -588,16 +648,16 @@ function ComingUp() {
 
   if (!shows || !allEpisodes || !allWatched || !movies) return null;
   // Counted off what is on screen, so the section does not vanish under a
-  // last card that is still playing its exit.
-  if (upcomingDisplay.length === 0 && releasingDisplay.length === 0) return null;
+  // last card that is still playing its exit. Each mode shows its own list,
+  // and a mode with nothing coming up shows no section at all.
+  if ((section === "episodes" ? upcomingDisplay.length : releasingDisplay.length) === 0) return null;
 
   return (
     <>
       <h2 className="section-title">Coming Up</h2>
-      <div className="coming-up-cols">
-        <div className="coming-up-col" ref={upcomingListRef}>
-          <p className="muted small coming-up-col-label">Upcoming episodes</p>
-          {upcomingDisplay.length === 0 && <p className="muted small">Nothing confirmed yet.</p>}
+      <p className="section-sub">{section === "episodes" ? "Upcoming episodes" : "Releasing this month"}</p>
+      {section === "episodes" && (
+        <div className="coming-up-list" ref={upcomingListRef}>
           {upcomingDisplay.map(({ item: row, removal }) => (
             <div
               key={row.showId}
@@ -626,18 +686,15 @@ function ComingUp() {
               )}
               <div className="up-row-body">
                 <p className="show-name">{row.showName}</p>
-                <p className="muted small">
-                  S{String(row.episode.seasonNumber).padStart(2, "0")} | E
-                  {String(row.episode.episodeNumber).padStart(2, "0")}
-                </p>
+                <p className="up-row-code">{episodeCode(row.episode.seasonNumber, row.episode.episodeNumber)}</p>
               </div>
               <span className="up-row-date">{formatUpcomingDate(row.episode.airDate)}</span>
             </div>
           ))}
         </div>
-        <div className="coming-up-col" ref={releasingListRef}>
-          <p className="muted small coming-up-col-label">Releasing this month</p>
-          {releasingDisplay.length === 0 && <p className="muted small">Nothing this month.</p>}
+      )}
+      {section === "releases" && (
+        <div className="coming-up-list" ref={releasingListRef}>
           {releasingDisplay.map(({ item: { item: { movie: m, date, releaseKind }, watched, staying }, removal }) => (
             <div
               key={m.tmdbId}
@@ -685,7 +742,7 @@ function ComingUp() {
             </div>
           ))}
         </div>
-      </div>
+      )}
       {openMovie !== null && <DetailsPanel kind="movie" tmdbId={openMovie} onClose={() => setOpenMovie(null)} />}
       {openShow !== null && <DetailsPanel kind="show" tmdbId={openShow} onClose={() => setOpenShow(null)} />}
 
@@ -716,19 +773,29 @@ function ComingUp() {
 /** A stable empty list for while the query loads, so the removal memo is not recomputed every render. */
 const NO_MOVIES: Movie[] = [];
 
-const MTW_CARD_WIDTH = 120;
-const MTW_GAP = 14;
-// Mobile doesn't measure: it shows a capped, horizontally scrollable strip
-// of up to 5 movies, with the view-all tile as the 6th card.
-const MTW_MOBILE_MAX = 5;
+// Movies to Watch is two rows of framed poster cards. Phones always fit three
+// per row; wider screens fit as many cards of at least MTW_MIN_CARD as the
+// grid's measured width allows (the same numbers as .mtw-rail's columns).
+const MTW_MIN_CARD = 160;
+const MTW_GAP = 16;
+const MTW_MOBILE_COLUMNS = 3;
+const MTW_ROWS = 2;
 
-function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: MoodFilter | null }) {
+function MoviesHome({
+  onViewAll,
+  filter,
+  onOpenDiscover,
+}: {
+  onViewAll: () => void;
+  filter: MoodFilter | null;
+  onOpenDiscover: () => void;
+}) {
   const wantToWatch = useLiveQuery(() => db.movies.filter(isOnWatchlist).toArray(), []);
   const [openDetails, setOpenDetails] = useState<number | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
   const isMobile = useIsMobile();
-  const [fitCount, setFitCount] = useState(5); // sensible default before the first real measurement
+  const [fitColumns, setFitColumns] = useState(6); // sensible default before the first real measurement
 
   // Most recently added first, the same comparator as the Movies page's
   // "Recently added" sort: movies from before addedAt existed have it
@@ -775,14 +842,33 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
     if (!el) return;
     function recompute() {
       const width = el!.clientWidth;
-      const count = Math.max(1, Math.floor((width + MTW_GAP) / (MTW_CARD_WIDTH + MTW_GAP)));
-      setFitCount(count);
+      setFitColumns(Math.max(1, Math.floor((width + MTW_GAP) / (MTW_MIN_CARD + MTW_GAP))));
     }
     recompute();
     const observer = new ResizeObserver(recompute);
     observer.observe(el);
     return () => observer.disconnect();
   }, [railRendered]);
+
+  // Two full rows: every card on screen is a real movie, and "See all" in the
+  // header is the way to the rest.
+  const visible = display.slice(0, (isMobile ? MTW_MOBILE_COLUMNS : fitColumns) * MTW_ROWS);
+
+  // Ratings for the cards on screen that have never had one looked up (rows
+  // from before ratings were stored). Keyed on which ids those are, so a
+  // rating landing (a write to db.movies) does not restart the lookup.
+  const needRating = moviesNeedingRating(visible.map((d) => d.item.item));
+  const needRatingIds = needRating.map((m) => m.tmdbId).join(",");
+  const needRatingRef = useRef(needRating);
+  needRatingRef.current = needRating;
+  useEffect(() => {
+    if (!needRatingIds) return;
+    let cancelled = false;
+    backfillMovieRatings(needRatingRef.current, () => cancelled);
+    return () => {
+      cancelled = true;
+    };
+  }, [needRatingIds]);
 
   if (!sorted) return <p className="muted">Loading...</p>;
 
@@ -796,23 +882,33 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
     }
   }
 
-  // Leaving cards (removed, or just watched) are no longer on the watchlist.
+  // Leaving cards (removed, or just watched) are no longer on the watchlist,
+  // so "See all" counts without them.
   const isLeaving = (d: (typeof display)[number]) => !!d.removal || (!!d.item.watched && !d.item.staying);
-  const hasMore = display.length > (isMobile ? MTW_MOBILE_MAX : fitCount);
-  // Desktop: if there's overflow, the last fitting slot becomes the "View
-  // all" tile instead of a movie card, so movies + tile together still
-  // exactly fill the measured width. Mobile: fixed cap of 5 movies, the
-  // view-all tile rides along as a 6th card in the scrollable strip.
-  const visible = isMobile
-    ? display.slice(0, MTW_MOBILE_MAX)
-    : display.slice(0, hasMore ? Math.max(1, fitCount - 1) : fitCount);
-  // The View all count is of movies still on the watchlist: one mid-exit
-  // past the cut is already gone from it.
-  const hiddenCount = display.slice(visible.length).filter((d) => !isLeaving(d)).length;
+  const watchlistCount = display.filter((d) => !isLeaving(d)).length;
+
+  if (display.length === 0 && !filter) {
+    return (
+      <HomeEmpty
+        title="Your watchlist is empty"
+        body="Movies you want to watch appear here, with anything releasing this month."
+        onOpenDiscover={onOpenDiscover}
+      />
+    );
+  }
 
   return (
     <>
-      <h2 className="section-title">Movies to Watch</h2>
+      {/* A header row so "See all" sits on the title's line rather than taking
+          a card slot. */}
+      <div className="section-head">
+        <h2 className="section-title">Movies to Watch</h2>
+        {watchlistCount > 0 && (
+          <button type="button" className="section-link" onClick={onViewAll} aria-label={`See all ${watchlistCount} movies to watch`}>
+            See all {watchlistCount} <span aria-hidden="true">&rsaquo;</span>
+          </button>
+        )}
+      </div>
 
       {watchError && (
         <p className="status-error small" role="alert">
@@ -821,68 +917,71 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
       )}
 
       {display.length === 0 ? (
-        <p className="muted">Nothing on your movie watchlist right now.</p>
+        <p className="muted">Nothing on your watchlist matches that search. Clear it to see everything again.</p>
       ) : (
         <div className="mtw-rail" ref={railRef}>
-          {visible.map(({ item: { item: m, watched, staying }, removal }) => (
-            <div
-              key={m.tmdbId}
-              data-flip-key={m.tmdbId}
-              className={`mtw-card${removalClass(removal)}${watchedClass(watched, staying)}`}
-              {...titleQuickActionProps({
-                kind: "movie",
-                tmdbId: m.tmdbId,
-                name: m.title,
-                onViewDetails: () => setOpenDetails(m.tmdbId),
-              })}
-            >
-              {m.posterPath ? (
-                <img
-                  className="mtw-poster"
-                  src={`${TMDB_IMAGE_BASE}${m.posterPath}`}
-                  alt={m.title}
-                  onClick={() => setOpenDetails(m.tmdbId)}
-                />
-              ) : (
-                <div className="poster-placeholder mtw-poster" onClick={() => setOpenDetails(m.tmdbId)} />
-              )}
-              {/* The same overlay control the Movies page uses, rather than a
-                  full-width button under the card: it keeps the rail reading
-                  as a wall of posters and makes one interaction pattern for
-                  "mark this watched" across both screens.
-
-                  stopPropagation is not strictly required here (the badge is a
-                  sibling of the poster, not nested inside its click target) but
-                  it is kept to match Movies exactly, so neither copy can drift
-                  into depending on the other's structure. */}
-              <button
-                className="watched-badge"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  markWatched(m.tmdbId);
-                }}
-                aria-label={`Mark ${m.title} watched`}
+          {visible.map(({ item: { item: m, watched, staying }, removal }) => {
+            const rating = formatRating(m.tmdbRating);
+            return (
+              <div
+                key={m.tmdbId}
+                data-flip-key={m.tmdbId}
+                className={`mtw-card${removalClass(removal)}${watchedClass(watched, staying)}`}
+                {...titleQuickActionProps({
+                  kind: "movie",
+                  tmdbId: m.tmdbId,
+                  name: m.title,
+                  onViewDetails: () => setOpenDetails(m.tmdbId),
+                })}
               >
-                &#10003;
-              </button>
-              {/* Single-line ellipsis title (see .mtw-name): keeps every card
-                  the same height however long the title is. Full title stays
-                  available as a hover tooltip. */}
-              <p className="show-name mtw-name" title={m.title} onClick={() => setOpenDetails(m.tmdbId)}>
-                {m.title}
-              </p>
-              <MovieWatchedOverlay phase={watched} staying={staying} tmdbId={m.tmdbId} />
-            </div>
-          ))}
-          {hasMore && (
-            <div className="mtw-card" data-flip-key="view-all">
-              <button type="button" className="mtw-view-all-tile" onClick={onViewAll} aria-label="View all movies to watch">
-                <span className="mtw-view-all-count">+{hiddenCount}</span>
-                <span>View all</span>
-                <span aria-hidden="true">&rsaquo;</span>
-              </button>
-            </div>
-          )}
+                {/* The poster and everything drawn over it share this box, so
+                    the rating, the tick and the watched veil line up with the
+                    artwork inside the card's frame. */}
+                <div className="mtw-poster-wrap">
+                  {m.posterPath ? (
+                    <img
+                      className="mtw-poster"
+                      src={`${TMDB_IMAGE_BASE}${m.posterPath}`}
+                      alt={m.title}
+                      onClick={() => setOpenDetails(m.tmdbId)}
+                    />
+                  ) : (
+                    <div className="poster-placeholder mtw-poster" onClick={() => setOpenDetails(m.tmdbId)} />
+                  )}
+                  {rating && (
+                    <span className="rating-chip">
+                      <StarIcon size={11} />
+                      <span className="sr-only">TMDB rating </span>
+                      {rating}
+                    </span>
+                  )}
+                  {/* The same overlay control the Movies page uses: one
+                      interaction pattern for "mark this watched" across both
+                      screens. Top-right, the corner that only ever holds watch
+                      state. stopPropagation is kept to match Movies exactly,
+                      so neither copy can drift into depending on the other's
+                      structure. */}
+                  <button
+                    className="watched-badge"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      markWatched(m.tmdbId);
+                    }}
+                    aria-label={`Mark ${m.title} watched`}
+                  >
+                    <CheckIcon size={15} />
+                  </button>
+                  <MovieWatchedOverlay phase={watched} staying={staying} tmdbId={m.tmdbId} />
+                </div>
+                {/* Single-line ellipsis title (see .mtw-name): keeps every card
+                    the same height however long the title is. Full title stays
+                    available as a hover tooltip. */}
+                <p className="show-name mtw-name" title={m.title} onClick={() => setOpenDetails(m.tmdbId)}>
+                  {m.title}
+                </p>
+              </div>
+            );
+          })}
         </div>
       )}
       {openDetails !== null && <DetailsPanel kind="movie" tmdbId={openDetails} onClose={() => setOpenDetails(null)} />}
@@ -890,9 +989,28 @@ function MoviesHome({ onViewAll, filter }: { onViewAll: () => void; filter: Mood
   );
 }
 
-export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void }) {
+export default function Home({
+  media,
+  onMediaChange,
+  onViewAllMovies,
+  onOpenDiscover,
+}: {
+  /** Shows or Movies: which half of Home is on screen. Owned by App, see HomeMediaSwitch. */
+  media: HomeMedia;
+  onMediaChange: (media: HomeMedia) => void;
+  onViewAllMovies: () => void;
+  onOpenDiscover: () => void;
+}) {
   const [openShow, setOpenShow] = useState<number | null>(null);
   const mood = useMoodSearch();
+  // Set once the user has switched Shows / Movies while Home is open. Only
+  // then do the sections slide in: on arriving at Home the tab view's own
+  // entrance is already playing, and the two together would be one motion
+  // too many. Adjusted while rendering, like App's tab direction.
+  const [mountedMedia] = useState(media);
+  const [hasSwitched, setHasSwitched] = useState(false);
+  if (!hasSwitched && media !== mountedMedia) setHasSwitched(true);
+  const mediaClass = hasSwitched ? " is-switching" : "";
 
   // Mood search spans both lists on this page, so the candidate set is
   // assembled here rather than inside either child. Shows are restricted to
@@ -913,11 +1031,16 @@ export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void 
   );
 
   // Counted the same way the two lists below filter, so the summary line
-  // never claims a number the user cannot see.
-  const resultCount = useMemo(
-    () => (mood.filter ? candidates.filter((c) => matchesMoodFilter(c, mood.filter!)).length : 0),
-    [candidates, mood.filter]
-  );
+  // never claims a number the user cannot see: only the titles of the half of
+  // Home that is showing. The search itself still runs over both, because a
+  // semantic filter's scores are relative to the whole candidate set, and a
+  // search should not mean something different after switching.
+  const resultCount = useMemo(() => {
+    const filter = mood.filter;
+    if (!filter) return 0;
+    const kind = media === "shows" ? "show" : "movie";
+    return candidates.filter((c) => c.kind === kind && matchesMoodFilter(c, filter)).length;
+  }, [candidates, mood.filter, media]);
 
   return (
     <div className="panel">
@@ -927,24 +1050,41 @@ export default function Home({ onViewAllMovies }: { onViewAllMovies: () => void 
           screen-reader-only rather than redundant on screen. */}
       <h1 className="sr-only">Home</h1>
 
-      <MoodSearch
-        setup={mood.setup}
-        filter={mood.filter}
-        searching={mood.searching}
-        dismissed={mood.dismissed}
-        resultCount={resultCount}
-        onSearch={(q) => mood.run(q, candidates)}
-        onClear={mood.clear}
-        onCancelSetup={mood.cancelSetup}
-      />
+      <div className="home-toolbar">
+        <MoodSearch
+          setup={mood.setup}
+          filter={mood.filter}
+          searching={mood.searching}
+          dismissed={mood.dismissed}
+          resultCount={resultCount}
+          placeholder={media === "shows" ? "Search your shows" : "Search your movies"}
+          onSearch={(q) => mood.run(q, candidates)}
+          onClear={mood.clear}
+          onCancelSetup={mood.cancelSetup}
+        />
+        {/* Wider screens only (CSS). Phones get the copy App docks above the
+            bottom nav. */}
+        <HomeMediaSwitch value={media} onChange={onMediaChange} placement="inline" />
+      </div>
 
-      <ShowsHome onOpenShow={setOpenShow} filter={mood.filter} />
+      {/* Both halves stay mounted and the switch only hides one. ShowsHome
+          runs the TMDB episode sync that Coming Up and the release
+          notifications depend on, and unmounting it in Movies mode would
+          cancel that sync and restart it from the first show on every switch.
+          Staying mounted also keeps each half's own state (the Up Next tab,
+          a card mid-animation) across switches.
 
-      <MoviesHome onViewAll={onViewAllMovies} filter={mood.filter} />
-
-      {/* Coming up is calendar data, not recommendations, so a mood filter
+          Coming up is calendar data, not recommendations, so a mood filter
           deliberately does not apply to it. */}
-      <ComingUp />
+      <section className={`home-media is-shows${mediaClass}`} hidden={media !== "shows"} aria-label="Shows">
+        <ShowsHome onOpenShow={setOpenShow} filter={mood.filter} onOpenDiscover={onOpenDiscover} />
+        <ComingUp section="episodes" />
+      </section>
+
+      <section className={`home-media is-movies${mediaClass}`} hidden={media !== "movies"} aria-label="Movies">
+        <MoviesHome onViewAll={onViewAllMovies} filter={mood.filter} onOpenDiscover={onOpenDiscover} />
+        <ComingUp section="releases" />
+      </section>
 
       {openShow !== null && <DetailsPanel kind="show" tmdbId={openShow} onClose={() => setOpenShow(null)} />}
     </div>

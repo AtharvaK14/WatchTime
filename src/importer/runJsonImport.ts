@@ -95,6 +95,7 @@ export async function runJsonImport(
           numberOfEpisodes: totalEpisodeCount(details.seasons),
           genreIds: details.genres.map((g) => g.id),
           imdbId: details.external_ids?.imdb_id ?? show.id.imdb ?? null,
+          tmdbRating: details.vote_average ?? null,
           tvTimeStatus: show.status,
         };
         await db.shows.put(showRecord);
@@ -170,6 +171,7 @@ export async function runJsonImport(
         rewatchCount: movie.rewatch_count,
         genreIds: details.genres.map((g) => g.id),
         imdbId: details.external_ids?.imdb_id ?? movie.id.imdb ?? null,
+        tmdbRating: details.vote_average ?? null,
         addedAt: new Date().toISOString(),
       };
       await db.movies.put(movieRecord);

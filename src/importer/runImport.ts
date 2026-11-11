@@ -121,6 +121,7 @@ export async function runImport(
           numberOfEpisodes: totalEpisodeCount(details.seasons),
           genreIds: details.genres.map((g) => g.id),
           imdbId: details.external_ids?.imdb_id ?? null,
+          tmdbRating: details.vote_average ?? null,
         };
         await db.shows.put(show);
       } else {
@@ -196,6 +197,7 @@ export async function runImport(
         rewatchCount: rewatchCounts.get(rawTitle) ?? 0,
         genreIds: details.genres.map((g) => g.id),
         imdbId: details.external_ids?.imdb_id ?? null,
+        tmdbRating: details.vote_average ?? null,
         addedAt: new Date().toISOString(),
       };
       await db.movies.put(movie);

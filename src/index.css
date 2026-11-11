@@ -87,9 +87,60 @@
      on Android is Droid Sans Mono. Shipping the face makes that line look the
      same everywhere. */
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Code", monospace;
+
+  /* ---- Redesign tokens (Phase 1) ----------------------------------------
+     The scales every redesigned component draws from, so a size or radius is
+     picked from a short list rather than invented per rule. Older rules still
+     use their own values until their screen is migrated.
+
+     Type: 12 labels · 13 metadata · 15 body/rows · 17 card titles ·
+     20 section titles · 24 sheet titles. */
+  --fs-12: 0.75rem;
+  --fs-13: 0.8125rem;
+  --fs-15: 0.9375rem;
+  --fs-17: 1.0625rem;
+  --fs-20: 1.25rem;
+  --fs-24: 1.5rem;
+  /* Radius: thumbnails · posters · poster frames · cards · sheets · pills. */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 24px;
+  --r-pill: 999px;
+  /* Secondary text on controls and unselected options: 7:1 on --surface-raised. */
+  --text-2: #A9A8AE;
+  /* The frame around a poster card (Home's Movies to Watch). */
+  --card-frame: #1A1A20;
+  /* TMDB rating star. Decorative: the number beside it carries the meaning. */
+  --rating-star: #E8B64C;
+  /* The floating navigation material (bottom nav and Home's Shows/Movies
+     switch): translucent so content scrolling under it stays legible through
+     the blur, and one shade darker capsule for the selected item. These two
+     bars are the only blurred surfaces in the app. */
+  --nav-material: rgba(46, 46, 50, 0.74);
+  --nav-selected: rgba(0, 0, 0, 0.5);
+  --nav-unselected: #B4B3B9;
+  --nav-outline: rgba(255, 255, 255, 0.06);
+  --nav-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  /* Motion: press and colour changes · state changes and crossfades. */
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
 }
 
 * { box-sizing: border-box; }
+
+/* Android's WebView (and mobile Chrome) flashes a translucent blue box over
+   anything tappable for the length of a tap. The app gives its own press
+   feedback (the :active scale and dim in the tactile-feedback block, the nav's
+   sliding capsule), so the system flash is a second, off-brand signal for the
+   same tap. Turned off everywhere. Keyboard focus is unaffected: that is
+   :focus-visible, a different mechanism. */
+html,
+* {
+  -webkit-tap-highlight-color: transparent;
+}
 
 body {
   margin: 0;
@@ -105,12 +156,14 @@ body {
    build (no inset), so this is harmless there. */
 .app-shell { max-width: 1600px; margin: 0 auto; padding: env(safe-area-inset-top) 32px 60px; }
 
+/* A compact 56px bar: the mark and the Settings button, nothing else. No rule
+   underneath; the page's own spacing separates it from the content. */
 .app-header {
   display: flex;
   align-items: center;
-  padding: 20px 0;
-  border-bottom: 1px solid var(--border);
-  margin-bottom: 24px;
+  min-height: 56px;
+  padding: 4px 0;
+  margin-bottom: 8px;
 }
 
 .brand {
@@ -333,10 +386,12 @@ hr { border: none; border-top: 1px solid var(--border); }
 .watch-next-list { display: flex; flex-direction: column; gap: 10px; }
 
 /* position: relative anchors the watched overlay (.wn-watched-overlay). */
+/* No outline: the surface alone separates the cards. The border stays,
+   transparent, because .wn-watched-overlay is drawn at inset: -1px to cover it. */
 .watch-next-row {
   position: relative;
   display: flex; align-items: center; gap: 12px;
-  background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px;
+  background: var(--surface); border: 1px solid transparent; border-radius: var(--r-lg); padding: 12px;
 }
 
 .watch-next-row img, .wn-poster { width: 56px; height: 84px; object-fit: cover; border-radius: 6px; cursor: pointer; flex-shrink: 0; }
@@ -527,7 +582,7 @@ hr { border: none; border-top: 1px solid var(--border); }
 .pill-tabs {
   display: flex;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 0;
   flex-wrap: nowrap;
   overflow-x: auto;
   scrollbar-width: none; /* Firefox */
@@ -537,30 +592,23 @@ hr { border: none; border-top: 1px solid var(--border); }
 .pill-tab {
   flex: 0 0 auto; /* keep natural width, never shrink or wrap the label */
   white-space: nowrap;
-  border-radius: 999px; padding: 7px 16px; font-size: 0.85rem; font-weight: 600;
-  background: var(--surface); border: 1px solid var(--border); color: var(--muted);
+  height: 36px; border-radius: var(--r-pill); padding: 0 14px; font-size: var(--fs-13); font-weight: 500;
+  background: var(--surface-raised); border: none; color: var(--text-2);
 }
-.pill-tab.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.pill-tab.active { background: var(--text); color: var(--bg); font-weight: 600; }
+/* The list's size, quieter than its name. */
+.pill-tab-count { margin-left: 6px; opacity: 0.6; font-variant-numeric: tabular-nums; }
 
-.show-pill {
-  display: inline-block; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.02em;
-  text-transform: uppercase; color: var(--text); cursor: pointer; margin-bottom: 4px;
-  background: var(--surface-raised); border: 1px solid var(--border); border-radius: 999px;
-  padding: 2px 10px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  vertical-align: bottom;
-}
-.wn-episode-line { font-weight: 700; font-size: 1rem; margin: 4px 0 2px; font-family: var(--font-mono); }
-.premiere-tag {
-  display: inline-block; margin-top: 4px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.03em;
-  background: var(--accent-dim); color: var(--accent); border-radius: 4px; padding: 2px 8px;
-}
 
+/* Outlined rather than filled: it is an action waiting to be taken, and the
+   green it turns when tapped (the watched overlay) is the only filled state. */
 .watch-toggle-circle {
-  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0; padding: 0;
-  background: var(--text); color: var(--bg); border: none; font-size: 1rem;
+  width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; padding: 0;
+  background: transparent; color: var(--text); border: 1.5px solid var(--border-strong);
   display: flex; align-items: center; justify-content: center;
 }
-.watch-toggle-circle:disabled { background: var(--surface-raised); color: var(--muted); opacity: 0.5; }
+.watch-toggle-circle:hover:not(:disabled) { border-color: var(--text); }
+.watch-toggle-circle:disabled { color: var(--muted); opacity: 0.5; }
 
 .catch-up-offer {
   background: var(--surface-raised); border: 1px solid var(--accent-dim); border-radius: 10px;
@@ -799,7 +847,7 @@ hr { border: none; border-top: 1px solid var(--border); }
     bottom: 0;
     width: 68px;
     padding: 20px 0;
-    background: var(--surface);
+    background: #232326; /* the nav material, opaque: nothing scrolls under the rail */
     border-right: 1px solid var(--border);
     z-index: 6; /* above bottom-nav/modals' z-index, though bottom-nav is hidden at this width anyway */
   }
@@ -818,32 +866,40 @@ hr { border: none; border-top: 1px solid var(--border); }
   }
 
   .side-rail-item {
-    width: 42px;
-    height: 42px;
-    border-radius: 10px;
+    width: 48px;
+    height: 48px;
+    border-radius: var(--r-pill);
     display: flex;
     align-items: center;
     justify-content: center;
     background: none;
     border: none;
-    color: var(--muted);
+    color: var(--nav-unselected);
     cursor: pointer;
     padding: 0;
     position: relative;
+    transition: background-color var(--dur-base) ease, color var(--dur-base) ease;
   }
-  .side-rail-item:hover { background: var(--surface-raised); color: var(--text); }
-  .side-rail-item.active { background: var(--surface-raised); color: var(--accent); }
-  .side-rail-item.active::before {
-    content: "";
+  .side-rail-item:not(.active):hover { background: rgba(255, 255, 255, 0.06); color: var(--text); }
+  /* The same sliding capsule as the bottom nav, vertical, so the two navs read
+     as one design at different widths. The items start 74px down (20px rail
+     padding + the 32px mark + its 8px margin + the 14px gap) and repeat every
+     62px (48px item + 14px gap); keep these in step with the rules above. */
+  .side-rail-item { z-index: 1; }
+  .side-rail-item.active { background: none; color: var(--text); }
+  .rail-indicator {
     position: absolute;
-    left: -9px; /* sits in the rail's own left padding area, not overlapping the icon */
-    top: 50%;
-    transform: translateY(-50%);
-    width: 3px;
-    height: 18px;
-    background: var(--accent);
-    border-radius: 2px;
+    top: 74px;
+    left: calc(50% - 24px);
+    width: 48px;
+    height: 48px;
+    border-radius: var(--r-pill);
+    background: #0E0E10;
+    transform: translateY(calc(var(--nav-index) * 62px));
+    transition: transform 320ms cubic-bezier(0.3, 0.7, 0.1, 1), opacity var(--dur-base) ease;
+    pointer-events: none;
   }
+  .side-rail:not(.has-selection) .rail-indicator { opacity: 0; }
 
   body { padding-left: 68px; }
 }
@@ -852,39 +908,83 @@ hr { border: none; border-top: 1px solid var(--border); }
   /* Room at the bottom so the last row of content in any page isn't
      hidden behind the fixed bottom nav. env(safe-area-inset-bottom)
      accounts for the home-indicator strip on notched iPhones. */
+  /* 64px nav + 12px float + 16px breathing room. Home adds the Shows/Movies
+     switch on top of that (.has-home-switch below). */
   .app-shell {
-    padding: env(safe-area-inset-top) 16px calc(72px + env(safe-area-inset-bottom));
+    padding: env(safe-area-inset-top) 16px calc(92px + env(safe-area-inset-bottom));
+  }
+  .app-shell.has-home-switch {
+    padding-bottom: calc(144px + env(safe-area-inset-bottom));
   }
 
+  /* One UI style floating navigation: a pill inset from the screen edges,
+     with the selected tab drawn as a darker capsule behind its icon and
+     label. Neutral rather than red: red is the brand mark and "New", and the
+     capsule plus the bold label already say which tab is current. */
   .bottom-nav {
     display: flex;
+    gap: 2px;
     position: fixed;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: var(--surface);
-    border-top: 1px solid var(--border);
-    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom));
+    height: 64px;
+    box-sizing: border-box;
+    padding: 6px;
+    border-radius: var(--r-pill);
+    background: var(--nav-material);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid var(--nav-outline);
+    box-shadow: var(--nav-shadow);
     z-index: 5; /* below modals (z-index:10), above ordinary page content */
   }
 
   .bottom-nav-item {
+    position: relative; /* above the sliding capsule */
+    z-index: 1;
     flex: 1;
+    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
     gap: 2px;
     background: none;
     border: none;
-    color: var(--muted);
-    padding: 6px 2px;
-    border-radius: 10px;
-    font-size: 0.68rem;
+    color: var(--nav-unselected);
+    padding: 0 2px;
+    border-radius: var(--r-pill);
+    font-size: var(--fs-12);
+    font-weight: 500;
+    transition: color var(--dur-base) ease, transform 140ms var(--ease-standard);
   }
 
   .bottom-nav-item.active {
-    color: var(--accent);
+    color: var(--text);
+    font-weight: 700;
   }
+
+  /* The selected capsule: one element that slides to the selected tab, so a
+     tab change reads as moving from where you were to where you are. Sized
+     to exactly one item: the nav's padding box, less its 6px padding each
+     side and the 2px gaps, split --nav-count ways. Each step is its own width
+     plus one gap, which is why the translate is (100% + 2px) per index. The
+     curve decelerates hard at the end, like One UI's own indicator. */
+  .nav-indicator {
+    position: absolute;
+    top: 6px;
+    bottom: 6px;
+    left: 6px;
+    width: calc((100% - 12px - (var(--nav-count) - 1) * 2px) / var(--nav-count));
+    border-radius: var(--r-pill);
+    background: var(--nav-selected);
+    transform: translateX(calc(var(--nav-index) * (100% + 2px)));
+    transition: transform 320ms cubic-bezier(0.3, 0.7, 0.1, 1), opacity var(--dur-base) ease;
+    pointer-events: none;
+  }
+  /* On Settings, which is not in the nav, the capsule fades where it is. */
+  .bottom-nav:not(.has-selection) .nav-indicator { opacity: 0; }
 }
 
 /* ============================================================
@@ -1265,33 +1365,18 @@ details[open] > summary::after { transform: rotate(90deg); }
    Size alone could not carry the hierarchy while the page is full of bold
    text at nearly the same size.
 
-   So the separation is now carried by three things at once — a real jump in
-   scale and weight, the hairline rule, and an accent marker no other element
-   on the page uses. The marker is what makes a heading unmistakable at a
-   glance rather than something you resolve by comparing font sizes. */
+   So the separation is carried by a real jump in scale and weight, the
+   hairline rule above, and the spacing around it. The red marker that used to
+   sit in the gutter is gone: red is reserved for the brand mark and "New", and
+   a heading should not compete with them. */
 .section-title {
   position: relative;
-  margin: 40px 0 16px;
-  padding-top: 22px;
-  font-size: 1.35rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  margin: 40px 0 12px;
+  padding-top: 24px;
+  font-size: var(--fs-20);
+  font-weight: 700;
+  letter-spacing: -0.01em;
   border-top: 1px solid var(--border);
-}
-/* The bar sits in the page gutter (negative offset) rather than indenting the
-   heading. Indenting would have pushed every title out of alignment with the
-   cards and rows below it, trading one visual problem for another. -11px
-   clears the app-shell's padding on both breakpoints (32px desktop, 16px
-   mobile) with room to spare, so it can never touch the screen edge. */
-.section-title::before {
-  content: "";
-  position: absolute;
-  left: -11px;
-  top: 22px;
-  bottom: 0;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--accent);
 }
 /* The first section on the page opens straight under the header, so it gets
    no rule above it. This selector is why "Up Next" must exist as a real
@@ -1299,21 +1384,16 @@ details[open] > summary::after { transform: rotate(90deg); }
    first-of-type and silently lost its divider AND its top margin, which is
    what made the sections read as one continuous run. */
 .section-title:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
-.section-title:first-of-type::before { top: 0; }
 
-/* Phones: a touch smaller so a long title ("Movies to Watch") stays on one
-   line, and a tighter gutter offset to match the narrower 16px page padding.
-   The scale step over the surrounding text is preserved.
+/* Phones: the same size, a little less space above.
 
    This block MUST stay after the base rule above. A media query adds no
    specificity, so when it lived further up the file the plain .section-title
    rule below simply overrode it and phones kept the desktop size. */
 @media (max-width: 640px) {
   .section-title {
-    font-size: 1.2rem;
-    margin-top: 34px;
+    margin-top: 32px;
   }
-  .section-title::before { left: -9px; }
 }
 
 /* Desktop/wide viewports: Continue Watching cards wrap onto new rows as
@@ -1322,16 +1402,13 @@ details[open] > summary::after { transform: rotate(90deg); }
    available space (that stretching was leaving a lot of visibly empty
    card interior on wide screens). Long episode names truncate instead. */
 @media (min-width: 700px) {
+  /* Equal columns of at least 400px, so wide screens get two or three
+     columns and a lone last card does not stretch across the page. The
+     slot (the list's direct child) is the grid item; the card fills it. */
   .watch-next-list {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 14px;
-  }
-  /* On the slot, which is the list's direct child now; the card fills it
-     (see .wn-slot further down). */
-  .wn-slot {
-    flex: 0 1 380px;
-    max-width: 380px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+    gap: 12px;
   }
 }
 
@@ -1342,35 +1419,33 @@ details[open] > summary::after { transform: rotate(90deg); }
   max-width: 100%;
 }
 
-.coming-up-cols {
-  display: flex;
-  gap: 28px;
-  flex-wrap: wrap;
-}
-.coming-up-col {
-  flex: 1 1 260px;
-  min-width: 0;
-}
-.coming-up-col-label {
-  margin-bottom: 8px;
-  font-weight: 600;
-  color: var(--text);
+/* Coming Up is one grouped list per Home mode: rows inside one rounded
+   container, hairlines between them. Calendar data reads as a list, unlike
+   the separate cards of Up Next. Capped on wide screens, where a full-width
+   row would put the date a long way from the title. */
+.coming-up-list {
+  max-width: 720px;
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  padding: 0 12px;
 }
 
 .up-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  min-height: 67px;
+  box-sizing: border-box;
   padding: 8px 0;
-  border-bottom: 1px solid var(--border);
+  border-top: 1px solid #232327;
   cursor: pointer;
 }
-.up-row:last-child { border-bottom: none; }
+.up-row:first-child { border-top-color: transparent; }
 .up-row-poster {
   width: 34px;
-  height: 48px;
+  height: 51px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   flex-shrink: 0;
   background: var(--surface-raised);
 }
@@ -1404,71 +1479,63 @@ details[open] > summary::after { transform: rotate(90deg); }
   white-space: nowrap;
 }
 .up-row-date {
-  font-size: 0.8rem;
-  color: var(--muted);
+  font-size: var(--fs-13);
+  color: var(--text-2);
   flex-shrink: 0;
   white-space: nowrap;
 }
 
 .mtw-rail {
-  display: flex;
-  flex-wrap: nowrap;
-  overflow: hidden;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
 }
-/* position: relative anchors the .watched-badge overlay. The poster is the
-   card's first child and spans its full width, so the card's top-right corner
-   is the poster's top-right corner and the badge lands in the same place it
-   does on a Movies-page tile. */
-.mtw-card { width: 120px; flex-shrink: 0; position: relative; }
+/* Each card is a poster in a dark frame with its title inside the frame,
+   under the artwork. The poster box (.mtw-poster-wrap) anchors everything
+   drawn over the artwork: the rating, the tick and the watched veil. */
+.mtw-card {
+  position: relative;
+  min-width: 0;
+  padding: 6px 6px 0;
+  background: var(--card-frame);
+  border-radius: var(--r-md);
+}
+.mtw-poster-wrap {
+  position: relative;
+  border-radius: var(--r-sm);
+}
 .mtw-poster {
   width: 100%;
   aspect-ratio: 2/3;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   display: block;
   cursor: pointer;
   background: var(--surface-raised);
 }
 .mtw-name {
-  font-size: 0.82rem;
-  margin: 6px 0 0;
+  font-size: var(--fs-13);
+  font-weight: 600;
+  margin: 0;
+  padding: 10px 4px 12px;
   cursor: pointer;
   /* Exactly one line, long titles get an ellipsis (full title in the
      hover tooltip): keeps every card the same height regardless of title
-     length, so the rail stays on one baseline. */
+     length, so the rows stay on one baseline. */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.mtw-view-all-tile {
-  width: 100%;
-  aspect-ratio: 2/3;
-  border-radius: 8px;
-  background: var(--surface);
-  border: 1px dashed var(--border);
-  color: var(--text);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-.mtw-view-all-tile:hover { border-color: var(--accent); color: var(--accent); }
-.mtw-view-all-count { font-size: 1.3rem; font-weight: 700; }
 
-/* Mobile: the rail becomes a horizontal scroller (Home.tsx caps it at 5
-   movies + the view-all tile) instead of a measured desktop fit. Same
-   640px breakpoint as useIsMobile/bottom-nav, kept in sync on purpose. */
+/* Phones: always three across, a little tighter. Same 640px breakpoint as
+   useIsMobile, which Home uses to show exactly two rows of three. */
 @media (max-width: 640px) {
   .mtw-rail {
-    overflow-x: auto;
-    padding-bottom: 8px; /* keep the scrollbar clear of the card titles */
-    scrollbar-width: thin;
-    overscroll-behavior-x: contain; /* don't trigger browser/WebView swipe-nav at the ends */
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
   }
+  .mtw-card { padding: 5px 5px 0; }
+  .mtw-name { padding: 9px 3px 11px; }
 }
 
 /* ============================================================
@@ -2055,14 +2122,19 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
   border-radius: 999px;
   background: none;
-  border: 1px solid transparent;
-  color: var(--muted);
+  /* No outline at all, rather than a transparent one: the app-wide 3:1 control
+     outline rule further down only sets border-color, so a zero-width border
+     keeps this a plain icon button as designed. */
+  border: none;
+  color: var(--text-2);
   line-height: 0;
 }
-.header-settings:hover:not(:disabled) { color: var(--text); border-color: var(--border); }
+.header-settings:hover:not(:disabled) { color: var(--text); border-color: transparent; background: rgba(255, 255, 255, 0.06); }
 /* Settings left the nav, so this button is the only indicator of being on
    that page; it needs a clearly visible active state.
    The :hover variant is listed explicitly because the hover rule above
@@ -2071,8 +2143,9 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
    is most likely to be looking at it. */
 .header-settings.active,
 .header-settings.active:hover:not(:disabled) {
-  color: var(--accent);
-  border-color: var(--accent-dim);
+  color: var(--text);
+  border-color: transparent;
+  background: #232326; /* the nav's selected capsule, on the page background */
 }
 
 
@@ -2261,13 +2334,6 @@ html[data-wtpanel] .modal { max-height: 88vh; }
    comments are the values that were actually observed.
    ============================================================ */
 
-/* CONTRAST — the PREMIERE tag was var(--accent) on var(--accent-dim),
-   which measures 2.81:1. At 0.7rem that needs 4.5:1, so it was failing
-   by a wide margin and was the least readable text in the app. Keeping
-   the dim-red pill (it carries the brand) and switching the label to
-   --text takes it to ~8.7:1. */
-.premiere-tag { color: var(--text); }
-
 /* CONTRAST — the first-run wizard's primary button was #fff on
    var(--accent): 3.43:1, below the 4.5:1 needed. This is the button
    every new user must find, on the one screen they cannot skip past
@@ -2285,7 +2351,7 @@ html[data-wtpanel] .modal { max-height: 88vh; }
    the two. Inline text-style buttons are excluded — a 44px min-height
    on those would inject stray vertical space mid-sentence. */
 @media (pointer: coarse) {
-  button:not(.watched-badge):not(.watch-toggle):not(.watch-toggle-circle):not(.close-x):not(.episode-hero-badge):not(.link-button):not(.skip):not(.back-link),
+  button:not(.watched-badge):not(.watch-toggle):not(.watch-toggle-circle):not(.close-x):not(.episode-hero-badge):not(.link-button):not(.skip):not(.back-link):not(.wn-show-name):not(.media-switch-option),
   select,
   summary,
   input[type="text"],
@@ -2714,12 +2780,31 @@ select,
    anything could be. Do not add `forwards` here. */
 .tab-view {
   min-width: 0; /* same overflow containment as .panel, see the block above */
-  animation: tab-view-in 240ms cubic-bezier(0.2, 0, 0, 1);
+  animation: tab-view-in var(--dur-base) ease-out;
 }
+/* A short slide from the side of the tab you moved to: right for a tab to
+   the right in the nav, left for one to the left (App.tsx works out which).
+   Only the incoming page moves; the outgoing one is already gone, so this
+   stays one quick motion rather than two pages crossing. On launch there is
+   no previous tab and the page just fades in. */
+.tab-view.is-forward { animation: slide-in-from-right 260ms var(--ease-standard); }
+.tab-view.is-back { animation: slide-in-from-left 260ms var(--ease-standard); }
 @keyframes tab-view-in {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-in-from-right {
+  from { opacity: 0; transform: translateX(28px); }
   to { opacity: 1; transform: none; }
 }
+@keyframes slide-in-from-left {
+  from { opacity: 0; transform: translateX(-28px); }
+  to { opacity: 1; transform: none; }
+}
+/* The page is briefly offset sideways while it slides in; clipped here so
+   that never shows as a horizontal scrollbar. clip, not hidden: it creates no
+   scroll container, so sticky and fixed children behave as before. */
+main { overflow-x: clip; }
 
 /* ---- Filter sheet ---------------------------------------------------- */
 
@@ -2987,34 +3072,6 @@ select,
 .wizard-notif-row .notif-row-icon {
   background: var(--accent-dim);
   color: var(--accent);
-}
-
-/* ============================================================
-   NEW tag (pages/Home.tsx)
-
-   Sits alongside PREMIERE on a Watch Next row and answers a different
-   question. PREMIERE is about the EPISODE being offered — it opens a season.
-   NEW is about the SHOW — something has been released that the user has not
-   seen, which for a series returning after years away is the only thing on
-   the row explaining why it is back in this list at all.
-
-   Filled accent rather than PREMIERE's dim pill because the two have to be
-   distinguishable at a glance when they appear together, and this is the
-   rarer and more actionable of the two. --bg on --accent measures 5.77:1,
-   the same pairing .wizard-primary uses.
-   ============================================================ */
-
-.new-tag {
-  display: inline-block;
-  margin-top: 4px;
-  margin-right: 6px;
-  font-size: 0.7rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  background: var(--accent);
-  color: var(--bg);
-  border-radius: 4px;
-  padding: 2px 8px;
 }
 
 /* ============================================================
@@ -3532,12 +3589,8 @@ select,
   to { opacity: 0; }
 }
 
-/* The rail cards are a poster with the title BELOW it, so the veil stops at
-   the poster: the same 2:3 box, anchored to the card's top. */
-.mtw-card > .movie-watched-overlay {
-  bottom: auto;
-  aspect-ratio: 2 / 3;
-}
+/* Home's movie cards draw the veil inside .mtw-poster-wrap, which is already
+   exactly the poster, so the default inset: 0 fits. */
 .mtw-card .movie-watched-overlay .wn-watched-mark,
 .rail-poster-wrap .movie-watched-overlay .wn-watched-mark {
   width: 40px;
@@ -4054,3 +4107,284 @@ select,
 .stats-bar-track { flex: 1; width: 100%; max-width: 28px; display: flex; align-items: flex-end; background: var(--surface-raised); border-radius: 4px; overflow: hidden; }
 .stats-bar-track span { display: block; width: 100%; min-height: 2px; background: var(--watched); border-radius: 4px 4px 0 0; }
 .stats-bar-label { font-size: 0.72rem; color: var(--muted); }
+
+/* ============================================================
+   REDESIGN PHASE 1: HOME
+   (pages/Home.tsx, components/HomeMediaSwitch.tsx)
+
+   Last in the file on purpose: these restyle Home's existing classes, and
+   several of the rules they adjust are repeated further up by earlier passes
+   (touch targets, control outlines, transitions).
+   ============================================================ */
+
+/* ---- Shows / Movies switch -------------------------------------------- */
+/* The bottom nav's material and selected capsule, so the two read as one
+   navigation family. Each option is the full 44px hit area; the capsule
+   (.media-switch-indicator) sits 4px inside it, so the control looks slimmer
+   than its target, and slides between the options like the nav's. */
+.media-switch {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 44px;
+  box-sizing: border-box;
+  border-radius: var(--r-pill);
+  background: var(--nav-material);
+  border: 1px solid var(--nav-outline);
+}
+.media-switch-option {
+  position: relative; /* above the sliding capsule */
+  z-index: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--r-pill);
+  color: var(--nav-unselected);
+  font-size: var(--fs-15);
+  font-weight: 500;
+  transition: color var(--dur-base) ease, transform 140ms var(--ease-standard);
+}
+.media-switch-option.active {
+  color: var(--text);
+  font-weight: 700;
+}
+/* One option wide less 4px each side. The options split the padding box less
+   their 2px gap, so one step is the capsule's own width plus 8px of inset and
+   the 2px gap: translateX(100% + 10px). */
+.media-switch-indicator {
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  left: 4px;
+  width: calc((100% - 2px) / 2 - 8px);
+  border-radius: var(--r-pill);
+  background: var(--nav-selected);
+  transform: translateX(calc(var(--switch-index) * (100% + 10px)));
+  transition: transform 300ms cubic-bezier(0.3, 0.7, 0.1, 1);
+  pointer-events: none;
+}
+.media-switch-option:hover:not(:disabled):not(.active) { color: var(--text); }
+.media-switch-option:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+
+/* Docked: phones, just above the floating bottom nav (12px float + 64px nav
+   + 8px gap). Centred with a negative margin rather than a transform. */
+.media-switch.is-docked { display: none; }
+.media-switch.is-inline { flex: 0 0 208px; background: #232326; }
+.media-switch.is-inline .media-switch-indicator { background: #0E0E10; }
+@media (max-width: 640px) {
+  .media-switch.is-docked {
+    display: flex;
+    position: fixed;
+    left: 50%;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    width: 208px;
+    margin-left: -104px;
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    backdrop-filter: blur(20px) saturate(140%);
+    box-shadow: var(--nav-shadow);
+    z-index: 5; /* with the bottom nav: under every panel (z-index 10) */
+  }
+  .media-switch.is-inline { display: none; }
+}
+
+/* ---- Home layout -------------------------------------------------------- */
+.home-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+}
+.home-toolbar > .mood-search { flex: 1 1 320px; min-width: 0; max-width: 640px; }
+
+/* One section per mode. Both stay mounted; the hidden one is display: none,
+   and coming back into view restarts its animation. Shows sits to the left of
+   Movies in the switch, so Movies slides in from the right and Shows from the
+   left, the same direction the capsule just moved. .is-switching is only set
+   once the user has switched (pages/Home.tsx): arriving at Home already plays
+   the tab's own entrance.
+
+   No fill-mode, so the transform is gone when the animation ends: a
+   transformed ancestor would capture the position: fixed panels these
+   sections open. Nothing can be open mid-switch; the switch sits under
+   every panel. */
+.home-media {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.home-media[hidden] { display: none; }
+.home-media.is-movies.is-switching { animation: slide-in-from-right 240ms var(--ease-standard); }
+.home-media.is-shows.is-switching { animation: slide-in-from-left 240ms var(--ease-standard); }
+
+/* Section spacing inside a mode: the gap carries 12px of it. */
+.home-media > .section-title { margin: 28px 0 0; }
+.home-media > .section-title:first-of-type { margin-top: 0; }
+/* "Coming Up" after the Movies to Watch header row is the first h2 ELEMENT in
+   its section (the other one sits inside .section-head), but it is not the
+   first heading, so it keeps its rule and spacing. */
+.home-media > .section-head ~ .section-title {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 640px) {
+  .home-media > .section-title,
+  .home-media > .section-head ~ .section-title { margin-top: 20px; }
+  .home-media > .section-title:first-of-type { margin-top: 0; }
+}
+.home-media > .section-sub { margin: -8px 0 0; font-size: var(--fs-13); color: var(--muted); }
+
+/* A title with a link on its line ("Movies to Watch", "See all 23"). */
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.section-head > .section-title { margin: 0; padding: 0; border: none; }
+.section-link {
+  flex-shrink: 0;
+  height: 44px;
+  margin: -10px -8px -10px 0;
+  padding: 0 8px;
+  background: none;
+  border: none;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+.section-link:hover:not(:disabled) { color: var(--text); }
+
+/* ---- Up Next card ------------------------------------------------------- */
+.wn-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+/* The card heading. A text button: excluded from the 44px touch min-height,
+   and given a few px of padding so its target clears 24px. */
+.wn-show-name {
+  max-width: 100%;
+  margin: -3px 0;
+  padding: 3px 0;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-17);
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wn-show-name:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+/* "S3 E1 · Chapter One" on one line: the code in mono, the name after it,
+   truncating first. */
+.wn-episode-button .wn-episode-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-15);
+  font-weight: 400;
+  color: #C9C8CD;
+}
+.wn-episode-code {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--text);
+}
+.wn-episode-button .wn-episode-name {
+  display: block;
+  min-width: 0;
+  color: inherit;
+}
+.wn-episode-button:focus-visible { outline: 2px solid var(--text); }
+/* One quiet line of facts. "New" is the only coloured word on the card. */
+.wn-meta {
+  margin: 0;
+  max-width: 100%;
+  font-size: var(--fs-13);
+  line-height: 1.4;
+  color: var(--muted);
+}
+.wn-new { color: var(--accent); font-weight: 600; }
+.wn-behind-note { margin-top: 2px; }
+.wn-resume-btn {
+  border: none;
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+
+/* ---- Movie card overlays ------------------------------------------------ */
+/* Top-left: the TMDB rating. Top-right: watch state, and only that. */
+.rating-chip {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  background: rgba(10, 10, 11, 0.65);
+  color: var(--text);
+  font-size: var(--fs-12);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+.rating-chip svg { color: var(--rating-star); flex-shrink: 0; }
+/* A missing poster still has to read as the poster, not as more frame. */
+.mtw-card .poster-placeholder { background: #2A2A30; }
+.mtw-card .watched-badge {
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  background: rgba(10, 10, 11, 0.6);
+  border: 1px solid rgba(242, 241, 239, 0.35);
+  color: var(--text);
+}
+
+/* ---- Coming Up rows ----------------------------------------------------- */
+.up-row-body .show-name { font-size: var(--fs-15); }
+.up-row-code { font-family: var(--font-mono); font-size: var(--fs-13); color: var(--muted); }
+
+/* ---- Empty states ------------------------------------------------------- */
+.home-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 64px 16px 16px;
+  text-align: center;
+}
+.home-empty-title { margin: 0; font-size: var(--fs-17); font-weight: 600; }
+.home-empty-body { margin: 0; max-width: 300px; font-size: var(--fs-15); line-height: 1.45; color: var(--muted); }
+.home-empty-action {
+  margin-top: 8px;
+  height: 44px;
+  padding: 0 20px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: var(--fs-15);
+  font-weight: 600;
+}

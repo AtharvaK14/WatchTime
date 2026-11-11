@@ -143,6 +143,7 @@ export interface TvShowDetails {
   // air_date is the season's premiere, null while TMDB has not dated any of it.
   seasons: { season_number: number; episode_count: number; name: string; air_date?: string | null }[];
   external_ids?: { imdb_id: string | null };
+  vote_average?: number;
 }
 
 export async function getTvShowDetails(tmdbId: number): Promise<TvShowDetails> {
@@ -178,6 +179,7 @@ export interface MovieDetails {
   original_language?: string | null;
   genres: { id: number; name: string }[];
   external_ids?: { imdb_id: string | null };
+  vote_average?: number;
 }
 
 export async function getMovieDetails(tmdbId: number): Promise<MovieDetails> {

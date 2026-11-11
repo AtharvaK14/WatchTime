@@ -90,6 +90,7 @@ interface CoreDetails {
   runtimeMinutes?: number | null; // movies only
   imdbId?: string | null;
   genres: string[];
+  tmdbRating?: number | null; // stored on the library row when this title is added
 }
 
 /** Release year / genres / season count / status, shared by both the
@@ -288,6 +289,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
             episodeRuntimeMinutes: averageRuntime(d.episode_run_time),
             imdbId: d.external_ids?.imdb_id ?? null,
             genres: d.genres.map((g) => g.name),
+            tmdbRating: d.vote_average ?? null,
           });
           setSeasonNames(new Map(d.seasons.map((season) => [season.season_number, season.name])));
           // Checked after every await, not just the first: a load superseded by
@@ -325,6 +327,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
             runtimeMinutes: d.runtime,
             imdbId: d.external_ids?.imdb_id ?? null,
             genres: d.genres.map((g) => g.name),
+            tmdbRating: d.vote_average ?? null,
           });
           const existing = await db.movies.get(tmdbId);
           setInLibrary(!!existing);

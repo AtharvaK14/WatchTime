@@ -425,7 +425,7 @@ function WatchNextPreferences() {
   function save() {
     if (!valid) return;
     setStaleDaysThreshold(parsed);
-    // The threshold decides which shows count as Haven't Watched For a While,
+    // The threshold decides which shows count as Lapsed,
     // and so which releases may be announced.
     requestNotificationSync();
     setSaved(true);
@@ -434,9 +434,9 @@ function WatchNextPreferences() {
   return (
     <div className="panel">
       <div className="settings-block">
-        <h3>"Haven't Watched For a While" threshold</h3>
+        <h3>"Lapsed" threshold</h3>
         <p className="muted small">
-          Days without watch activity before a show moves off Watch Next into "Haven't Watched For a While". The
+          Days without watch activity before a show moves off Watch next into "Lapsed". The
           two lists never overlap; watching the next episode moves the show straight back. Default:{" "}
           {DEFAULT_STALE_DAYS_THRESHOLD} days.
         </p>
@@ -688,7 +688,7 @@ export default function Settings() {
         <summary>
           <span className="settings-row-text">
             <h2>Watch Next</h2>
-            <p className="muted small settings-row-sub">When shows count as "haven't watched for a while"</p>
+            <p className="muted small settings-row-sub">When shows count as lapsed</p>
           </span>
         </summary>
         <div style={{ marginTop: 14 }}>
