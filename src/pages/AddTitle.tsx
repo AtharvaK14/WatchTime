@@ -11,6 +11,7 @@ import {
 } from "../tmdb";
 import DetailsPanel from "../components/DetailsPanel";
 import PosterCaption from "../components/PosterCaption";
+import RatingChip from "../components/RatingChip";
 import UniversalSearch, { type SearchResults } from "../components/UniversalSearch";
 import { BookmarkIcon } from "../components/icons";
 import { useLibraryIds } from "../lib/useLibraryIds";
@@ -33,8 +34,9 @@ import { titleQuickActionProps } from "../lib/titleQuickActions";
  * A mark rather than a worded pill because at three cards per row on a phone
  * an "IN LIBRARY" label either covers the poster or is too small to read; the
  * word still reaches screen readers from the .sr-only text each caller
- * renders. Top-RIGHT, leaving the top-left to .card-kind so the two can never
- * collide.
+ * renders. White, not the accent: red is the brand and "New", never "yours".
+ * Top-RIGHT: these cards carry no watched control, and the top-left is the
+ * rating's.
  */
 function InLibraryBadge() {
   return (
@@ -50,14 +52,14 @@ function yearOf(date: string | null | undefined): number | null {
 }
 
 /**
- * One Discover card. Every grid on this page — the rails and both kinds of
+ * One Discover card. Every list on this page — the rails and both kinds of
  * search result — renders through this, so they cannot drift apart.
  *
- * The same card the Shows and Movies grids use (artwork, and PosterCaption's
- * year-over-title in the bottom-left corner), plus the two markers only
- * Discover needs: the library bookmark, and the TV/Film tag wherever a grid
- * mixes the two. No watched control: marking something watched happens in the
- * details panel the card opens.
+ * The same framed card the Shows and Movies grids use (artwork with the
+ * rating on it, PosterCaption's title and year below), plus what only
+ * Discover needs: the library bookmark, and "Series" or "Film" in the caption
+ * wherever a list mixes the two. No watched control: marking something
+ * watched happens in the details panel the card opens.
  */
 function TitleCard({
   kind,
@@ -65,6 +67,7 @@ function TitleCard({
   name,
   year,
   posterPath,
+  rating,
   kindTag,
   inLibrary,
   onOpen,
@@ -74,8 +77,10 @@ function TitleCard({
   name: string;
   year: number | null;
   posterPath: string | null;
-  /** "TV" or "Film", only where the grid's heading does not already say which. */
-  kindTag?: "TV" | "Film";
+  /** TMDB vote_average, as the search or list result carried it. */
+  rating?: number | null;
+  /** "Series" or "Film", only where the list's heading does not already say which. */
+  kindTag?: "Series" | "Film";
   inLibrary: boolean;
   onOpen: () => void;
 }) {
@@ -94,19 +99,18 @@ function TitleCard({
       {...titleQuickActionProps({ kind, tmdbId, name, onViewDetails: onOpen })}
       onClick={onOpen}
     >
-      {posterPath ? (
-        <img src={`${TMDB_IMAGE_BASE}${posterPath}`} alt={name} />
-      ) : (
-        <div className="poster-placeholder" />
-      )}
-      {/* Sits on the artwork rather than in .show-card-body, because that
-          caption is hidden until hover on pointer:fine devices — a type
-          label there would be invisible at rest on desktop. */}
-      {kindTag && <span className="card-kind">{kindTag}</span>}
-      {inLibrary && <InLibraryBadge />}
-      <PosterCaption title={name} year={year} />
+      <span className="card-art">
+        {posterPath ? (
+          <img src={`${TMDB_IMAGE_BASE}${posterPath}`} alt={name} />
+        ) : (
+          <span className="poster-placeholder" />
+        )}
+        <RatingChip rating={rating} />
+        {inLibrary && <InLibraryBadge />}
+        <MovieWatchedOverlay phase={watched} staying tmdbId={tmdbId} />
+      </span>
+      <PosterCaption title={name} year={year} kindLabel={kindTag} />
       {inLibrary && <span className="sr-only">In your library</span>}
-      <MovieWatchedOverlay phase={watched} staying tmdbId={tmdbId} />
     </button>
   );
 }
@@ -124,7 +128,7 @@ function ShowRow({
   showTypeTag?: boolean;
 }) {
   return (
-    <div className="show-grid">
+    <div className="card-rail">
       {items.map((r) => (
         <TitleCard
           key={r.id}
@@ -133,7 +137,8 @@ function ShowRow({
           name={r.name}
           year={yearOf(r.first_air_date)}
           posterPath={r.poster_path}
-          kindTag={showTypeTag ? "TV" : undefined}
+          rating={r.vote_average}
+          kindTag={showTypeTag ? "Series" : undefined}
           inLibrary={inLibrary.has(r.id)}
           onOpen={() => onOpen(r.id)}
         />
@@ -154,7 +159,7 @@ function MovieRow({
   showTypeTag?: boolean;
 }) {
   return (
-    <div className="show-grid">
+    <div className="card-rail">
       {items.map((r) => (
         <TitleCard
           key={r.id}
@@ -163,6 +168,7 @@ function MovieRow({
           name={r.title}
           year={yearOf(r.release_date)}
           posterPath={r.poster_path}
+          rating={r.vote_average}
           kindTag={showTypeTag ? "Film" : undefined}
           inLibrary={inLibrary.has(r.id)}
           onOpen={() => onOpen(r.id)}
@@ -186,11 +192,8 @@ function Results({
   const owned = (kind: "show" | "movie", tmdbId: number) =>
     (kind === "show" ? library.shows : library.movies).has(tmdbId);
   // Search mixes shows and films under one heading, so every result carries
-  // the type, exactly as Trending does. It used to be written into the caption
-  // ("TV · 2024"); it is the tag on the artwork now, which leaves the caption
-  // to the year and title every other card shows and keeps the type visible at
-  // rest on desktop, where the caption only appears on hover.
-  const kindTag = (kind: "show" | "movie") => (kind === "show" ? "TV" : "Film");
+  // the type in its caption ("2024 · Series"), exactly as Trending does.
+  const kindTag = (kind: "show" | "movie") => (kind === "show" ? "Series" : "Film");
   return (
     <>
       {results.titles.length > 0 && (
@@ -205,6 +208,7 @@ function Results({
                 name={t.name}
                 year={t.year}
                 posterPath={t.posterPath}
+                rating={t.rating}
                 kindTag={kindTag(t.kind)}
                 inLibrary={owned(t.kind, t.tmdbId)}
                 onOpen={() => onOpen(t.kind, t.tmdbId)}
@@ -231,6 +235,7 @@ function Results({
                   name={m.name}
                   year={m.year}
                   posterPath={m.posterPath}
+                  rating={m.rating}
                   kindTag={kindTag(m.kind)}
                   // The live sets alone, not m.inLibrary as well. That is the
                   // search index's answer from when the search ran, and OR-ing

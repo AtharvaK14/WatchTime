@@ -10,6 +10,8 @@ import { libraryKey, removalClass, useRemovalExit } from "../lib/libraryRemoval"
 import { useFlipLayout } from "../lib/useFlipLayout";
 import DetailsPanel from "../components/DetailsPanel";
 import PosterCaption from "../components/PosterCaption";
+import RatingChip from "../components/RatingChip";
+import { useRatingBackfill } from "../lib/ratings";
 import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
@@ -160,6 +162,8 @@ export default function Library() {
   const gridRef = useRef<HTMLDivElement>(null);
   const captureGrid = useFlipLayout(gridRef);
   const display = useRemovalExit(visible, showKey, captureGrid);
+  // Ratings for shows stored before ratings were, top of the grid first.
+  useRatingBackfill("show", shows ? visible : undefined);
 
   if (!shows) return <p className="muted">Loading...</p>;
 
@@ -294,25 +298,30 @@ export default function Library() {
                   }
                 }}
               >
-                {show.posterPath ? (
-                  <img src={`${TMDB_IMAGE_BASE}${show.posterPath}`} alt={show.name} />
-                ) : (
-                  <div className="poster-placeholder" />
-                )}
-                {/* The progress bar is the card's only statement of progress.
-                    The "N episodes watched" line that used to sit in the
-                    caption said the same thing again in words; the count
-                    behind both is unchanged and still drives this bar and the
-                    Most watched sort. */}
-                {show.numberOfEpisodes ? (
-                  <div className="poster-progress">
-                    <span
-                      style={{
-                        width: `${Math.min(100, ((watchedCounts?.unique.get(show.tmdbId) ?? 0) / show.numberOfEpisodes) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                ) : null}
+                {/* The artwork and everything drawn on it: the rating in the
+                    top-left, and the progress bar along the bottom edge. */}
+                <div className="card-art">
+                  {show.posterPath ? (
+                    <img src={`${TMDB_IMAGE_BASE}${show.posterPath}`} alt={show.name} />
+                  ) : (
+                    <div className="poster-placeholder" />
+                  )}
+                  <RatingChip rating={show.tmdbRating} />
+                  {/* The progress bar is the card's only statement of progress.
+                      The "N episodes watched" line that used to sit in the
+                      caption said the same thing again in words; the count
+                      behind both is unchanged and still drives this bar and the
+                      Most watched sort. */}
+                  {show.numberOfEpisodes ? (
+                    <div className="poster-progress">
+                      <span
+                        style={{
+                          width: `${Math.min(100, ((watchedCounts?.unique.get(show.tmdbId) ?? 0) / show.numberOfEpisodes) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
                 <PosterCaption title={show.name} year={show.firstAirYear}>
                   {/* Kept: under "All" it is the only thing telling a stopped
                       show apart from one in progress. */}

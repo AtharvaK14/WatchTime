@@ -17,6 +17,8 @@ import { useFlipLayout } from "../lib/useFlipLayout";
 import DetailsPanel from "../components/DetailsPanel";
 import MovieWatchedOverlay from "../components/MovieWatchedOverlay";
 import PosterCaption from "../components/PosterCaption";
+import RatingChip from "../components/RatingChip";
+import { useRatingBackfill } from "../lib/ratings";
 import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
@@ -136,6 +138,8 @@ export default function Movies({
   const captureGrid = useFlipLayout(gridRef);
   const watchedDisplay = useMovieWatchedExit(visible, movieKey, captureGrid, filterKey);
   const display = useRemovalExit(watchedDisplay, movieSlotKey, captureGrid);
+  // Ratings for movies stored before ratings were, top of the grid first.
+  useRatingBackfill("movie", movies ? visible : undefined);
   const [watchError, setWatchError] = useState<string | null>(null);
 
   /**
@@ -326,24 +330,29 @@ const MovieGridCard = memo(function MovieGridCard({
         }
       }}
     >
-      {m.posterPath ? (
-        <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.title} />
-      ) : (
-        <div className="poster-placeholder" />
-      )}
-      <button
-        className={`watched-badge ${m.watched ? "on" : ""}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          void onIndicator(m, e.currentTarget);
-        }}
-        aria-haspopup={m.watched ? "menu" : undefined}
-        aria-label={m.watched ? `${viewingsInWords(count)}. Change viewing status` : `Mark ${m.title} watched`}
-      >
-        <WatchMark count={count} />
-      </button>
+      {/* The artwork and everything drawn on it: the rating top-left, the
+          watch state top-right, and the watched veil over the whole poster. */}
+      <div className="card-art">
+        {m.posterPath ? (
+          <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.title} />
+        ) : (
+          <div className="poster-placeholder" />
+        )}
+        <RatingChip rating={m.tmdbRating} />
+        <button
+          className={`watched-badge ${m.watched ? "on" : ""}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            void onIndicator(m, e.currentTarget);
+          }}
+          aria-haspopup={m.watched ? "menu" : undefined}
+          aria-label={m.watched ? `${viewingsInWords(count)}. Change viewing status` : `Mark ${m.title} watched`}
+        >
+          <WatchMark count={count} />
+        </button>
+        <MovieWatchedOverlay phase={watched} staying={staying} tmdbId={m.tmdbId} />
+      </div>
       <PosterCaption title={m.title} year={m.releaseYear} />
-      <MovieWatchedOverlay phase={watched} staying={staying} tmdbId={m.tmdbId} />
     </div>
   );
 });

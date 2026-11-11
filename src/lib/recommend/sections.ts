@@ -47,6 +47,8 @@ export interface SectionItem {
   inLibrary: boolean;
   /** Short marker rendered ON the poster (never below the title, which wraps). */
   note?: string;
+  /** TMDB vote_average, for the rating chip. Undefined when the source did not carry one. */
+  rating?: number | null;
 }
 
 export interface ForYouSection {
@@ -81,6 +83,7 @@ function tvToItem(t: TvSearchResult): SectionItem {
     year: t.first_air_date ? Number(t.first_air_date.slice(0, 4)) || null : null,
     overview: t.overview ?? null,
     inLibrary: false,
+    rating: t.vote_average,
   };
 }
 
@@ -93,6 +96,7 @@ function movieToItem(m: MovieSearchResult): SectionItem {
     year: m.release_date ? Number(m.release_date.slice(0, 4)) || null : null,
     overview: m.overview ?? null,
     inLibrary: false,
+    rating: m.vote_average,
   };
 }
 
@@ -192,6 +196,7 @@ function newSeasonsSection(
       overview: show.overview ?? null,
       inLibrary: true,
       note: `Season ${earliest}`,
+      rating: show.tmdbRating,
     });
   }
   return items;

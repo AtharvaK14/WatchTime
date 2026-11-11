@@ -53,8 +53,9 @@ import { requestNotificationSync } from "../lib/notifications";
 import MovieWatchedOverlay from "../components/MovieWatchedOverlay";
 import HomeMediaSwitch from "../components/HomeMediaSwitch";
 import type { HomeMedia } from "../lib/homeMedia";
-import { CheckIcon, StarIcon } from "../components/icons";
-import { backfillMovieRatings, formatRating, moviesNeedingRating } from "../lib/ratings";
+import { CheckIcon } from "../components/icons";
+import RatingChip from "../components/RatingChip";
+import { backfillMovieRatings, moviesNeedingRating } from "../lib/ratings";
 
 type UpNextTab = "next" | "stale" | "not-started" | "stopped";
 
@@ -921,7 +922,6 @@ function MoviesHome({
       ) : (
         <div className="mtw-rail" ref={railRef}>
           {visible.map(({ item: { item: m, watched, staying }, removal }) => {
-            const rating = formatRating(m.tmdbRating);
             return (
               <div
                 key={m.tmdbId}
@@ -948,13 +948,7 @@ function MoviesHome({
                   ) : (
                     <div className="poster-placeholder mtw-poster" onClick={() => setOpenDetails(m.tmdbId)} />
                   )}
-                  {rating && (
-                    <span className="rating-chip">
-                      <StarIcon size={11} />
-                      <span className="sr-only">TMDB rating </span>
-                      {rating}
-                    </span>
-                  )}
+                  <RatingChip rating={m.tmdbRating} />
                   {/* The same overlay control the Movies page uses: one
                       interaction pattern for "mark this watched" across both
                       screens. Top-right, the corner that only ever holds watch

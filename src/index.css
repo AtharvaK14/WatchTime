@@ -283,21 +283,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .show-name { margin: 0; font-size: 0.85rem; font-weight: 600; line-height: 1.3; }
 .movie-card { cursor: pointer; }
 
-/* Desktop/mouse only: caption stays hidden until hover or keyboard focus,
-   so the grid reads as a clean poster wall rather than a stack of cards.
-   (hover: none) devices (touch) never match this, the caption there stays
-   at its default opacity: 1, always visible, since there's no hover to
-   reveal it with. */
-@media (hover: hover) and (pointer: fine) {
-  .show-card-body {
-    opacity: 0;
-    transition: opacity 0.15s ease;
-  }
-  .show-card:hover .show-card-body,
-  .show-card:focus-visible .show-card-body {
-    opacity: 1;
-  }
-}
 
 .watched-badge {
   position: absolute;
@@ -2060,19 +2045,6 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   border: 1px solid var(--border);
 }
 
-/* "In your library" as a dot rather than a text badge: it is a binary fact
-   that does not need a word, and a dot costs no vertical space. The text
-   equivalent still reaches screen readers via .sr-only in the card. */
-.rail-owned {
-  position: absolute;
-  top: 7px;
-  right: 7px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 2px rgba(10, 10, 11, 0.9);
-}
 
 /* Reserves two lines whether or not the title needs them, so every card in
    a rail is exactly the same height and the row reads flush. */
@@ -2089,12 +2061,6 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   color: var(--text);
 }
 
-.rail-badge {
-  font-size: 0.65rem;
-  color: var(--accent);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
 
 /* Accessible-only text: conveys what the dot and pill show visually. */
 .sr-only {
@@ -2514,38 +2480,6 @@ select,
    colour that rule sets on the border was being silently discarded until the
    watched tick was excluded here. */
 
-/* Content-type badge on Discover's trending cards.
-
-   "Trending this week" renders a grid of shows immediately followed by a
-   grid of movies under a single heading, so without a per-card marker the
-   two read as one continuous wall of posters.
-
-   It sits on the artwork rather than in .show-card-body deliberately: that
-   caption is opacity:0 until hover on (hover: hover) devices, so a label
-   placed there would say nothing at rest on desktop. Top-LEFT keeps it clear
-   of .watched-badge, which owns the top-right on library cards.
-
-   Styling is borrowed from the badges already in the app — the same
-   translucent-black-over-poster treatment as .watched-badge, with the
-   uppercase micro-label tracking of .show-pill and .premiere-tag. */
-.card-kind {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  z-index: 2;
-  background: rgba(0, 0, 0, 0.62);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 2px 8px;
-  color: var(--text);
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  line-height: 1.4;
-  pointer-events: none; /* the whole card is the button; never intercept the tap */
-}
-
 /* "Already in your library" on a Discover card.
 
    Two deliberate departures from .watched-badge, because the first version of
@@ -2803,8 +2737,11 @@ select,
 }
 /* The page is briefly offset sideways while it slides in; clipped here so
    that never shows as a horizontal scrollbar. clip, not hidden: it creates no
-   scroll container, so sticky and fixed children behave as before. */
-main { overflow-x: clip; }
+   scroll container, so sticky and fixed children behave as before. On the
+   shell rather than <main>, whose box stops at the page gutter: Discover's
+   rails bleed into that gutter to the screen edge, and clipping <main> cut
+   them off 16px short of it. */
+.app-shell { overflow-x: clip; }
 
 /* ---- Filter sheet ---------------------------------------------------- */
 
@@ -3414,22 +3351,6 @@ main { overflow-x: clip; }
   text-overflow: ellipsis;
 }
 
-/* Two lines need more scrim than one. Most posters print their own title art
-   along the bottom edge, exactly where the caption sits, and the year line is
-   the higher of the two, where the old gradient was still nearly transparent.
-   On phones it had almost no gradient at all: the 640px rule near the top of
-   this file pads the caption 6px all round, so the ramp was only as tall as
-   the text. The gradient now darkens sooner, the phone caption gets room above
-   its first line for the ramp to happen in, and a soft shadow separates the
-   letters from busy artwork. Applied to every poster card, Movies included,
-   so the three grids stay identical. */
-.show-card-body {
-  background: linear-gradient(180deg, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.6) 45%, rgba(0, 0, 0, 0.88));
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
-}
-@media (max-width: 640px) {
-  .show-card-body { padding-top: 22px; }
-}
 
 /* ============================================================
    REMOVED FROM THE LIBRARY (lib/libraryRemoval.ts)
@@ -4387,4 +4308,234 @@ main { overflow-x: clip; }
   color: var(--text);
   font-size: var(--fs-15);
   font-weight: 600;
+}
+
+/* ============================================================
+   REDESIGN PHASE 2A: POSTER CARDS, RAILS, LIBRARY STATS
+   (pages/Library.tsx, pages/Movies.tsx, pages/AddTitle.tsx,
+    components/ForYou.tsx, components/PosterCaption.tsx, StatTiles)
+
+   One card everywhere a poster is shown: the artwork in a dark frame, its
+   markers on the artwork (rating top-left; watch state, or on Discover and
+   For You the library bookmark, top-right), then the title on one line and a
+   quiet metadata line, inside the frame. Home's Movies to Watch cards
+   (.mtw-card, Phase 1) are the same design.
+   ============================================================ */
+
+/* ---- Library and Discover grids ---------------------------------------- */
+.show-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 16px;
+}
+@media (max-width: 640px) {
+  .show-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+}
+@media (max-width: 360px) {
+  .show-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* The frame. */
+.show-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 6px 6px 0;
+  background: var(--card-frame);
+  border-radius: var(--r-md);
+}
+/* The artwork box: anchors every marker drawn on the poster and the watched
+   veil, which (inset: 0) now covers exactly the poster, not the caption. */
+.card-art {
+  position: relative;
+  display: block;
+  border-radius: var(--r-sm);
+  line-height: 0;
+}
+.show-card .card-art img,
+.show-card .card-art .poster-placeholder {
+  display: block;
+  border-radius: var(--r-sm);
+}
+/* A missing poster still has to read as the poster, not as more frame. */
+.show-card .poster-placeholder { background: #2A2A30; }
+
+/* The caption, below the artwork, readable at rest everywhere. */
+.show-card-body {
+  position: static;
+  padding: 10px 4px 12px;
+  background: none;
+  gap: 2px;
+}
+.show-card-body .card-title { font-size: var(--fs-13); font-weight: 600; line-height: 1.3; }
+.card-meta { font-size: var(--fs-12); color: var(--muted); }
+@media (max-width: 640px) {
+  .show-card { padding: 5px 5px 0; }
+  .show-card-body { padding: 9px 3px 11px; }
+  .show-card-body .card-title { font-size: var(--fs-13); }
+}
+
+/* Progress along the bottom edge of the artwork, in white: progress is not
+   "done", which is the only thing green says, and red is reserved. */
+.show-card .poster-progress {
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  overflow: hidden;
+  background: rgba(10, 10, 11, 0.55);
+}
+.show-card .poster-progress span { background: var(--text); }
+
+/* Movies grid: the watch-state control, matching Home's. */
+.show-card .watched-badge {
+  width: 28px;
+  height: 28px;
+  background: rgba(10, 10, 11, 0.6);
+  border: 1px solid rgba(242, 241, 239, 0.35);
+}
+.show-card .watched-badge.on { background: var(--watched); border-color: var(--watched); color: var(--bg); }
+
+/* "In your library": a white bookmark in a dark square, top-right. Not the
+   accent: red is the brand mark and "New", never "yours". A rounded square,
+   because every circle on a poster is the watched control. */
+.card-in-library {
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--r-xs);
+  background: rgba(10, 10, 11, 0.65);
+  color: var(--text);
+}
+
+/* ---- Discover rails ---------------------------------------------------- */
+/* TMDB's lists scroll sideways, one row each, so every section is one screen
+   row and the page reads by heading. They bleed to the screen edge and snap
+   to a card; search results stay a grid. */
+.card-rail {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  margin: 0 -32px;
+  padding: 0 32px 4px;
+  scroll-padding-inline: 32px;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain; /* never trigger the WebView's back swipe */
+}
+.card-rail::-webkit-scrollbar { display: none; }
+.card-rail > .show-card { flex: 0 0 148px; scroll-snap-align: start; }
+/* Trending is two rails, shows then movies, under one heading. */
+.card-rail + .card-rail { margin-top: 12px; }
+@media (max-width: 640px) {
+  .card-rail { margin: 0 -16px; padding: 0 16px 4px; scroll-padding-inline: 16px; gap: 10px; }
+  .card-rail > .show-card { flex-basis: 124px; }
+}
+
+/* ---- For You rails ----------------------------------------------------- */
+.rail-card {
+  width: 132px;
+  gap: 0;
+  padding: 5px 5px 0;
+  background: var(--card-frame);
+  border-radius: var(--r-md);
+}
+@media (max-width: 720px) {
+  .rail-card { width: 120px; }
+}
+.rail-poster-wrap { border-radius: var(--r-sm); }
+.rail-poster {
+  border: none;
+  border-radius: var(--r-sm);
+}
+.rail-card .poster-placeholder { background: #2A2A30; }
+.rail-card:hover .rail-poster,
+.rail-card:focus-visible .rail-poster { border-color: transparent; outline: none; }
+.rail-card:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.rail-name {
+  display: block;
+  min-height: 0;
+  padding: 9px 3px 0;
+  font-size: var(--fs-13);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+.rail-meta {
+  display: block;
+  padding: 2px 3px 11px;
+  font-size: var(--fs-12);
+  line-height: 1.3;
+  color: var(--muted);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+/* The season note on library cards ("Season 3"), bottom-left of the artwork. */
+.rail-pill {
+  border: none;
+  border-radius: var(--r-xs);
+  background: rgba(10, 10, 11, 0.75);
+  font-size: var(--fs-12);
+  padding: 4px 7px;
+}
+.rail-head h4 { font-size: var(--fs-17); font-weight: 700; }
+.rail-section { gap: 10px; margin-top: 24px; }
+/* Same behaviour as Discover's rails: edge to edge, snapping, no scrollbar. */
+.rail {
+  max-width: none;
+  margin: 0 -32px;
+  padding: 0 32px 4px;
+  scroll-padding-inline: 32px;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.rail::-webkit-scrollbar { display: none; }
+@media (max-width: 640px) {
+  .rail { margin: 0 -16px; padding: 0 16px 4px; scroll-padding-inline: 16px; gap: 10px; }
+}
+/* The page heading at the section-title size, not larger: the nav already
+   says where you are. */
+.for-you-head h2 { font-size: var(--fs-20); font-weight: 700; letter-spacing: -0.01em; }
+
+/* ---- Shows / Movies stats ---------------------------------------------- */
+/* One quiet line instead of two boxed tiles: white figures at the section
+   title size, labels underneath, no frame. Still the button that opens the
+   full stats. */
+.stats-grid { gap: 24px; margin-top: 0; }
+.stat-card {
+  background: none;
+  border: none;
+  padding: 0;
+  text-align: left;
+}
+.stat-card .stat-value {
+  color: var(--text);
+  font-size: calc(var(--fs-20) * var(--stat-fit, 1));
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.stat-card .stat-label { font-size: calc(var(--fs-13) * var(--stat-label-fit, 1)); margin-top: 2px; }
+.stats-grid.is-clickable { border-radius: var(--r-sm); }
+.stats-grid.is-clickable .stat-card:last-child::after { top: 2px; right: 0; }
+@media (max-width: 640px) {
+  .stats-grid { gap: 16px; }
+  .stat-card { padding: 0; }
+}
+
+/* ---- Search rows ------------------------------------------------------- */
+/* Every search row in the app (Home, Discover, Shows, Movies) is the same
+   44px field with 12px corners, and its button matches it. The outline stays:
+   it is the field's 3:1 boundary (see Control outlines at 3:1). */
+.search-field input[type="text"],
+.filters-row input[type="text"] {
+  height: 44px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-15);
+}
+.mood-search-row > button[type="submit"],
+.usearch-form > button[type="submit"],
+.filters-row .filter-sheet-trigger {
+  height: 44px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-15);
 }

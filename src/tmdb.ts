@@ -100,6 +100,7 @@ export interface TvSearchResult {
   popularity: number;
   overview?: string | null;
   genre_ids?: number[];
+  vote_average?: number;
 }
 
 export interface MovieSearchResult {
@@ -110,6 +111,7 @@ export interface MovieSearchResult {
   popularity: number;
   overview?: string | null;
   genre_ids?: number[];
+  vote_average?: number;
 }
 
 export async function searchTvShow(query: string): Promise<TvSearchResult[]> {

@@ -41,6 +41,8 @@ interface Suggestion {
   year: number | null;
   posterPath: string | null;
   popularity: number;
+  /** TMDB vote_average, for the rating chip on the result card. */
+  rating?: number | null;
 }
 
 function toSuggestions(shows: TvSearchResult[], movies: MovieSearchResult[]): Suggestion[] {
@@ -52,6 +54,7 @@ function toSuggestions(shows: TvSearchResult[], movies: MovieSearchResult[]): Su
       year: s.first_air_date ? Number(s.first_air_date.slice(0, 4)) || null : null,
       posterPath: s.poster_path,
       popularity: s.popularity ?? 0,
+      rating: s.vote_average,
     })),
     ...movies.map((m) => ({
       kind: "movie" as const,
@@ -60,6 +63,7 @@ function toSuggestions(shows: TvSearchResult[], movies: MovieSearchResult[]): Su
       year: m.release_date ? Number(m.release_date.slice(0, 4)) || null : null,
       posterPath: m.poster_path,
       popularity: m.popularity ?? 0,
+      rating: m.vote_average,
     })),
   ];
   // Interleaving by popularity rather than grouping by type keeps the most

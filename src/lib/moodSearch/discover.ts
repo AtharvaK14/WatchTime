@@ -70,6 +70,8 @@ export interface DiscoveryItem {
   score: number;
   /** True when the title is already in the library (but unwatched). */
   inLibrary: boolean;
+  /** TMDB vote_average, for the rating chip on the result card. */
+  rating?: number | null;
 }
 
 export interface DiscoveryOutcome {
@@ -138,6 +140,7 @@ function movieToItem(m: MovieSearchResult): DiscoveryItem {
     overview: m.overview ?? null,
     score: 0,
     inLibrary: false,
+    rating: m.vote_average,
   };
 }
 
@@ -151,6 +154,7 @@ function tvToItem(t: TvSearchResult): DiscoveryItem {
     overview: t.overview ?? null,
     score: 0,
     inLibrary: false,
+    rating: t.vote_average,
   };
 }
 
@@ -230,6 +234,7 @@ async function libraryUnwatched(): Promise<{ items: DiscoveryItem[]; watched: Se
       overview: s.overview ?? null,
       score: 0,
       inLibrary: true,
+      rating: s.tmdbRating,
     });
   }
 
@@ -248,6 +253,7 @@ async function libraryUnwatched(): Promise<{ items: DiscoveryItem[]; watched: Se
       overview: m.overview ?? null,
       score: 0,
       inLibrary: true,
+      rating: m.tmdbRating,
     });
   }
 
