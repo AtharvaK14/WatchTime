@@ -85,6 +85,17 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="The Lantern Line"
+                    android:fontFamily="sans-serif-medium"
+                    android:textColor="@color/widget_text"
+                    android:textSize="14sp"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="S2 E4 · Salt and Static"
                     android:textColor="@color/widget_text"
                     android:textSize="12sp"
                     android:maxLines="1"
@@ -94,18 +105,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="monospace"
-                    android:text="S02 | E04  +3"
-                    android:textColor="@color/widget_text"
-                    android:textStyle="bold"
-                    android:textSize="13sp"
-                    android:maxLines="1"
-                    android:ellipsize="end" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Salt and Static"
+                    android:text="+3 more"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
@@ -146,40 +146,26 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Harrowgate"
+                    android:fontFamily="sans-serif-medium"
+                    android:textColor="@color/widget_text"
+                    android:textSize="14sp"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="S1 E1 · Pilot"
                     android:textColor="@color/widget_text"
                     android:textSize="12sp"
                     android:maxLines="1"
                     android:ellipsize="end" />
-
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="monospace"
-                    android:text="S01 | E01"
-                    android:textColor="@color/widget_text"
-                    android:textStyle="bold"
-                    android:textSize="13sp"
-                    android:maxLines="1"
-                    android:ellipsize="end" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:background="@drawable/widget_premiere_tag"
-                    android:paddingStart="6dp"
-                    android:paddingEnd="6dp"
-                    android:paddingTop="1dp"
-                    android:paddingBottom="1dp"
-                    android:text="PREMIERE"
-                    android:textColor="@color/widget_accent"
-                    android:textSize="9sp"
-                    android:textStyle="bold" />
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Pilot"
+                    android:text="Series premiere"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
@@ -220,8 +206,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Nightjar"
+                    android:fontFamily="sans-serif-medium"
                     android:textColor="@color/widget_text"
-                    android:textSize="12sp"
+                    android:textSize="14sp"
                     android:maxLines="1"
                     android:ellipsize="end" />
 
@@ -229,20 +216,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="monospace"
-                    android:text="S04 | E11"
+                    android:text="S4 E11 · What the River Kept"
                     android:textColor="@color/widget_text"
-                    android:textStyle="bold"
-                    android:textSize="13sp"
-                    android:maxLines="1"
-                    android:ellipsize="end" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="What the River Kept"
-                    android:textColor="@color/widget_muted"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:maxLines="1"
                     android:ellipsize="end" />
             </LinearLayout>

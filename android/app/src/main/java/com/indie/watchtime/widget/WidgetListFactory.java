@@ -5,6 +5,12 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.os.Bundle;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
+import android.text.style.StyleSpan;
+import android.text.style.TypefaceSpan;
+import android.graphics.Typeface;
 import android.view.View;
 import android.widget.RemoteViews;
 import android.widget.RemoteViewsService;
@@ -129,15 +135,46 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
     private void bindWatchNext(RemoteViews views, JSONObject row) {
         String label = row.optString("episodeLabel");
         int extra = row.optInt("extraCount", 0);
-        // The app renders the "+N" badge inline after the S/E number; matching
-        // it here keeps the two readable as the same list.
-        views.setTextViewText(R.id.row_episode, extra > 0 ? label + "  +" + extra : label);
 
-        if (!compact) {
-            views.setTextViewText(R.id.row_episode_name, row.optString("episodeName"));
-            views.setViewVisibility(R.id.row_premiere,
-                    row.optBoolean("isPremiere", false) ? View.VISIBLE : View.GONE);
+        if (compact) {
+            // One line only: the code, and the count of what is waiting after it.
+            views.setTextViewText(R.id.row_episode, extra > 0 ? label + " · +" + extra + " more" : label);
+            return;
         }
+
+        // "S3 E1 · Chapter One" on one line, as the app's Up Next card writes
+        // it: the code in mono and full white, the name after it a step
+        // quieter. Spans rather than two views, so the name takes whatever
+        // width the code leaves and the line ellipsizes as one.
+        SpannableStringBuilder episode = new SpannableStringBuilder(label);
+        episode.setSpan(new TypefaceSpan("monospace"), 0, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        episode.setSpan(new StyleSpan(Typeface.BOLD), 0, label.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        String name = row.optString("episodeName");
+        if (!name.isEmpty()) {
+            int start = episode.length();
+            episode.append(" · ").append(name);
+            episode.setSpan(new ForegroundColorSpan(context.getColor(R.color.widget_text_2)), start, episode.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        views.setTextViewText(R.id.row_episode, episode);
+
+        // The metadata line, worded by the app (see metaLine in
+        // lib/widget/snapshot.ts) and only coloured here: "New" is the one
+        // word on the row in the accent, exactly as on Home.
+        String before = row.optString("metaBefore", "");
+        boolean isNew = row.optBoolean("isNew", false);
+        String after = row.optString("metaAfter", "");
+        SpannableStringBuilder meta = new SpannableStringBuilder(before);
+        if (isNew) {
+            int start = meta.length();
+            meta.append("New");
+            meta.setSpan(new ForegroundColorSpan(context.getColor(R.color.widget_accent)), start, meta.length(),
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            meta.setSpan(new StyleSpan(Typeface.BOLD), start, meta.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        meta.append(after);
+        views.setTextViewText(R.id.row_meta, meta);
+        views.setViewVisibility(R.id.row_meta, meta.length() > 0 ? View.VISIBLE : View.GONE);
     }
 
     private void bindComingUp(RemoteViews views, JSONObject row) {

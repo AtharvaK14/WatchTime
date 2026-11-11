@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { db, type Episode, type WatchedEpisode } from "../db";
-import { getTvShowDetails, getMovieDetails, TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE } from "../tmdb";
+import { getTvShowDetails, getMovieDetails, getCredits, TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE, type TitleCredits } from "../tmdb";
+import { formatRating } from "../lib/ratings";
 import { getOmdbRatings, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbRatings } from "../omdb";
 import { averageRuntime } from "../lib/runtime";
 import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount, unconfirmedSeasons } from "../lib/episodeSync";
@@ -40,7 +41,7 @@ import { prefersReducedMotion, useAnimatedDismiss } from "../lib/useAnimatedDism
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
 import ExpandableText from "./ExpandableText";
 import StreamingCapsules from "./StreamingCapsules";
-import { KebabIcon } from "./icons";
+import { KebabIcon, StarIcon } from "./icons";
 import WatchMark from "./WatchMark";
 
 /** Matches the reverse of the desktop-modal-in keyframes in index.css. */
@@ -93,21 +94,30 @@ interface CoreDetails {
   tmdbRating?: number | null; // stored on the library row when this title is added
 }
 
-/** Release year / genres / season count / status, shared by both the
- * desktop header (next to the poster) and the mobile header (below the
- * hero banner), so the two render paths never drift out of sync on what
- * they display. */
-function MetaLine({ details }: { details: CoreDetails }) {
-  return (
-    <>
-      {details.releaseDate ? details.releaseDate.slice(0, 4) : "Release date unknown"}
-      {details.genres.length > 0 ? ` \u00b7 ${details.genres.join(", ")}` : ""}
-      {details.numberOfSeasons
-        ? ` \u00b7 ${details.numberOfSeasons} season${details.numberOfSeasons === 1 ? "" : "s"}`
-        : ""}
-      {details.status ? ` \u00b7 ${details.status}` : ""}
-    </>
-  );
+/** "2h 35m" from minutes; "45m" under an hour. */
+function formatRuntime(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
+
+/**
+ * The line under the title: for a movie the year, its director and its
+ * length ("2021 · Denis Villeneuve · 2h 35m"), for a show the year, its season
+ * count and its status. Genres are not here: they are the chips below.
+ * Shared by the phone sheet and the desktop dialog so the two never differ.
+ */
+function subtitleFor(kind: "show" | "movie", details: CoreDetails, director: string | null): string {
+  const year = details.releaseDate ? details.releaseDate.slice(0, 4) : "Release date unknown";
+  const parts =
+    kind === "movie"
+      ? [year, director, details.runtimeMinutes ? formatRuntime(details.runtimeMinutes) : null]
+      : [
+          year,
+          details.numberOfSeasons ? `${details.numberOfSeasons} season${details.numberOfSeasons === 1 ? "" : "s"}` : null,
+          details.status || null,
+        ];
+  return parts.filter(Boolean).join(" · ");
 }
 
 export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: Props) {
@@ -147,6 +157,24 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
 
   const [details, setDetails] = useState<CoreDetails | null>(null);
   const [ratings, setRatings] = useState<OmdbRatings | null | "loading">("loading");
+  // Cast and director, for the Cast row and a movie's subtitle. Loaded on its
+  // own, after the panel has what it needs to draw, so a slow or failed
+  // credits request never holds up the panel: the row simply does not appear.
+  const [credits, setCredits] = useState<TitleCredits | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setCredits(null);
+    getCredits(kind, tmdbId)
+      .then((c) => {
+        if (!cancelled) setCredits(c);
+      })
+      .catch(() => {
+        if (!cancelled) setCredits({ cast: [], director: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, tmdbId]);
   const [inLibrary, setInLibrary] = useState(false);
   // Shows only. The viewing state, not a library state: a stopped show is
   // still in the library with all of its history.
@@ -975,27 +1003,48 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     </div>
   );
 
-  const addRemoveContent = details && (
+  // What the panel says about the title's place in the library: plain
+  // statements, in the body.
+  const statusContent =
+    details &&
+    (inLibrary ? (
+      <>
+        <p className="library-status">
+          {added ? `Added to your ${kind === "show" ? "Shows" : "Movies"}.` : `Already in your ${kind === "show" ? "Shows" : "Movies"}.`}
+          {kind === "movie" && movieWatched
+            ? movieRewatchCount > 0
+              ? ` Watched ${movieRewatchCount + 1} times.`
+              : " Marked as watched."
+            : ""}
+        </p>
+        {showWatchLine && <p className="muted small watch-summary">{showWatchLine}</p>}
+        {/* Says what the state actually does, because "stopped" could
+            otherwise be read as something that removed or hid the show. */}
+        {kind === "show" && stopped && (
+          <p className="muted small">
+            Stopped watching. It stays in your library with all of its history, and new episodes won't bring it
+            back to Watch Next until you resume.
+          </p>
+        )}
+      </>
+    ) : (
+      // Said in words as well as by the Add button reappearing, since the
+      // list the card is leaving is still behind this panel.
+      justRemoved && (
+        <p className="muted small" role="status">
+          Removed from your {kind === "show" ? "Shows" : "Movies"}.
+        </p>
+      )
+    ));
+
+  // What you can do with it, and the Remove confirmation when it is open.
+  // On a phone this is the bar pinned to the bottom of the sheet when there is
+  // a main action to pin (see pinActions); otherwise it sits in the body under
+  // the status line.
+  const actionContent = details && (
     <>
       {inLibrary ? (
         <>
-          <p className="library-status">
-            {added ? `Added to your ${kind === "show" ? "Shows" : "Movies"}.` : `Already in your ${kind === "show" ? "Shows" : "Movies"}.`}
-            {kind === "movie" && movieWatched
-              ? movieRewatchCount > 0
-                ? ` Watched ${movieRewatchCount + 1} times.`
-                : " Marked as watched."
-              : ""}
-          </p>
-          {showWatchLine && <p className="muted small watch-summary">{showWatchLine}</p>}
-          {/* Says what the state actually does, because "stopped" could
-              otherwise be read as something that removed or hid the show. */}
-          {kind === "show" && stopped && (
-            <p className="muted small">
-              Stopped watching. It stays in your library with all of its history, and new episodes won't bring it
-              back to Watch Next until you resume.
-            </p>
-          )}
           {/* The confirmation takes the action row's place rather than
               appearing under it, with its buttons first: they land where the
               finger already is. It used to render as a second row below,
@@ -1058,39 +1107,82 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
               )}
             </div>
           )}
-          {watchError && (
-            <p className="status-error small" role="alert">
-              Couldn't save that, so nothing has changed. ({watchError})
-            </p>
-          )}
         </>
       ) : (
-        <>
-          {/* Said in words as well as by the Add button reappearing, since the
-              list the card is leaving is still behind this panel. */}
-          {justRemoved && (
-            <p className="muted small" role="status">
-              Removed from your {kind === "show" ? "Shows" : "Movies"}.
-            </p>
-          )}
-          <div className="field-row">
-            <button className="btn-primary" onClick={handleAdd}>
-              {kind === "show" ? "Add to Shows" : "Add to Movies"}
+        <div className="field-row">
+          <button className="btn-primary" onClick={handleAdd}>
+            {kind === "show" ? "Add to Shows" : "Add to Movies"}
+          </button>
+          {kind === "movie" && (
+            <button onClick={toggleMovieWatched} disabled={savingWatched}>
+              Add as watched
             </button>
-            {kind === "movie" && (
-              <button onClick={toggleMovieWatched} disabled={savingWatched}>
-                Add &amp; mark watched
-              </button>
-            )}
-          </div>
-          {watchError && (
-            <p className="status-error small" role="alert">
-              Couldn't save that, so nothing has changed. ({watchError})
-            </p>
           )}
-        </>
+        </div>
+      )}
+      {watchError && (
+        <p className="status-error small" role="alert">
+          Couldn't save that, so nothing has changed. ({watchError})
+        </p>
       )}
     </>
+  );
+
+  // The reference layout's "Watch now": on a phone, the main action is a
+  // full-width bar pinned under the sheet's content, always in reach however
+  // far the user has scrolled. Only when there IS a main action: adding the
+  // title, or marking a movie watched. A show already in the library has only
+  // Stop watching, which should not be the biggest control on screen, so its
+  // actions stay in the body.
+  const pinActions = isMobile && (!inLibrary || kind === "movie");
+
+  // The header, as in the reference: a large title with the rating on the
+  // same line, one subtitle line, and the genres as chips.
+  const ratingText = details ? formatRating(details.tmdbRating) : null;
+  const titleBlock = details && (
+    <>
+      <div className="details-title-row">
+        <h2 className="details-title">{details.name}</h2>
+        {ratingText && (
+          <span className="details-rating">
+            <span className="sr-only">TMDB rating </span>
+            {ratingText}
+            <StarIcon size={16} />
+          </span>
+        )}
+      </div>
+      <p className="details-subtitle">{subtitleFor(kind, details, credits?.director ?? null)}</p>
+    </>
+  );
+  const genreChips = details && details.genres.length > 0 && (
+    <ul className="genre-chip-row" aria-label="Genres">
+      {details.genres.map((g) => (
+        <li key={g} className="genre-chip">
+          {g}
+        </li>
+      ))}
+    </ul>
+  );
+
+  // Cast, as photo cards in a row that scrolls sideways. Hidden until the
+  // credits arrive, and entirely when TMDB lists nobody.
+  const castContent = credits && credits.cast.length > 0 && (
+    <section className="cast-section" aria-label="Cast">
+      <h3 className="details-section-title">Cast</h3>
+      <ul className="cast-rail">
+        {credits.cast.map((person) => (
+          <li key={person.id} className="cast-card">
+            {person.profilePath ? (
+              <img src={`${TMDB_IMAGE_BASE}${person.profilePath}`} alt="" className="cast-photo" loading="lazy" />
+            ) : (
+              <span className="cast-photo cast-photo-empty" aria-hidden="true" />
+            )}
+            <span className="cast-name">{person.name}</span>
+            {person.character && <span className="cast-role">{person.character}</span>}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 
   // Clamped to a few lines with Read more / Show less: a long synopsis used to
@@ -1115,9 +1207,12 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // duplicating this JSX.
   const bodyContent = details && (
     <>
+      {genreChips}
       {ratingsRowContent}
-      {addRemoveContent}
+      {statusContent}
+      {!pinActions && actionContent}
       {overviewContent}
+      {castContent}
       {streamingContent}
     </>
   );
@@ -1390,7 +1485,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
               expanding the panel. */}
           <div
             ref={scrollAreaRef}
-            className={`sheet-scroll-area ${sheetExpanded ? "" : "is-collapsed"}`}
+            className={`sheet-scroll-area ${sheetExpanded ? "" : "is-collapsed"}${pinActions ? " has-action-bar" : ""}`}
             {...contentProps}
           >
             {error && <p className="status-error">{error}</p>}
@@ -1398,32 +1493,24 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
 
             {details && (
               <>
-                <div className={`details-hero ${details.backdropPath ? "centered" : ""}`}>
-                  {details.backdropPath ? (
-                    // Real horizontal image from TMDB, shown sharp, no blur needed.
+                {/* The reference layout's hero: the artwork, sharp and large,
+                    fading into the sheet, with the title and rating over its
+                    bottom edge. The backdrop when TMDB has one; otherwise the
+                    poster, cropped from the top, where the faces and the title
+                    art usually are. */}
+                <div className="details-cover">
+                  {details.backdropPath || details.posterPath ? (
                     <img
-                      src={`${TMDB_BACKDROP_BASE}${details.backdropPath}`}
+                      src={`${TMDB_BACKDROP_BASE}${details.backdropPath ?? details.posterPath}`}
                       alt=""
-                      className="details-hero-bg-sharp"
+                      className={`details-cover-img${details.backdropPath ? "" : " is-poster"}`}
                     />
                   ) : (
-                    // No backdrop for this title (uncommon but happens), fall back to
-                    // the vertical poster, blurred since it's the wrong aspect ratio
-                    // to show sharp as a wide banner.
-                    details.posterPath && (
-                      <div
-                        className="details-hero-bg-blurred"
-                        style={{ backgroundImage: `url(${TMDB_IMAGE_BASE}${details.posterPath})` }}
-                      />
-                    )
+                    <div className="details-cover-img details-cover-empty" />
                   )}
-                  <div className="details-hero-scrim" />
-                  <h2 className="details-hero-title">{details.name}</h2>
+                  <div className="details-cover-fade" />
+                  <div className="details-cover-text">{titleBlock}</div>
                 </div>
-
-                <p className="muted small details-meta-line">
-                  <MetaLine details={details} />
-                </p>
 
                 <div className="details-body">{bodyContent}</div>
 
@@ -1432,6 +1519,21 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
             )}
           </div>
         </div>
+
+        {/* Fixed to the bottom of the screen, not part of the sheet: the
+            half-open sheet is the full-height sheet pushed partly below the
+            screen, so a bar at its bottom edge would be out of view exactly
+            when it is needed. The scroll area leaves room for it
+            (has-action-bar). Outside the sheet, it also stays put while the
+            sheet is dragged. */}
+        {pinActions && details && (
+          <div
+            className={`sheet-action-bar${showsSeasonBrowser ? " is-wide" : ""}${closing ? " is-leaving" : ""}`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {actionContent}
+          </div>
+        )}
 
         {episodeDetailsModal}
       </div>
@@ -1480,17 +1582,17 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                 <div className="poster-placeholder desktop-poster-card" />
               )}
               <div className="desktop-header-text">
-                <h2>{details.name}</h2>
-                <p className="muted small">
-                  <MetaLine details={details} />
-                </p>
+                {titleBlock}
+                {genreChips}
               </div>
             </div>
 
             <div className="desktop-body">
               {ratingsRowContent}
-              {addRemoveContent}
+              {statusContent}
+              {actionContent}
               {overviewContent}
+              {castContent}
               {streamingContent}
             </div>
 

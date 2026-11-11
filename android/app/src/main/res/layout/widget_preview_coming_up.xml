@@ -95,7 +95,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:fontFamily="monospace"
-                    android:text="S02 | E01"
+                    android:text="S2 E1"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
@@ -117,9 +117,8 @@
                 android:minWidth="56dp"
                 android:gravity="end"
                 android:text="Today"
-                android:textColor="@color/widget_accent"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:textColor="@color/widget_text_2"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <ImageView
@@ -165,7 +164,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:fontFamily="monospace"
-                    android:text="S02 | E05"
+                    android:text="S2 E5"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
@@ -187,9 +186,8 @@
                 android:minWidth="56dp"
                 android:gravity="end"
                 android:text="Tomorrow"
-                android:textColor="@color/widget_accent"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:textColor="@color/widget_text_2"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <ImageView
@@ -235,7 +233,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:fontFamily="monospace"
-                    android:text="S05 | E01"
+                    android:text="S5 E1"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
@@ -257,9 +255,8 @@
                 android:minWidth="56dp"
                 android:gravity="end"
                 android:text="Mar 4"
-                android:textColor="@color/widget_accent"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:textColor="@color/widget_text_2"
+                android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

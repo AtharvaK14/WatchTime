@@ -184,6 +184,47 @@ export interface MovieDetails {
   vote_average?: number;
 }
 
+// ---- Credits ----------------------------------------------------------------
+// For the details panel's Cast row and a movie's director. A separate request
+// rather than append_to_response on the details call: the details endpoints
+// are also used by every library backfill, which has no use for a cast list.
+
+export interface CastMember {
+  id: number;
+  name: string;
+  /** The role, or "" when TMDB has none. */
+  character: string;
+  profilePath: string | null;
+}
+
+export interface TitleCredits {
+  cast: CastMember[];
+  /** Movies only: the first credited director. */
+  director: string | null;
+}
+
+/** How many cast members the panel shows; TMDB orders them by billing. */
+const CAST_LIMIT = 12;
+
+export async function getCredits(kind: "show" | "movie", tmdbId: number): Promise<TitleCredits> {
+  // Shows: aggregate_credits, which spans every season, so a series' main
+  // cast is the people across its run rather than only its latest season's.
+  // Its cast rows carry roles[] instead of a single character.
+  const data = await tmdbGet<{
+    cast?: { id: number; name: string; character?: string; roles?: { character: string }[]; profile_path: string | null }[];
+    crew?: { job?: string; name: string }[];
+  }>(kind === "show" ? `/tv/${tmdbId}/aggregate_credits` : `/movie/${tmdbId}/credits`);
+  return {
+    cast: (data.cast ?? []).slice(0, CAST_LIMIT).map((c) => ({
+      id: c.id,
+      name: c.name,
+      character: c.character ?? c.roles?.[0]?.character ?? "",
+      profilePath: c.profile_path,
+    })),
+    director: kind === "movie" ? (data.crew?.find((c) => c.job === "Director")?.name ?? null) : null,
+  };
+}
+
 export async function getMovieDetails(tmdbId: number): Promise<MovieDetails> {
   return tmdbGet<MovieDetails>(`/movie/${tmdbId}`, { append_to_response: "external_ids" });
 }

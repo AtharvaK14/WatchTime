@@ -6,8 +6,9 @@
 // or a title the app would have filtered out. The widget is a projection of
 // Home, not a parallel implementation of it.
 //
-// Formatting (the "S01 | E04" label, the "Tomorrow" date) is done here rather
-// than in Java for the same reason: one implementation, shared wording.
+// Formatting (the "S3 E1" label, the "+7 more · New · Season premiere" line,
+// the "Tomorrow" date) is done here rather than in Java for the same reason:
+// one implementation, shared wording.
 
 import type { Episode, Movie, Show, WatchedEpisode } from "../../db";
 import { TMDB_IMAGE_BASE } from "../../tmdb";
@@ -37,11 +38,21 @@ export interface WidgetWatchNextRow {
   seasonNumber: number;
   episodeNumber: number;
   episodeName: string;
-  /** "S01 | E04" - the app's own Watch Next wording. */
+  /** "S3 E1" - the app's own Up Next wording. */
   episodeLabel: string;
-  /** The "+N" badge; 0 when the next episode is the only one waiting. */
+  /** How many more episodes are waiting after this one; 0 when it is the only one. */
   extraCount: number;
   isPremiere: boolean;
+  /**
+   * The card's metadata line, as Home writes it: "+7 more · New · Season
+   * premiere". Split around "New" so the widget can colour that one word in
+   * the accent, as the app does, without parsing the text: metaBefore, then
+   * "New" when isNew, then metaAfter. All three empty when there is nothing
+   * to say. Optional fields: a widget built before them shows no meta line.
+   */
+  metaBefore: string;
+  isNew: boolean;
+  metaAfter: string;
   posterUrl: string | null;
   stillUrl: string | null;
 }
@@ -68,7 +79,26 @@ export interface WidgetSnapshot {
 }
 
 function episodeLabel(ep: { seasonNumber: number; episodeNumber: number }): string {
-  return `S${String(ep.seasonNumber).padStart(2, "0")} | E${String(ep.episodeNumber).padStart(2, "0")}`;
+  return `S${ep.seasonNumber} E${ep.episodeNumber}`;
+}
+
+/**
+ * Home's Up Next metadata line, split around "New" (see WidgetWatchNextRow).
+ * The same rules as EpisodeRow in pages/Home.tsx: "+N more", then New when
+ * something has been released the user has not seen, then the premiere.
+ */
+function metaLine(
+  extraCount: number,
+  isNew: boolean,
+  ep: { seasonNumber: number; episodeNumber: number }
+): { metaBefore: string; isNew: boolean; metaAfter: string } {
+  const more = extraCount > 0 ? `+${extraCount} more` : "";
+  const premiere = ep.episodeNumber === 1 ? (ep.seasonNumber === 1 ? "Series premiere" : "Season premiere") : "";
+  return {
+    metaBefore: more + (isNew && more ? " · " : ""),
+    isNew,
+    metaAfter: premiere ? ((more || isNew) ? " · " : "") + premiere : "",
+  };
 }
 
 function imageUrl(path: string | null): string | null {
@@ -114,6 +144,7 @@ export function buildWidgetSnapshot(
         episodeLabel: episodeLabel(ep),
         extraCount: row.additionalCount,
         isPremiere: ep.episodeNumber === 1,
+        ...metaLine(row.additionalCount, row.newlyAvailable, ep),
         posterUrl: imageUrl(row.posterPath),
         stillUrl: imageUrl(ep.stillPath),
       };
