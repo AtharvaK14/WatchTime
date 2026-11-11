@@ -875,6 +875,44 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     setRemoveError(null);
   }
 
+  // The ⋯ menu in the panel's top bar. Removing a title is the one action
+  // here that discards history, so it lives behind the menu rather than in
+  // the row of everyday actions; choosing it opens the same confirmation the
+  // Remove button used to, in the same place, so the removal itself (the
+  // write, its error, the card's exit) is unchanged.
+  function openTitleMenu(el: HTMLElement) {
+    if (!details) return;
+    openQuickMenu({
+      anchor: rectAnchor(el),
+      target: el,
+      label: `${details.name}: more actions`,
+      title: details.name,
+      entries: [
+        {
+          id: "remove",
+          label: `Remove from ${kind === "show" ? "Shows" : "Movies"}`,
+          danger: true,
+          run: () => {
+            setRemoveError(null);
+            setRemoveConfirming(true);
+          },
+        },
+      ],
+    });
+  }
+  const titleMenuButton = (className: string) =>
+    details && inLibrary ? (
+      <button
+        type="button"
+        className={className}
+        aria-label={`More actions for ${details.name}`}
+        aria-haspopup="menu"
+        onClick={(e) => openTitleMenu(e.currentTarget)}
+      >
+        <KebabIcon size={20} />
+      </button>
+    ) : null;
+
   const episodesBySeason = new Map<number, Episode[]>();
   for (const ep of episodesInDb) {
     const list = episodesBySeason.get(ep.seasonNumber);
@@ -941,7 +979,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     <>
       {inLibrary ? (
         <>
-          <p className="status-ok">
+          <p className="library-status">
             {added ? `Added to your ${kind === "show" ? "Shows" : "Movies"}.` : `Already in your ${kind === "show" ? "Shows" : "Movies"}.`}
             {kind === "movie" && movieWatched
               ? movieRewatchCount > 0
@@ -1003,14 +1041,13 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                     Watched
                   </button>
                 ) : (
-                  <button onClick={toggleMovieWatched} disabled={savingWatched}>
+                  <button className="btn-primary" onClick={toggleMovieWatched} disabled={savingWatched}>
                     Mark watched
                   </button>
                 ))}
-              {/* Beside Remove rather than among the season controls: both are
-                  decisions about the show as a whole, and this is the gentler of
-                  the two — which is the point of it sitting there, next to the
-                  one that deletes history. */}
+              {/* With the panel's actions rather than among the season
+                  controls: it is a decision about the show as a whole. The
+                  harsher one, Remove, is in the ⋯ menu at the top. */}
               {kind === "show" && (
                 <button onClick={toggleStopped}>{stopped ? "Resume watching" : "Stop watching"}</button>
               )}
@@ -1019,9 +1056,6 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                   Watch again
                 </button>
               )}
-              <button className="danger-button" onClick={() => setRemoveConfirming(true)}>
-                Remove from {kind === "show" ? "Shows" : "Movies"}
-              </button>
             </div>
           )}
           {watchError && (
@@ -1040,7 +1074,9 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
             </p>
           )}
           <div className="field-row">
-            <button onClick={handleAdd}>{kind === "show" ? "Add to Shows" : "Add to Movies"}</button>
+            <button className="btn-primary" onClick={handleAdd}>
+              {kind === "show" ? "Add to Shows" : "Add to Movies"}
+            </button>
             {kind === "movie" && (
               <button onClick={toggleMovieWatched} disabled={savingWatched}>
                 Add &amp; mark watched
@@ -1341,6 +1377,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
               <div className="sheet-drag-handle-bar" />
             </div>
 
+            {titleMenuButton("sheet-more")}
             <button className="close-x sheet-close-x" onClick={requestClose} aria-label="Close">
               &times;
             </button>
@@ -1430,6 +1467,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                 )
               )}
               <div className="details-hero-scrim" />
+              {titleMenuButton("desktop-hero-more")}
               <button className="desktop-hero-close-x" onClick={requestClose} aria-label="Close">
                 &times;
               </button>

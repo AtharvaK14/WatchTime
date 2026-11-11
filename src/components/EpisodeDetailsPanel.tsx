@@ -231,10 +231,18 @@ export default function EpisodeDetailsPanel({
     };
   }, [show, episode.seasonNumber, episode.episodeNumber]);
 
-  // "S02 | E01", the same wording as the Watch Next rows and the widget's own
-  // list (see episodeLabel() in lib/widget/snapshot.ts), so the capsule the
-  // user tapped in the widget reads identically in the panel it opened.
-  const seasonEp = `S${String(episode.seasonNumber).padStart(2, "0")} | E${String(episode.episodeNumber).padStart(2, "0")}`;
+  // "S3 E1", the same wording as the Up Next cards and Coming Up rows.
+  const seasonEp = `S${episode.seasonNumber} E${episode.episodeNumber}`;
+  // "Aired 5 Oct 2025" / "Airs 14 Nov 2026". Parsed as a local date (TMDB air
+  // dates have no time), so it never shows the day before in a timezone west
+  // of UTC.
+  const airLine = (() => {
+    if (!episode.airDate) return "Air date unknown";
+    const date = new Date(`${episode.airDate}T00:00:00`);
+    if (Number.isNaN(date.getTime())) return episode.airDate;
+    const text = date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+    return `${date.getTime() > Date.now() ? "Airs" : "Aired"} ${text}`;
+  })();
   const openEpisodeLabel = `Open ${episode.name} in the app`;
   // "in the app" only when that is what actually happens. From inside the app
   // the capsule opens a panel, and saying otherwise would mislead exactly the
@@ -267,43 +275,40 @@ export default function EpisodeDetailsPanel({
           &times;
         </button>
 
-        {/* 1 + 2: landscape thumbnail with two capsules along its bottom edge.
-
-            LEFT is the show, RIGHT is the season/episode, and the split is the
-            interaction hierarchy made visible: the show capsule NAVIGATES (to
-            the series panel in the app) and carries the "text ›" affordance
-            .show-pill uses on Home for exactly that; the S/E capsule is
-            INFORMATION and is always a plain span, never a control, in either
-            context. The route to this EPISODE in the app is its title below,
-            so each control goes to the thing it names. */}
+        {/* 1: the still, clear of anything drawn on it. */}
         <div className="episode-hero">
           {episode.stillPath ? (
             <img src={`${TMDB_STILL_BASE}${episode.stillPath}`} alt={episode.name} className="episode-hero-img" />
           ) : (
             <div className="poster-placeholder episode-hero-img" />
           )}
-          <div className="episode-hero-capsules">
-            {/* The show-title capsule, in both contexts. Where it goes differs
-                (out to the app from the overlay, down to the show's panel from
-                inside it) but what it means does not, which is the whole point
-                of the app and the widget sharing this component rather than
-                each drawing an episode card of its own. */}
-            {onOpenSeries && (
-              <button
-                type="button"
-                className="episode-hero-badge episode-show-badge episode-open-list"
-                onClick={handleOpenSeries}
-                aria-label={openSeriesLabel}
-              >
-                <span className="episode-show-badge-name">{show.name}</span>
-                <span aria-hidden="true">&rsaquo;</span>
-              </button>
-            )}
-            <span className="episode-hero-badge episode-number-badge">{seasonEp}</span>
-          </div>
         </div>
 
         <div className="episode-detail-body">
+          {/* 2: one line of context: the show, the episode code, the air date.
+              The show is the only control in it and says so with "›": it
+              NAVIGATES (to the series panel in the app, out to the app from
+              the widget overlay), while the code and the date are plain
+              information. Where the show link goes differs between the two
+              contexts but what it means does not, which is the point of the
+              app and the widget sharing this component. The route to this
+              EPISODE in the app is its title below, so each control goes to
+              the thing it names. */}
+          <p className="episode-meta-line">
+            {onOpenSeries ? (
+              <button type="button" className="episode-show-link" onClick={handleOpenSeries} aria-label={openSeriesLabel}>
+                <span className="episode-show-link-name">{show.name}</span>
+                <span aria-hidden="true"> &rsaquo;</span>
+              </button>
+            ) : (
+              <span className="episode-show-link-name">{show.name}</span>
+            )}
+            <span aria-hidden="true"> · </span>
+            <span className="episode-meta-code">{seasonEp}</span>
+            <span aria-hidden="true"> · </span>
+            <span>{airLine}</span>
+          </p>
+
           {/* 3: title. A CONTROL only in the widget overlay, where it is the
               route into the app's own episode page. Inside the app this panel
               IS that page, so the title is plain text: there is nowhere for it
@@ -327,9 +332,6 @@ export default function EpisodeDetailsPanel({
               episode.name
             )}
           </h2>
-
-          {/* 4: original air date */}
-          <p className="muted small">{episode.airDate || "Air date unknown"}</p>
 
           {/* 5: rating */}
           <div className="ratings-row">

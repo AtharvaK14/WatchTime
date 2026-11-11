@@ -17,6 +17,9 @@ export function formatRating(rating: number | null | undefined): string | null {
   return rating.toFixed(1);
 }
 
+/** How many ratings a library backfill fetches before saving them in one write. */
+const RATING_BATCH = 20;
+
 /** Movies whose rating has never been looked up. */
 export function moviesNeedingRating(movies: Movie[]): Movie[] {
   return movies.filter((m) => m.tmdbRating === undefined);
@@ -70,21 +73,37 @@ export function useRatingBackfill(
     if (!pending) return;
     let cancelled = false;
     const tried = new Set<number>();
+    // Saved in batches: every write to the table re-runs every live query on
+    // it, and the grid re-renders with it. One write per title meant several
+    // hundred re-renders of a large library in a row; one per batch is a
+    // handful. Whatever was fetched is still saved when the pass stops early.
+    const toSave: { tmdbId: number; rating: number | null }[] = [];
+    const flush = async () => {
+      if (toSave.length === 0) return;
+      const batch = toSave.splice(0);
+      const table = kind === "show" ? db.shows : db.movies;
+      await db.transaction("rw", table, async () => {
+        for (const { tmdbId, rating } of batch) await table.update(tmdbId, { tmdbRating: rating });
+      });
+    };
     (async () => {
-      while (!cancelled) {
-        const next = itemsRef.current?.find((i) => i.tmdbRating === undefined && !tried.has(i.tmdbId));
-        if (!next) return;
-        tried.add(next.tmdbId);
-        let rating: number | null;
-        try {
-          const details = kind === "show" ? await getTvShowDetails(next.tmdbId) : await getMovieDetails(next.tmdbId);
-          rating = details.vote_average ?? null;
-        } catch {
-          return;
+      try {
+        while (!cancelled) {
+          const next = itemsRef.current?.find((i) => i.tmdbRating === undefined && !tried.has(i.tmdbId));
+          if (!next) return;
+          tried.add(next.tmdbId);
+          let rating: number | null;
+          try {
+            const details = kind === "show" ? await getTvShowDetails(next.tmdbId) : await getMovieDetails(next.tmdbId);
+            rating = details.vote_average ?? null;
+          } catch {
+            return;
+          }
+          toSave.push({ tmdbId: next.tmdbId, rating });
+          if (toSave.length >= RATING_BATCH) await flush();
         }
-        if (cancelled) return;
-        if (kind === "show") await db.shows.update(next.tmdbId, { tmdbRating: rating });
-        else await db.movies.update(next.tmdbId, { tmdbRating: rating });
+      } finally {
+        await flush();
       }
     })();
     return () => {

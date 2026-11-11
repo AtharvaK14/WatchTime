@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../db";
+import { db, type Movie, type Show } from "../db";
 import { getTvShowDetails, getMovieDetails } from "../tmdb";
 import { averageRuntime } from "./runtime";
 import { totalEpisodeCount } from "./episodeSync";
@@ -26,6 +26,112 @@ export function toDurationParts(totalMinutes: number): DurationParts {
 // not a TMDB-confirmed number.
 const FALLBACK_MOVIE_RUNTIME_MINUTES = 110;
 
+/**
+ * Library rows this session has already tried to fill in, per table. Module
+ * level so it outlives the page: leaving Shows or Movies and coming back does
+ * not try the same titles again.
+ *
+ * This is what stops the backfill looping. A title TMDB genuinely has nothing
+ * for (no release date, no seasons) is written back with the same empty value
+ * it had, so it would still "need" filling after every attempt, and every
+ * write to the table, its own included, used to restart the whole pass: one
+ * stuck title meant a request, a write and a restart forever, with the
+ * progress line above the grid appearing and disappearing each time and the
+ * grid jumping with it. Each title now gets one attempt per launch; a failed
+ * one is retried on the next launch, never in a tight loop.
+ */
+const attemptedShows = new Set<number>();
+const attemptedMovies = new Set<number>();
+
+/**
+ * Fills in rows that need it, one at a time, and reports progress for the
+ * line above the grid. Runs while any row still needs filling and has not
+ * been tried this session; reads the current rows from a ref on each step, so
+ * the writes it makes (live-query updates) never restart it.
+ */
+function useLibraryBackfill<T extends { tmdbId: number }>(
+  rows: T[] | undefined,
+  needs: (row: T) => boolean,
+  attempted: Set<number>,
+  fill: (row: T) => Promise<void>
+) {
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
+  const untried = (row: T) => needs(row) && !attempted.has(row.tmdbId);
+  const pending = rows?.some(untried) ?? false;
+  useEffect(() => {
+    if (!pending) return;
+    let cancelled = false;
+    (async () => {
+      const total = rowsRef.current?.filter(untried).length ?? 0;
+      let done = 0;
+      setProgress({ done, total });
+      while (!cancelled) {
+        const next = rowsRef.current?.find(untried);
+        if (!next) break;
+        attempted.add(next.tmdbId);
+        await fill(next);
+        done++;
+        if (!cancelled) setProgress({ done, total: Math.max(total, done) });
+      }
+      if (!cancelled) setProgress(null);
+    })();
+    return () => {
+      cancelled = true;
+      // Also reached when the pass's own last attempt is what made `pending`
+      // false, before the loop above gets to clear the line itself.
+      setProgress(null);
+    };
+    // `untried`, `needs` and `fill` are module-level logic re-created each
+    // render; only whether there is anything to do should restart the pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending]);
+  return { backfilling: progress !== null, backfillProgress: progress };
+}
+
+// == null catches BOTH undefined (never attempted) and null (a past fetch
+// attempt that failed, e.g. a network error), so a failed attempt is retried
+// (on the next launch, see attemptedShows) instead of contributing zero
+// forever. Also catches numberOfEpisodes == null on its own: a show
+// backfilled for episodeRuntimeMinutes under an older schema version would
+// otherwise sit with no episode total (and no progress bar on the Shows grid)
+// permanently.
+const showNeedsBackfill = (s: Show) => s.episodeRuntimeMinutes == null || s.numberOfEpisodes == null;
+
+async function backfillShow(show: Show): Promise<void> {
+  try {
+    const details = await getTvShowDetails(show.tmdbId);
+    await db.shows.update(show.tmdbId, {
+      episodeRuntimeMinutes: averageRuntime(details.episode_run_time),
+      numberOfEpisodes: totalEpisodeCount(details.seasons),
+      genreIds: show.genreIds ?? details.genres.map((g) => g.id),
+      imdbId: show.imdbId ?? details.external_ids?.imdb_id ?? null,
+    });
+  } catch {
+    // Genuine fetch/network error, leave as null so it's retried next launch
+    // (unlike "TMDB responded with no data", which averageRuntime already
+    // resolves to the fallback, never null).
+    await db.shows.update(show.tmdbId, { episodeRuntimeMinutes: null, numberOfEpisodes: null });
+  }
+}
+
+const movieNeedsBackfill = (m: Movie) => m.runtimeMinutes == null || m.releaseDate == null;
+
+async function backfillMovie(movie: Movie): Promise<void> {
+  try {
+    const details = await getMovieDetails(movie.tmdbId);
+    await db.movies.update(movie.tmdbId, {
+      runtimeMinutes: details.runtime ?? FALLBACK_MOVIE_RUNTIME_MINUTES,
+      releaseDate: details.release_date,
+      genreIds: movie.genreIds ?? details.genres.map((g) => g.id),
+      imdbId: movie.imdbId ?? details.external_ids?.imdb_id ?? null,
+    });
+  } catch {
+    await db.movies.update(movie.tmdbId, { runtimeMinutes: null, releaseDate: null });
+  }
+}
+
 /** TV time and episode count, rewatch-aware (uses watchCount, not just presence of a row). */
 export function useShowStats() {
   const shows = useLiveQuery(() => db.shows.toArray(), []);
@@ -34,57 +140,7 @@ export function useShowStats() {
     () => db.episodes.toArray().then((eps) => eps.filter((e) => e.runtimeMinutes != null)),
     []
   );
-  const [backfilling, setBackfilling] = useState(false);
-  const [backfillProgress, setBackfillProgress] = useState<{ done: number; total: number } | null>(null);
-
-  useEffect(() => {
-    if (!shows) return;
-    // == null catches BOTH undefined (never attempted) and null (a past
-    // fetch attempt that failed, e.g. a network error). The old version
-    // only checked undefined, so a failed attempt got stuck at null
-    // forever with no retry, contributing zero permanently. That was a
-    // real bug, not just a missing-data limitation.
-    // Also catches numberOfEpisodes == null on its own: a show backfilled
-    // for episodeRuntimeMinutes under an older schema version wouldn't be
-    // picked up again by the runtime check alone once that field is set,
-    // and would otherwise sit with no episode total (and no progress bar
-    // on the Shows grid) permanently.
-    const needing = shows.filter((s) => s.episodeRuntimeMinutes == null || s.numberOfEpisodes == null);
-    if (needing.length === 0) return;
-    let cancelled = false;
-    async function backfill() {
-      setBackfilling(true);
-      let done = 0;
-      setBackfillProgress({ done, total: needing.length });
-      for (const show of needing) {
-        if (cancelled) return;
-        try {
-          const details = await getTvShowDetails(show.tmdbId);
-          await db.shows.update(show.tmdbId, {
-            episodeRuntimeMinutes: averageRuntime(details.episode_run_time),
-            numberOfEpisodes: totalEpisodeCount(details.seasons),
-            genreIds: show.genreIds ?? details.genres.map((g) => g.id),
-            imdbId: show.imdbId ?? details.external_ids?.imdb_id ?? null,
-          });
-        } catch {
-          // Genuine fetch/network error, leave as null so it's retried
-          // next time (unlike "TMDB responded with no data", which
-          // averageRuntime already resolves to the fallback, never null).
-          await db.shows.update(show.tmdbId, { episodeRuntimeMinutes: null, numberOfEpisodes: null });
-        }
-        done++;
-        setBackfillProgress({ done, total: needing.length });
-      }
-      if (!cancelled) {
-        setBackfilling(false);
-        setBackfillProgress(null);
-      }
-    }
-    backfill();
-    return () => {
-      cancelled = true;
-    };
-  }, [shows]);
+  const { backfilling, backfillProgress } = useLibraryBackfill(shows, showNeedsBackfill, attemptedShows, backfillShow);
 
   if (!shows || !watched || !episodesWithRuntime) {
     return {
@@ -130,44 +186,7 @@ export function useShowStats() {
 /** Movie time and count, rewatch-aware (uses rewatchCount). */
 export function useMovieStats() {
   const movies = useLiveQuery(() => db.movies.toArray(), []);
-  const [backfilling, setBackfilling] = useState(false);
-  const [backfillProgress, setBackfillProgress] = useState<{ done: number; total: number } | null>(null);
-
-  useEffect(() => {
-    if (!movies) return;
-    const needing = movies.filter((m) => m.runtimeMinutes == null || m.releaseDate == null);
-    if (needing.length === 0) return;
-    let cancelled = false;
-    async function backfill() {
-      setBackfilling(true);
-      let done = 0;
-      setBackfillProgress({ done, total: needing.length });
-      for (const movie of needing) {
-        if (cancelled) return;
-        try {
-          const details = await getMovieDetails(movie.tmdbId);
-          await db.movies.update(movie.tmdbId, {
-            runtimeMinutes: details.runtime ?? FALLBACK_MOVIE_RUNTIME_MINUTES,
-            releaseDate: details.release_date,
-            genreIds: movie.genreIds ?? details.genres.map((g) => g.id),
-            imdbId: movie.imdbId ?? details.external_ids?.imdb_id ?? null,
-          });
-        } catch {
-          await db.movies.update(movie.tmdbId, { runtimeMinutes: null, releaseDate: null });
-        }
-        done++;
-        setBackfillProgress({ done, total: needing.length });
-      }
-      if (!cancelled) {
-        setBackfilling(false);
-        setBackfillProgress(null);
-      }
-    }
-    backfill();
-    return () => {
-      cancelled = true;
-    };
-  }, [movies]);
+  const { backfilling, backfillProgress } = useLibraryBackfill(movies, movieNeedsBackfill, attemptedMovies, backfillMovie);
 
   if (!movies) {
     return { loading: true as const, backfilling, backfillProgress, totalMinutes: 0, moviesWatched: 0 };

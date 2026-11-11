@@ -184,10 +184,10 @@ h3 { margin: 0; font-size: 1.05rem; }
 .muted { color: var(--muted); }
 .small { font-size: 0.85rem; }
 
-.status-ok { color: var(--accent); }
+/* Green: a success is something done. It was the brand red, which made a
+   confirmation read like an error. */
+.status-ok { color: var(--watched); }
 .status-error { color: var(--danger); }
-
-a { color: var(--accent); }
 
 .field-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
@@ -201,7 +201,6 @@ input[type="text"], input[type="number"], input[type="password"], select {
   border: 1px solid var(--border);
   color: var(--text);
   padding: 9px 12px;
-  border-radius: 8px;
   font-size: 0.95rem;
   min-width: 220px;
 }
@@ -211,12 +210,9 @@ button {
   border: 1px solid var(--border);
   color: var(--text);
   padding: 9px 16px;
-  border-radius: 8px;
   cursor: pointer;
   font-size: 0.95rem;
 }
-
-button:hover:not(:disabled) { border-color: var(--accent-dim); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .file-label {
@@ -229,8 +225,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .show-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 18px;
   margin-top: 8px;
   /* Load-bearing for the reflow after a card leaves (useFlipLayout): the
      grid's height glides from the old height to the new one, and with the
@@ -241,29 +235,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   align-content: start;
 }
 
-@media (max-width: 640px) {
-  .show-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-  }
-  .show-card-body { padding: 6px; }
-  .show-name { font-size: 0.78rem; }
-}
-
-@media (max-width: 360px) {
-  .show-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
 .show-card {
   position: relative;
-  display: block;
-  background: none;
   border: none;
-  border-radius: 8px;
   overflow: hidden;
-  padding: 0;
   text-align: left;
   cursor: pointer;
   color: var(--text);
@@ -272,17 +247,12 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 .show-card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; display: block; border-radius: 8px; }
 .poster-placeholder { width: 100%; aspect-ratio: 2/3; background: var(--surface-raised); border-radius: 8px; }
 .show-card-body {
-  position: absolute;
   left: 0; right: 0; bottom: 0;
-  padding: 22px 8px 8px;
-  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.85));
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 .show-name { margin: 0; font-size: 0.85rem; font-weight: 600; line-height: 1.3; }
 .movie-card { cursor: pointer; }
-
 
 .watched-badge {
   position: absolute;
@@ -301,7 +271,6 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
   padding: 0;
   z-index: 2;
 }
-.watched-badge.on { background: var(--text); color: var(--bg); border-color: var(--text); }
 
 .poster-progress {
   position: absolute;
@@ -327,7 +296,7 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 }
 
 .modal {
-  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface);
   padding: 20px; max-width: 480px; width: 100%; max-height: 80vh; overflow-y: auto;
   display: flex; flex-direction: column; gap: 12px;
   overscroll-behavior: contain;
@@ -344,14 +313,8 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .skip { align-self: flex-start; color: var(--muted); background: none; border: none; }
 
-.back-link { align-self: flex-start; background: none; border: none; color: var(--accent); padding: 0; }
-
-.show-header { display: flex; gap: 16px; align-items: flex-end; }
-.show-header img { width: 100px; border-radius: 8px; }
-
-.season-block { border-top: 1px solid var(--border); padding-top: 12px; }
+.season-block { padding-top: 12px; }
 .season-header { display: flex; justify-content: space-between; align-items: center; }
-.link-button { background: none; border: none; color: var(--accent); font-size: 0.85rem; padding: 0; }
 
 .episode-list { list-style: none; padding: 0; margin: 8px 0 0; display: flex; flex-direction: column; gap: 4px; }
 
@@ -383,22 +346,11 @@ hr { border: none; border-top: 1px solid var(--border); }
 .wn-body { flex: 1; min-width: 0; }
 .wn-body .show-name { cursor: pointer; }
 
-/* Show card info badge */
-.poster-wrap { position: relative; }
-.info-badge {
-  position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%;
-  background: rgba(0,0,0,0.65); border: 1px solid var(--border); color: var(--text);
-  font-style: italic; font-family: Georgia, serif; padding: 0; display: flex; align-items: center; justify-content: center;
-}
-
 /* Details panel */
-.details-modal { max-width: 640px; position: relative; }
 .close-x {
   position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--muted);
   font-size: 1.4rem; line-height: 1; padding: 4px 8px; z-index: 2;
 }
-.details-layout { display: flex; gap: 20px; align-items: flex-start; }
-.details-poster { width: 160px; aspect-ratio: 2/3; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
 .details-body { display: flex; flex-direction: column; gap: 10px; }
 .ratings-row { display: flex; gap: 0; align-items: center; flex-wrap: wrap; font-size: 0.95rem; color: var(--muted); }
 .rating-pill {
@@ -422,11 +374,9 @@ hr { border: none; border-top: 1px solid var(--border); }
 .season-caret { display: inline-block; transition: transform 0.15s ease; color: var(--muted); font-size: 0.8em; }
 .season-caret.open { transform: rotate(90deg); }
 .ep-name { cursor: pointer; }
-.ep-name:hover { color: var(--accent); }
 
 .match-method-list { margin: 8px 0 0; padding-left: 20px; }
 .match-method-list li { margin-bottom: 4px; }
-
 
 .diagnostic-report {
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
@@ -440,19 +390,14 @@ hr { border: none; border-top: 1px solid var(--border); }
    width it needs and the other tile the rest - so a value is never wrapped to
    make room. If even that is not enough, StatTiles scales the values via
    --stat-fit. */
-.stats-grid { display: grid; grid-template-columns: repeat(2, minmax(min-content, 1fr)); gap: 14px; margin-top: 8px; }
-.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; text-align: center; min-width: 0; }
+.stats-grid { display: grid; grid-template-columns: repeat(2, minmax(min-content, 1fr)); }
+.stat-card { border-radius: 10px; min-width: 0; }
 .stat-card .stat-value {
-  font-size: calc(1.6rem * var(--stat-fit, 1));
-  font-weight: 700;
-  color: var(--accent);
   line-height: 1.2;
   white-space: nowrap;
 }
 .stat-card .stat-label {
   color: var(--muted);
-  font-size: calc(0.85rem * var(--stat-label-fit, 1));
-  margin-top: 4px;
   white-space: nowrap;
   /* Only reachable past the smallest value scale; a label is never wrapped. */
   overflow: hidden;
@@ -464,20 +409,15 @@ hr { border: none; border-top: 1px solid var(--border); }
 /* Past every scale StatTiles may apply: equal halves, and the label ends in
    "..." instead of the tiles pushing the page sideways. */
 .stats-grid[data-cramped] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-@media (max-width: 640px) {
-  .stats-grid { gap: 10px; }
-  .stat-card { padding: 14px 12px; }
-}
 
 /* Wider modal when the season browser is showing */
 .details-modal-wide { max-width: 720px; }
 
 .season-browser { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; }
-.season-header-right { display: flex; align-items: center; gap: 10px; }
+.season-header-right { display: flex; align-items: center; }
 
 .season-progress {
   height: 3px;
-  background: var(--surface-raised);
   border-radius: 2px;
   margin-top: 8px;
   overflow: hidden;
@@ -485,19 +425,17 @@ hr { border: none; border-top: 1px solid var(--border); }
 .season-progress span {
   display: block;
   height: 100%;
-  background: var(--accent);
 }
 
 .episode-row {
-  display: flex; align-items: center; gap: 10px; padding: 6px 4px !important;
+  display: flex; align-items: center; gap: 10px;
   /* How far the watched tick sits in from the row's right edge. Change this
      one value to move every tick in every episode list; nothing else needs
      touching, and the 44px hit area travels with it. */
   --watch-toggle-inset: 8px;
 }
 .episode-row.watched { background: var(--watched-tint); }
-.episode-thumb {
-  width: 64px; height: 36px; object-fit: cover; border-radius: 4px; flex-shrink: 0; cursor: pointer;
+.episode-thumb { object-fit: cover; border-radius: 4px; flex-shrink: 0; cursor: pointer;
   background: var(--surface-raised);
 }
 .episode-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
@@ -549,8 +487,6 @@ hr { border: none; border-top: 1px solid var(--border); }
 
 .discover-sections h3 { margin-top: 0; }
 
-.episode-still { aspect-ratio: 16/9; }
-
 .danger-button {
   background: rgba(224, 102, 92, 0.12);
   border: 1px solid var(--danger);
@@ -584,7 +520,6 @@ hr { border: none; border-top: 1px solid var(--border); }
 /* The list's size, quieter than its name. */
 .pill-tab-count { margin-left: 6px; opacity: 0.6; font-variant-numeric: tabular-nums; }
 
-
 /* Outlined rather than filled: it is an action waiting to be taken, and the
    green it turns when tapped (the watched overlay) is the only filled state. */
 .watch-toggle-circle {
@@ -596,7 +531,6 @@ hr { border: none; border-top: 1px solid var(--border); }
 .watch-toggle-circle:disabled { color: var(--muted); opacity: 0.5; }
 
 .catch-up-offer {
-  background: var(--surface-raised); border: 1px solid var(--accent-dim); border-radius: 10px;
   padding: 12px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem;
   position: sticky; top: 0; z-index: 3;
 }
@@ -626,9 +560,7 @@ hr { border: none; border-top: 1px solid var(--border); }
   max-width: 640px;
   margin: 0 auto;
   background: var(--surface);
-  border: 1px solid var(--border);
   border-bottom: none;
-  border-radius: 16px 16px 0 0;
   display: flex;
   flex-direction: column;
   overflow: hidden; /* .sheet-scroll-area below handles all scrolling, not this */
@@ -650,7 +582,6 @@ hr { border: none; border-top: 1px solid var(--border); }
   height: 48px; /* room for a 44px close target with the grabber centred in it */
   z-index: 3;
   background: var(--surface);
-  border-radius: 16px 16px 0 0;
 }
 
 /* Fills the bar so the whole strip drags, rather than only the 40x4px
@@ -759,36 +690,16 @@ hr { border: none; border-top: 1px solid var(--border); }
   filter: blur(10px) saturate(1.15) brightness(0.82);
   transform: scale(1.1);
 }
-
-.details-hero-bg {
-  position: absolute;
-  inset: -24px; /* oversized so the blur radius never reveals a sharp edge */
-  background-size: cover;
-  background-position: center 20%;
-  filter: blur(22px) saturate(1.25) brightness(0.75);
-  transform: scale(1.15);
-}
 .details-hero-scrim {
   position: absolute;
   inset: 0;
   background: linear-gradient(180deg, rgba(18, 21, 26, 0) 0%, rgba(18, 21, 26, 0.92) 100%);
-}
-.details-hero-poster {
-  position: relative;
-  z-index: 1;
-  width: 84px;
-  aspect-ratio: 2 / 3;
-  object-fit: cover;
-  border-radius: 8px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
-  flex-shrink: 0;
 }
 .details-hero-title {
   position: relative;
   z-index: 1;
   margin: 0;
   max-width: 100%;
-  font-size: 1.25rem;
   line-height: 1.25;
   text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
 }
@@ -929,7 +840,6 @@ hr { border: none; border-top: 1px solid var(--border); }
     position: relative; /* above the sliding capsule */
     z-index: 1;
     flex: 1;
-    min-width: 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -940,7 +850,6 @@ hr { border: none; border-top: 1px solid var(--border); }
     color: var(--nav-unselected);
     padding: 0 2px;
     border-radius: var(--r-pill);
-    font-size: var(--fs-12);
     font-weight: 500;
     transition: color var(--dur-base) ease, transform 140ms var(--ease-standard);
   }
@@ -1056,8 +965,6 @@ hr { border: none; border-top: 1px solid var(--border); }
   width: 130px;
   aspect-ratio: 2 / 3;
   object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid var(--border);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
   flex-shrink: 0;
 }
@@ -1069,9 +976,6 @@ hr { border: none; border-top: 1px solid var(--border); }
   flex-direction: column;
   gap: 6px;
   padding-bottom: 4px;
-}
-.desktop-header-text h2 {
-  font-size: 1.5rem;
 }
 
 .desktop-body {
@@ -1246,7 +1150,6 @@ details[open] > summary::after { transform: rotate(90deg); }
     width: 6px;
     height: 6px;
     border-radius: 50%;
-    background: var(--accent);
   }
 }
 
@@ -1258,9 +1161,7 @@ details[open] > summary::after { transform: rotate(90deg); }
   max-width: 640px;
   margin: 0 auto;
   background: var(--surface);
-  border: 1px solid var(--border);
   border-bottom: none;
-  border-radius: 16px 16px 0 0;
   padding: 0 20px 20px;
   max-height: 80vh;
   overflow-y: auto;
@@ -1532,22 +1433,13 @@ details[open] > summary::after { transform: rotate(90deg); }
 
 .segmented {
   display: flex;
-  background: var(--surface);
-  border-radius: 8px;
-  padding: 3px;
-  gap: 2px;
   flex-wrap: wrap;
 }
 .segmented button {
-  font-size: 0.82rem;
-  padding: 6px 12px;
-  border-radius: 6px;
   background: none;
   border: none;
-  color: var(--muted);
   font-weight: 500;
 }
-.segmented button.active { background: var(--surface-raised); color: var(--text); font-weight: 600; }
 .segmented button:hover:not(.active) { border-color: transparent; color: var(--text); }
 
 .compact-select {
@@ -1559,27 +1451,11 @@ details[open] > summary::after { transform: rotate(90deg); }
 
 .genre-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .opt {
-  font-size: 0.82rem;
-  padding: 6px 13px;
   border-radius: 999px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  color: var(--muted);
   font-weight: 500;
 }
-.opt.active { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 600; }
-
-/* Inside the mobile sheet specifically, the segmented control and sort
-   options should stack as full-width chip rows rather than the compact
-   inline treatment used on desktop. */
-.filter-sheet-body .segmented { background: none; padding: 0; gap: 6px; }
-.filter-sheet-body .segmented button {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 6px 13px;
-}
-.filter-sheet-body .segmented button.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+.opt.active { border-color: var(--text); font-weight: 600; }
+.filter-sheet-body .segmented button.active { border-color: var(--text); }
 
 /* ---- Backup nudge banner (Phase 0 durability) ---------------------------- */
 
@@ -1589,11 +1465,7 @@ details[open] > summary::after { transform: rotate(90deg); }
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
-  border-radius: 10px;
-  padding: 10px 14px;
   margin-bottom: 18px;
 }
 
@@ -1607,8 +1479,6 @@ details[open] > summary::after { transform: rotate(90deg); }
 }
 
 .backup-nudge-cta {
-  border-color: var(--accent);
-  color: var(--accent);
   padding: 6px 12px;
   font-size: 0.85rem;
 }
@@ -1622,7 +1492,6 @@ details[open] > summary::after { transform: rotate(90deg); }
 }
 .backup-nudge-dismiss:hover { color: var(--text); }
 
-
 /* ---- First-run wizard (Phase 1 onboarding) -------------------------------- */
 
 .wizard-backdrop { z-index: 30; } /* above details sheets and modals */
@@ -1635,7 +1504,6 @@ details[open] > summary::after { transform: rotate(90deg); }
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--accent);
 }
 
 .wizard-howto { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
@@ -1649,19 +1517,9 @@ details[open] > summary::after { transform: rotate(90deg); }
   gap: 12px;
   margin-top: 4px;
 }
-
-.wizard-primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-  font-weight: 600;
-}
 .wizard-primary:disabled { opacity: 0.55; cursor: default; }
 
 .wizard input[type="text"] { width: 100%; }
-
-.wizard a { color: var(--accent); }
-
 
 /* ---- About / Credits screen (Phase 2 attribution) ------------------------ */
 
@@ -1684,20 +1542,14 @@ details[open] > summary::after { transform: rotate(90deg); }
   color: var(--text);
 }
 
-
 /* ---- Offline banner (Phase 4 native: distinct from any no-results state) -- */
 
 .offline-banner {
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
   border-left: 3px solid var(--accent);
-  border-radius: 10px;
-  padding: 10px 14px;
   margin-bottom: 18px;
   font-size: 0.9rem;
   color: var(--text);
 }
-
 
 /* ---- Episode detail (redesigned): landscape hero on top, stacked body ---- */
 
@@ -1731,67 +1583,6 @@ details[open] > summary::after { transform: rotate(90deg); }
   display: block;
   border-radius: 12px 12px 0 0; /* match the modal's top corners */
 }
-/* The capsule row along the bottom of the still.
-
-   space-between puts the show on the left and the S/E on the right when both
-   are present (the widget overlay). With only the S/E capsule — which is the
-   case everywhere inside the app — a single flex child sits left, exactly
-   where the capsule has always been, so the app's panel is unchanged. */
-.episode-hero-capsules {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  bottom: 12px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.episode-hero-badge {
-  background: rgba(0, 0, 0, 0.72);
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-weight: 700;
-  font-size: 0.9rem;
-  letter-spacing: 0.02em;
-  padding: 4px 10px;
-  border-radius: 7px;
-  flex-shrink: 0;
-}
-
-/* INFORMATION, not a control. No chevron, no hover, no pointer, and it is a
-   <span> in both contexts so there is nothing to tap in the first place. The
-   muted colour is what separates it at a glance from the show capsule beside
-   it, which navigates. */
-.episode-number-badge {
-  color: var(--muted);
-  font-weight: 600;
-  cursor: default;
-}
-
-/* NAVIGATION. The series name, in the display face rather than the mono one
-   so it does not read as another code alongside "S02 | E01", with the border
-   and the "›" that mean "this takes you somewhere" elsewhere in the app. */
-.episode-show-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0; /* so a long series name can ellipsis instead of pushing the S/E capsule off */
-  flex-shrink: 1;
-  font-family: var(--font-display);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-  border: 1px solid var(--border-strong);
-}
-.episode-show-badge-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color: var(--accent); }
 
 .episode-detail-body {
   display: flex;
@@ -1817,22 +1608,9 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
 }
 .ep-action-primary:hover:not(:disabled) { border-color: var(--text); opacity: 0.9; }
 
-.rewatch-badge {
-  display: inline-flex;
-  align-items: center;
-  background: var(--accent-dim);
-  color: var(--accent);
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 0.8rem;
-  font-weight: 800;
-}
-
 /* ---- Mood search (on-device natural-language search) --------------------- */
 
 .mood-search { display: flex; flex-direction: column; gap: 8px; }
-
-.mood-search-row { display: flex; gap: 8px; align-items: center; }
 
 /* Grows to fill the row: the placeholder is a full example sentence, and at
    the shared 220px min-width it would be unreadably truncated. */
@@ -1880,18 +1658,13 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   text-decoration: line-through;
 }
 
-
-
-
 /* ---- Universal search (Discover) ---------------------------------------- */
 
 .usearch { display: flex; flex-direction: column; gap: 6px; }
 
 /* position: relative anchors the absolutely-positioned suggestion list to the
    whole form, so the dropdown spans input + button rather than jumping. */
-.usearch-form { display: flex; gap: 8px; align-items: stretch; position: relative; }
-
-
+.usearch-form { position: relative; }
 
 .usearch-suggestions {
   position: absolute;
@@ -1949,10 +1722,7 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   border: none;
   padding: 0;
   font-size: 0.85rem;
-  color: var(--muted);
-  text-decoration: underline;
 }
-.link-button:hover { color: var(--accent); }
 
 /* ---- Taste insights ----------------------------------------------------- */
 
@@ -1972,16 +1742,16 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
 .insights-genre-head { display: flex; justify-content: space-between; gap: 8px; font-size: 0.85rem; }
 
 .insights-bar { height: 5px; background: var(--surface-raised); border-radius: 3px; overflow: hidden; }
-.insights-bar-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+.insights-bar-fill { height: 100%; border-radius: 3px; }
 
 .insights-facts { display: flex; flex-wrap: wrap; gap: 6px 18px; }
 
 /* ---- Recommendation rails ----------------------------------------------- */
 
-.rail-section { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.rail-section { display: flex; flex-direction: column; }
 
 .rail-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
-.rail-head h4 { margin: 0; font-size: 1rem; font-weight: 600; }
+.rail-head h4 { margin: 0; }
 
 /* Horizontal rail, not a grid: keeps each section one row tall so the page
    stays scannable by heading no matter how many sections exist. */
@@ -1991,20 +1761,15 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   overflow-x: auto;
   padding-bottom: 6px;
   scroll-snap-type: x proximity;
-  scrollbar-width: thin;
 }
 
 .rail-card {
   flex: 0 0 auto;
-  width: 116px;
-  background: none;
   border: none;
-  padding: 0;
   text-align: left;
   scroll-snap-align: start;
   display: flex;
   flex-direction: column;
-  gap: 6px;
   cursor: pointer;
 }
 
@@ -2017,17 +1782,9 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   width: 100%;
   aspect-ratio: 2 / 3;
   object-fit: cover;
-  border-radius: 8px;
-  border: 1px solid var(--border);
   display: block;
 }
-/* aspect-ratio reserves the exact box before the image loads, so a rail of
-   posters never reflows as they arrive. */
-
-.rail-card:hover .rail-poster,
-.rail-card:focus-visible .rail-poster { border-color: var(--accent-dim); }
-.rail-card:focus-visible { outline: none; }
-.rail-card:focus-visible .rail-poster { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rail-card:focus-visible .rail-poster { outline-offset: 2px; }
 
 /* Season marker, on the poster. Gradient-free flat chip keeps it legible
    over both bright and dark artwork. */
@@ -2035,32 +1792,21 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   position: absolute;
   left: 6px;
   bottom: 6px;
-  font-size: 0.68rem;
   font-weight: 600;
   line-height: 1;
-  padding: 4px 7px;
-  border-radius: 5px;
-  background: rgba(10, 10, 11, 0.85);
   color: var(--text);
-  border: 1px solid var(--border);
 }
-
 
 /* Reserves two lines whether or not the title needs them, so every card in
    a rail is exactly the same height and the row reads flush. */
 .rail-name {
-  display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   -webkit-box-orient: vertical;
-  overflow: hidden;
   margin: 0;
-  font-size: 0.8rem;
   line-height: 1.3;
-  min-height: 2.6em;
   color: var(--text);
 }
-
 
 /* Accessible-only text: conveys what the dot and pill show visually. */
 .sr-only {
@@ -2075,10 +1821,6 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   border: 0;
 }
 
-@media (max-width: 720px) {
-  .rail-card { width: 104px; }
-}
-
 /* ---- Header settings button --------------------------------------------- */
 
 /* margin-left:auto pushes it to the far right without needing
@@ -2088,8 +1830,6 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 44px;
-  min-height: 44px;
   padding: 0;
   border-radius: 999px;
   background: none;
@@ -2114,7 +1854,6 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
   background: #232326; /* the nav's selected capsule, on the page background */
 }
 
-
 /* ---- Shared search field (Home mood search + Discover universal search) ---
    Both pages now use the same two-item row: a field with an inline clear,
    then one button. Keeping the clear inside the field is what lets the row
@@ -2136,7 +1875,6 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
 .search-field input[type="text"] {
   flex: 1;
   min-width: 0;
-  padding-right: 38px;
 }
 
 /* 44x44 hit area per the touch-target rule, achieved with padding rather
@@ -2224,9 +1962,6 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
 .rail,
 .discover-sections { min-width: 0; }
 
-/* The rail is the only element allowed to scroll sideways. */
-.rail { max-width: 100%; }
-
 /* Belt and braces: even if some future element does widen the document, the
    nav stays one viewport wide and usable rather than stretching off screen. */
 .bottom-nav { max-width: 100vw; }
@@ -2251,10 +1986,7 @@ button.episode-show-badge:hover { background: rgba(0, 0, 0, 0.88); border-color:
 }
 .wn-episode-button:hover:not(:disabled) { border-color: transparent; }
 .wn-episode-button:hover .wn-episode-name { color: var(--text); }
-.wn-episode-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-.wn-episode-button .wn-episode-line { display: block; }
-.wn-episode-button .wn-episode-name { display: block; }
+.wn-episode-button:focus-visible { outline-offset: 2px; }
 
 /* ---- Screen-reader-only containment -------------------------------------
    .sr-only is position:absolute, and an absolutely positioned element is
@@ -2300,13 +2032,6 @@ html[data-wtpanel] .modal { max-height: 88vh; }
    comments are the values that were actually observed.
    ============================================================ */
 
-/* CONTRAST — the first-run wizard's primary button was #fff on
-   var(--accent): 3.43:1, below the 4.5:1 needed. This is the button
-   every new user must find, on the one screen they cannot skip past
-   without it. --bg on --accent measures 5.77:1 and matches the
-   inversion already used by .pill-tab.active and .watch-toggle-circle. */
-.wizard-primary { color: var(--bg); font-weight: 700; }
-
 /* TOUCH TARGETS — measured on a 375px viewport, controls came in at
    21–37px against the 44px minimum both Apple and Material specify.
    This is an Android app, so those are real mis-taps.
@@ -2317,7 +2042,7 @@ html[data-wtpanel] .modal { max-height: 88vh; }
    the two. Inline text-style buttons are excluded — a 44px min-height
    on those would inject stray vertical space mid-sentence. */
 @media (pointer: coarse) {
-  button:not(.watched-badge):not(.watch-toggle):not(.watch-toggle-circle):not(.close-x):not(.episode-hero-badge):not(.link-button):not(.skip):not(.back-link):not(.wn-show-name):not(.media-switch-option),
+  button:not(.watched-badge):not(.watch-toggle):not(.watch-toggle-circle):not(.close-x):not(.episode-hero-badge):not(.link-button):not(.skip):not(.back-link):not(.wn-show-name):not(.media-switch-option):not(.episode-show-link):not(.sheet-more):not(.desktop-hero-more),
   select,
   summary,
   input[type="text"],
@@ -2499,15 +2224,7 @@ select,
    readers as .sr-only text inside the card. */
 .card-in-library {
   position: absolute;
-  top: 6px;
-  right: 6px;
   z-index: 2;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: rgba(0, 0, 0, 0.62);
-  border: 1px solid var(--border);
-  color: var(--accent);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2641,8 +2358,6 @@ select,
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--bg);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2674,19 +2389,6 @@ select,
   cursor: pointer;
 }
 
-/* The capsule variant. .episode-hero-badge and .episode-show-badge already
-   provide every visual property; this adds only what being a <button>
-   requires. position: relative anchors the invisible hit area at the end of
-   this file to the capsule itself — it is a static flex child now (it used to
-   be absolutely positioned, back when it was the only thing on the still), so
-   without this the hit area would resolve against .episode-hero and stretch
-   across the artwork. */
-.episode-hero-badge.episode-open-list {
-  position: relative;
-  min-height: 0;
-  text-align: left;
-}
-
 /* The title variant, which DOES need the full reset: it has to look like the
    <h2> it sits inside, not like a button. font: inherit is what picks the
    heading's type up. */
@@ -2702,7 +2404,7 @@ select,
   color: var(--text);
   text-align: left;
 }
-.episode-title-link:hover { color: var(--accent); border-color: transparent; }
+.episode-title-link:hover { border-color: transparent; }
 
 /* ---- Tab navigation -------------------------------------------------- */
 /* Keyed on the active tab in App.tsx, so this restarts on every switch.
@@ -2820,26 +2522,6 @@ select,
 }
 
 /* ---- Touch target for the show capsule -------------------------------- */
-/* .episode-hero-badge is excluded from the (pointer: coarse) min-height rule
-   above — 44px would turn a small overlaid capsule into a slab across the
-   still — so it takes the same invisible hit area the other small controls
-   use. Its containing block comes from the position: relative on
-   .episode-hero-badge.episode-open-list, which is why that is there.
-
-   height: 44px extends the target ~10px past the capsule in each direction,
-   which stays inside the still: the capsule row sits 12px above the hero's
-   bottom edge, and the episode title below it starts after the body's own
-   16px padding. The two navigation targets do not meet. */
-.episode-hero-badge.episode-open-list::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 100%;
-  min-width: 44px;
-  height: 44px;
-  transform: translate(-50%, -50%);
-}
 
 /* ============================================================
    NOTIFICATION SETTINGS (components/NotificationSettings.tsx)
@@ -2912,12 +2594,6 @@ select,
   color: var(--muted);
   transition: color 200ms ease, background-color 200ms ease;
 }
-/* The icon picks up the accent when the row is on, so the state reads from
-   the left edge as well as the right and does not depend on one small control. */
-.notif-row.on .notif-row-icon {
-  background: var(--accent-dim);
-  color: var(--accent);
-}
 
 .notif-row-text {
   flex: 1;
@@ -2940,10 +2616,6 @@ select,
   background: var(--surface-raised);
   border: 1px solid var(--border-strong);
   transition: background-color 200ms ease, border-color 200ms ease;
-}
-.notif-row.on .notif-switch {
-  background: var(--accent);
-  border-color: var(--accent);
 }
 
 .notif-switch-knob {
@@ -3006,10 +2678,6 @@ select,
   padding: 8px 12px;
 }
 .wizard-notif-row + .wizard-notif-row { border-top: 1px solid var(--border); }
-.wizard-notif-row .notif-row-icon {
-  background: var(--accent-dim);
-  color: var(--accent);
-}
 
 /* ============================================================
    STREAMING AVAILABILITY (components/StreamingCapsules.tsx)
@@ -3070,7 +2738,6 @@ select,
 }
 
 .stream-capsule:hover:not(:disabled) {
-  border-color: var(--accent);
   background: var(--surface);
 }
 
@@ -3140,13 +2807,9 @@ select,
   min-height: 36px;
   padding: 0 14px;
   border-radius: 999px;
-  font-size: 0.82rem;
-  font-weight: 700;
   background: var(--surface-raised);
-  border: 1px solid var(--border-strong);
   color: var(--text);
 }
-.wn-resume-btn:hover { border-color: var(--accent); }
 
 /* Why a show with new episodes is not in Watch Next. Wraps under the episode
    line rather than sitting beside the tags, because it is a sentence and the
@@ -3315,7 +2978,6 @@ select,
 /* Same ring as the global :focus-visible rule, which this field's own outline
    above would otherwise override. */
 .search-field input[type="text"]:focus-visible {
-  outline-color: var(--accent);
   outline-offset: 2px;
 }
 
@@ -3333,10 +2995,8 @@ select,
    Tabular figures so a column of years sits evenly. */
 .card-meta {
   margin: 0;
-  font-size: 0.75rem;
   font-weight: 500;
   line-height: 1.3;
-  color: rgba(242, 241, 239, 0.75);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   overflow: hidden;
@@ -3350,7 +3010,6 @@ select,
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
 
 /* ============================================================
    REMOVED FROM THE LIBRARY (lib/libraryRemoval.ts)
@@ -3590,7 +3249,6 @@ select,
   font-weight: 600;
   text-decoration: none;
 }
-.expandable-text-toggle:hover { color: var(--accent); }
 .expandable-text-toggle::after {
   content: "";
   position: absolute;
@@ -3687,7 +3345,6 @@ select,
   border-color: var(--watched);
   color: var(--text);
 }
-.ep-watched-status .ep-watched-tick { color: var(--watched); font-weight: 700; }
 
 /* ---- Quick Actions ------------------------------------------------------ */
 
@@ -3727,14 +3384,11 @@ select,
   position: fixed;
   display: flex;
   flex-direction: column;
-  min-width: 210px;
   max-width: min(290px, calc(100vw - 16px));
   max-height: calc(100vh - 16px);
   overflow-y: auto;
-  padding: 6px;
   background: var(--surface-raised);
   border: 1px solid var(--border);
-  border-radius: 12px;
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
   animation: action-menu-in 120ms cubic-bezier(0.2, 0, 0, 1);
 }
@@ -3753,38 +3407,31 @@ select,
 }
 .action-menu-title {
   font-weight: 700;
-  font-size: 0.9rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.action-menu-subtitle { color: var(--muted); font-size: 0.78rem; }
+.action-menu-subtitle { color: var(--muted); }
 
 .action-menu .action-menu-item {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
-  min-height: 40px;
-  padding: 8px 10px;
   text-align: left;
   background: none;
   border: none;
-  border-radius: 8px;
   color: var(--text);
-  font-size: 0.92rem;
 }
 .action-menu .action-menu-item:hover:not(:disabled),
 .action-menu .action-menu-item:focus-visible {
   background: var(--surface);
 }
-.action-menu .action-menu-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.action-menu .action-menu-item:focus-visible { outline-offset: -2px; }
 .action-menu .action-menu-item.is-danger { color: var(--danger); }
 
 .action-menu-icon {
   display: inline-flex;
-  width: 16px;
-  height: 16px;
   flex-shrink: 0;
   color: var(--muted);
 }
@@ -3815,9 +3462,6 @@ select,
   pointer-events: none;
 }
 /* Clears the bottom nav on phones. */
-@media (max-width: 640px) {
-  .toast-stack { bottom: calc(76px + env(safe-area-inset-bottom)); }
-}
 .toast {
   pointer-events: auto;
   padding: 10px 14px;
@@ -3987,15 +3631,13 @@ select,
    (components/StatsDialog.tsx).
    ============================================================ */
 
-.stats-grid.is-clickable { cursor: pointer; border-radius: 10px; }
+.stats-grid.is-clickable { cursor: pointer; }
 .stats-grid.is-clickable .stat-card { position: relative; transition: border-color 160ms ease; }
 .stats-grid.is-clickable:hover .stat-card { border-color: var(--border-strong); }
 /* A quiet "there is more" on the last tile, rather than a separate button. */
 .stats-grid.is-clickable .stat-card:last-child::after {
   content: "\203A";
   position: absolute;
-  top: 8px;
-  right: 12px;
   color: var(--muted);
   font-size: 1.1rem;
   line-height: 1;
@@ -4539,3 +4181,343 @@ select,
   border-radius: var(--r-md);
   font-size: var(--fs-15);
 }
+
+/* ============================================================
+   REDESIGN PHASE 2B: SETTINGS, DETAIL PANELS, MENUS, SHEETS
+   (pages/Settings.tsx, components/DetailsPanel.tsx,
+    components/EpisodeDetailsPanel.tsx, ActionMenu, FilterSheet)
+   ============================================================ */
+
+/* ---- Settings: One UI grouped lists ------------------------------------ */
+/* A small label over each group, the group's rows inside one rounded
+   container, hairlines between rows. A row opens in place; its contents are
+   unchanged. */
+.settings-page > h1 { font-size: var(--fs-20); font-weight: 700; letter-spacing: -0.01em; }
+.settings-group { display: flex; flex-direction: column; gap: 8px; }
+.settings-group-label {
+  margin: 12px 4px 0;
+  font-size: var(--fs-13);
+  font-weight: 600;
+  color: var(--muted);
+}
+.settings-list {
+  background: var(--surface);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.settings-list > details {
+  padding: 0;
+  border-bottom: none;
+  border-top: 1px solid #232327;
+}
+.settings-list > details:first-child { border-top: none; }
+.settings-list > details > summary {
+  min-height: 60px;
+  padding: 12px 16px;
+}
+.settings-list > details > summary:hover { background: rgba(255, 255, 255, 0.03); }
+.settings-list > details > summary:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; }
+.settings-list .settings-row-text h3 { margin: 0; font-size: var(--fs-17); font-weight: 600; }
+.settings-list .settings-row-sub { font-size: var(--fs-13); }
+.settings-row-body { padding: 4px 16px 18px; }
+/* Headings inside an open row sit below the row's own title in the scale. */
+.settings-row-body h3,
+.settings-row-body h4 { font-size: var(--fs-15); font-weight: 600; }
+/* The one destructive group keeps its red title and description, and nothing
+   else on the page is red. */
+.settings-list.is-danger .settings-row-danger h3 { color: var(--danger); }
+
+/* ---- Primary action ---------------------------------------------------- */
+/* The app's existing primary treatment (as .ep-action-primary): the one filled
+   control in a panel, white on the dark surface. Red stays the brand mark. */
+.btn-primary {
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+  font-weight: 700;
+}
+.btn-primary:hover:not(:disabled) { border-color: var(--text); opacity: 0.9; }
+
+/* ---- Details panel: the ⋯ menu ----------------------------------------- */
+/* Phones: in the sheet's top bar, left of Close. */
+.sheet-more {
+  position: absolute;
+  top: 50%;
+  right: 48px;
+  transform: translateY(-50%);
+  z-index: 1; /* above the grab area, like Close */
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--text);
+}
+.sheet-more:active { transform: translateY(-50%) scale(0.9); }
+/* Desktop: on the hero, left of Close. */
+.desktop-hero-more {
+  position: absolute;
+  top: 14px;
+  right: 56px;
+  z-index: 2;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.45);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  color: var(--text);
+}
+/* Both are 34px circles that need a 44px target, the same invisible hit area
+   the close buttons get. */
+.sheet-more::after,
+.desktop-hero-more::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* ---- Details panel: header ---------------------------------------------- */
+.details-hero-title {
+  font-size: var(--fs-24);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.details-meta-line { font-size: var(--fs-13); }
+
+/* ---- Episode panel: the context line ------------------------------------ */
+/* "Lupin › · S3 E1 · Aired 5 Oct 2025": what used to be two capsules over the
+   still, now one quiet line under it, so the artwork is clear. */
+.episode-meta-line {
+  margin: 0;
+  font-size: var(--fs-13);
+  line-height: 1.5;
+  color: var(--muted);
+}
+.episode-show-link {
+  display: inline;
+  margin: -4px 0;
+  padding: 4px 0;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+.episode-show-link:hover:not(:disabled) { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.episode-show-link:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.episode-show-link-name { color: var(--text); font-weight: 600; }
+.episode-meta-code { font-family: var(--font-mono); color: var(--text-2); }
+
+/* ---- Quick Actions menu ------------------------------------------------- */
+/* One UI's context menu: a rounder surface, roomier rows. */
+.action-menu {
+  border-radius: var(--r-lg);
+  padding: 6px;
+  min-width: 220px;
+}
+.action-menu .action-menu-item {
+  min-height: 48px;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  font-size: var(--fs-15);
+}
+.action-menu-icon { width: 20px; height: 20px; }
+.action-menu-title { font-size: var(--fs-15); }
+.action-menu-subtitle { font-size: var(--fs-13); }
+.action-menu .action-menu-item:focus-visible { outline: 2px solid var(--text); }
+
+/* ---- Bottom sheets ------------------------------------------------------ */
+/* One sheet shape for the details panel and the filter sheet: 24px top
+   corners, no outline (the shadow and the surface separate it). */
+.details-sheet,
+.filter-sheet {
+  border: none;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+.sheet-top-bar { border-radius: var(--r-xl) var(--r-xl) 0 0; }
+
+/* ---- Toasts ------------------------------------------------------------- */
+/* Above the floating nav (12px float + 64px nav + 8px), and above Home's
+   Shows/Movies switch while it is on screen, rather than on top of either. */
+@media (max-width: 640px) {
+  .toast-stack { bottom: calc(84px + env(safe-area-inset-bottom)); }
+  body:has(.media-switch.is-docked) .toast-stack { bottom: calc(136px + env(safe-area-inset-bottom)); }
+}
+
+/* "Already in your Shows." in the details panel: a plain statement of where
+   the title is, in secondary text. Not green, which on this panel would read
+   as "watched". */
+.library-status { margin: 0; color: var(--text-2); font-size: var(--fs-15); }
+
+/* ============================================================
+   REDESIGN: CONSISTENCY PASS
+   The places the redesign phases did not reach, brought onto the same rules.
+   Colour meanings, everywhere:
+     red     the brand mark, "New", and destructive buttons inside a
+             confirmation (Confirm remove, Reset). Nothing else.
+     green   watched / done, and success messages.
+     white   selected, primary, focused, progress.
+   ============================================================ */
+
+/* ---- Base controls ----------------------------------------------------- */
+/* Every plain button and field on the shared 12px corner. Classed controls
+   (pills, circles, capsules) set their own shape and are unaffected. */
+button { border-radius: var(--r-md); }
+input[type="text"],
+input[type="number"],
+input[type="password"],
+select { border-radius: var(--r-md); }
+/* Hover and keyboard focus in white, not red: red would read as a warning on
+   every control the pointer crosses. */
+button:hover:not(:disabled) { border-color: var(--text-2); }
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible { outline-color: var(--text); }
+.search-field input[type="text"]:focus-visible { outline-color: var(--text); }
+.season-header .season-kebab:focus-visible { outline-color: var(--text); }
+
+/* Links: white and underlined, so they read as links without borrowing the
+   brand colour. */
+a,
+.wizard a { color: var(--text); text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--text-2); }
+a:hover { text-decoration-color: var(--text); }
+.link-button { color: var(--text-2); text-decoration: underline; text-underline-offset: 2px; }
+.link-button:hover { color: var(--text); }
+.ep-name:hover,
+.episode-title-link:hover,
+.expandable-text-toggle:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.stream-capsule:hover:not(:disabled),
+.wn-resume-btn:hover { border-color: var(--text-2); }
+.season-header .season-kebab[data-qa-open] { color: var(--text); }
+
+/* Destructive buttons keep their red: they only appear inside a confirmation
+   step, and always say what they destroy. Same corners as every button. */
+.danger-button { border-radius: var(--r-md); }
+
+/* ---- Dialogs ------------------------------------------------------------- */
+/* Stats, watch history, episode details and the rest: one dialog surface,
+   rounder, no outline (the dimmed page behind separates it). */
+.modal {
+  border: none;
+  border-radius: var(--r-lg);
+}
+
+/* ---- Season list (show details) --------------------------------------- */
+/* Progress in white, like the Shows grid: progress is not "done". */
+.season-progress { background: var(--surface-raised); }
+.season-progress span { background: var(--text); }
+/* The catch-up offer is a suggestion, not a warning: no red outline. */
+.catch-up-offer {
+  border: none;
+  border-radius: var(--r-md);
+  background: var(--surface-raised);
+}
+
+/* ---- Episode panel ------------------------------------------------------ */
+/* The flash after Mark as Watched is a watched mark, so it is green like every
+   other one (it was the brand red). Dark tick on green: 7.7:1. */
+.episode-watched-flash-mark { background: var(--watched); color: var(--bg); }
+
+/* ---- Filter sheet --------------------------------------------------------- */
+/* The segmented control (status, sort) in the Home switch's style: a pill
+   track with the selected option as a white capsule, as the Up Next tabs. */
+.segmented {
+  background: var(--surface-raised);
+  border-radius: var(--r-md);
+  padding: 4px;
+  gap: 4px;
+}
+.segmented button {
+  min-height: 36px;
+  padding: 6px 12px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-13);
+  color: var(--text-2);
+}
+.segmented button.active { background: var(--text); color: var(--bg); font-weight: 600; }
+.segmented button:hover:not(.active):not(:disabled) { color: var(--text); }
+/* In the phone sheet the options lay out as rows of chips: the same borderless
+   chips as the genres, so the three groups in the sheet look like one set. */
+.filter-sheet-body .segmented { background: none; padding: 0; gap: 8px; }
+.filter-sheet-body .segmented button {
+  border: none;
+  border-radius: var(--r-pill);
+  background: var(--surface-raised);
+  padding: 6px 14px;
+}
+.filter-sheet-body .segmented button.active { background: var(--text); color: var(--bg); }
+/* Genre chips: the same unselected and selected states. */
+.opt {
+  min-height: 36px;
+  padding: 6px 14px;
+  border: none;
+  background: var(--surface-raised);
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
+.opt.active { background: var(--text); color: var(--bg); }
+/* "Filters are on": a white dot, not a red one. */
+.filter-sheet-trigger-dot { background: var(--text); }
+
+/* ---- Notifications --------------------------------------------------------- */
+/* On is the white track with the dark knob (the knob already turns dark when
+   on), the same "selected = white" as every other control. */
+.notif-row.on .notif-switch { background: var(--text); border-color: var(--text); }
+.notif-row.on .notif-row-icon,
+.wizard-notif-row .notif-row-icon { background: var(--surface-raised); color: var(--text); }
+
+/* ---- Banners --------------------------------------------------------------- */
+/* The backup reminder and the offline notice: a rounded surface, no red bar.
+   The backup button is the reminder's one action, so it gets the primary
+   treatment. */
+.backup-nudge,
+.offline-banner {
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  padding: 12px 16px;
+}
+.backup-nudge-cta {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+  font-weight: 700;
+}
+
+/* ---- First-run wizard ------------------------------------------------------- */
+/* Its main button in the app's primary treatment, and the step counter in
+   secondary text. */
+.wizard-primary {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+  font-weight: 700;
+}
+.wizard-primary:hover:not(:disabled) { border-color: var(--text); opacity: 0.9; }
+.wizard-step-label { color: var(--text-2); }
+
+/* ---- For You insights --------------------------------------------------- */
+.insights-bar-fill { background: var(--text); }
+
+/* ---- Desktop details panel ------------------------------------------------ */
+/* The poster over the hero, on the same corners as every poster, and the
+   title at the sheet-title size. */
+.desktop-poster-card { border: none; border-radius: var(--r-sm); }
+.desktop-header-text h2 { font-size: var(--fs-24); font-weight: 700; letter-spacing: -0.01em; }
