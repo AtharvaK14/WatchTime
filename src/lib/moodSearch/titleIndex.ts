@@ -16,7 +16,7 @@
 // closes the app halfway through resumes rather than restarts.
 
 import { db, type Movie, type Show } from "../../db";
-import { getMovieDetails, getTvShowDetails } from "../../tmdb";
+import { fillTitleMetadata } from "../titleMetadata";
 import { embed } from "./embedder";
 import { EMBEDDING_MODEL_ID } from "./vocabulary";
 
@@ -96,11 +96,9 @@ export async function backfillOverviews(
   for (const show of shows) {
     if (shouldStop?.()) break;
     try {
-      const details = await getTvShowDetails(show.tmdbId);
-      await db.shows.update(show.tmdbId, {
-        overview: details.overview ?? null,
-        originalLanguage: details.original_language ?? null,
-      });
+      // Overview and language, and whatever else the row is missing from the
+      // same response (see lib/titleMetadata.ts).
+      await fillTitleMetadata("show", show.tmdbId);
     } catch {
       await db.shows.update(show.tmdbId, { overview: null, originalLanguage: null });
       failed++;
@@ -111,11 +109,7 @@ export async function backfillOverviews(
   for (const movie of movies) {
     if (shouldStop?.()) break;
     try {
-      const details = await getMovieDetails(movie.tmdbId);
-      await db.movies.update(movie.tmdbId, {
-        overview: details.overview ?? null,
-        originalLanguage: details.original_language ?? null,
-      });
+      await fillTitleMetadata("movie", movie.tmdbId);
     } catch {
       await db.movies.update(movie.tmdbId, { overview: null, originalLanguage: null });
       failed++;

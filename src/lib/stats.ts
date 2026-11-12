@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAllEpisodes, useAllMovies, useAllShows, useAllWatchedEpisodes } from "./libraryStore";
 import { db, type Movie, type Show } from "../db";
-import { getTvShowDetails, getMovieDetails } from "../tmdb";
-import { averageRuntime } from "./runtime";
-import { totalEpisodeCount } from "./episodeSync";
+import { fillTitleMetadata } from "./titleMetadata";
 
 export interface DurationParts {
   months: number;
@@ -18,13 +16,6 @@ export function toDurationParts(totalMinutes: number): DurationParts {
   const hours = totalHours % 24;
   return { months, days, hours };
 }
-
-// Movies almost always have a real TMDB runtime, but for the rare title
-// that doesn't, use the same "don't silently contribute zero forever"
-// principle as the show-level fallback. ~110 min is a reasonable general
-// movie-length estimate, a judgment call like the show fallback above,
-// not a TMDB-confirmed number.
-const FALLBACK_MOVIE_RUNTIME_MINUTES = 110;
 
 /**
  * Library rows this session has already tried to fill in, per table. Module
@@ -101,13 +92,10 @@ const showNeedsBackfill = (s: Show) => s.episodeRuntimeMinutes == null || s.numb
 
 async function backfillShow(show: Show): Promise<void> {
   try {
-    const details = await getTvShowDetails(show.tmdbId);
-    await db.shows.update(show.tmdbId, {
-      episodeRuntimeMinutes: averageRuntime(details.episode_run_time),
-      numberOfEpisodes: totalEpisodeCount(details.seasons),
-      genreIds: show.genreIds ?? details.genres.map((g) => g.id),
-      imdbId: show.imdbId ?? details.external_ids?.imdb_id ?? null,
-    });
+    // Everything the row is missing, not only the two fields this pass is
+    // for: the rating and overview backfills would otherwise each ask TMDB
+    // for this same response again (see lib/titleMetadata.ts).
+    await fillTitleMetadata("show", show.tmdbId);
   } catch {
     // Genuine fetch/network error, leave as null so it's retried next launch
     // (unlike "TMDB responded with no data", which averageRuntime already
@@ -120,13 +108,7 @@ const movieNeedsBackfill = (m: Movie) => m.runtimeMinutes == null || m.releaseDa
 
 async function backfillMovie(movie: Movie): Promise<void> {
   try {
-    const details = await getMovieDetails(movie.tmdbId);
-    await db.movies.update(movie.tmdbId, {
-      runtimeMinutes: details.runtime ?? FALLBACK_MOVIE_RUNTIME_MINUTES,
-      releaseDate: details.release_date,
-      genreIds: movie.genreIds ?? details.genres.map((g) => g.id),
-      imdbId: movie.imdbId ?? details.external_ids?.imdb_id ?? null,
-    });
+    await fillTitleMetadata("movie", movie.tmdbId);
   } catch {
     await db.movies.update(movie.tmdbId, { runtimeMinutes: null, releaseDate: null });
   }
@@ -134,12 +116,12 @@ async function backfillMovie(movie: Movie): Promise<void> {
 
 /** TV time and episode count, rewatch-aware (uses watchCount, not just presence of a row). */
 export function useShowStats() {
-  const shows = useLiveQuery(() => db.shows.toArray(), []);
-  const watched = useLiveQuery(() => db.watchedEpisodes.toArray(), []);
-  const episodesWithRuntime = useLiveQuery(
-    () => db.episodes.toArray().then((eps) => eps.filter((e) => e.runtimeMinutes != null)),
-    []
-  );
+  // The shared in-memory tables (lib/libraryStore.ts): already loaded when the
+  // Shows tab is opened, so the headline numbers do not blink to "..." first.
+  const shows = useAllShows();
+  const watched = useAllWatchedEpisodes();
+  const allEpisodes = useAllEpisodes();
+  const episodesWithRuntime = useMemo(() => allEpisodes?.filter((e) => e.runtimeMinutes != null), [allEpisodes]);
   const { backfilling, backfillProgress } = useLibraryBackfill(shows, showNeedsBackfill, attemptedShows, backfillShow);
 
   if (!shows || !watched || !episodesWithRuntime) {
@@ -185,7 +167,7 @@ export function useShowStats() {
 
 /** Movie time and count, rewatch-aware (uses rewatchCount). */
 export function useMovieStats() {
-  const movies = useLiveQuery(() => db.movies.toArray(), []);
+  const movies = useAllMovies();
   const { backfilling, backfillProgress } = useLibraryBackfill(movies, movieNeedsBackfill, attemptedMovies, backfillMovie);
 
   if (!movies) {

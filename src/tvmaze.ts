@@ -21,13 +21,23 @@ interface TvmazeShowWithEpisodes extends TvmazeShow {
   _embedded?: { episodes: TvmazeEpisode[] };
 }
 
-/** TVmaze's own internal show ID for a given TVDB ID, or null if not found. */
-async function lookupShowByTvdbId(tvdbId: number): Promise<number | null> {
-  const res = await fetch(`${TVMAZE_BASE}/lookup/shows?thetvdb=${tvdbId}`);
-  if (res.status === 404) return null;
-  if (!res.ok) return null;
-  const data: TvmazeShow = await res.json();
-  return data.id ?? null;
+/**
+ * TVmaze's own show ID for a TVDB ID.
+ *
+ * null means TVmaze answered and has no such show. undefined means the
+ * question went unanswered (offline, a server error), which is a different
+ * thing: the caller stores the first and asks again after the second.
+ */
+export async function lookupTvmazeId(tvdbId: number): Promise<number | null | undefined> {
+  try {
+    const res = await fetch(`${TVMAZE_BASE}/lookup/shows?thetvdb=${tvdbId}`);
+    if (res.status === 404) return null;
+    if (!res.ok) return undefined;
+    const data: TvmazeShow = await res.json();
+    return data.id ?? null;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -36,24 +46,18 @@ async function lookupShowByTvdbId(tvdbId: number): Promise<number | null> {
  * failure, since this is a best-effort accuracy improvement, not a hard
  * dependency, a show TVmaze doesn't have shouldn't break anything.
  */
-export async function getTvmazeRuntimesByTvdbId(tvdbId: number): Promise<Map<string, number>> {
-  const empty = new Map<string, number>();
+export async function getTvmazeRuntimes(tvmazeId: number): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
   try {
-    const tvmazeId = await lookupShowByTvdbId(tvdbId);
-    if (tvmazeId === null) return empty;
-
     const res = await fetch(`${TVMAZE_BASE}/shows/${tvmazeId}?embed=episodes`);
-    if (!res.ok) return empty;
+    if (!res.ok) return map;
     const data: TvmazeShowWithEpisodes = await res.json();
-    const episodes = data._embedded?.episodes ?? [];
-
-    const map = new Map<string, number>();
-    for (const ep of episodes) {
+    for (const ep of data._embedded?.episodes ?? []) {
       if (ep.number === null || ep.runtime === null) continue; // specials or missing data
       map.set(`${ep.season}-${ep.number}`, ep.runtime);
     }
     return map;
   } catch {
-    return empty;
+    return map;
   }
 }

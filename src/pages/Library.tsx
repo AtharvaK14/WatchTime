@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Show } from "../db";
+import { type Show } from "../db";
+import { useAllEpisodes, useAllShows, useAllWatchedEpisodes } from "../lib/libraryStore";
 import { TMDB_IMAGE_BASE, getTvGenres, type Genre } from "../tmdb";
-import { computeWatchStatus, type ShowWatchStatus } from "../lib/showWatchStatus";
+import { watchStatusByShow, type ShowWatchStatus } from "../lib/showWatchStatus";
 import { isStoppedWatching } from "../lib/stoppedWatching";
 import { useShowStats } from "../lib/stats";
 import StatTiles, { DurationValue } from "../components/StatTiles";
@@ -47,20 +47,25 @@ const showKey = (show: Show) => libraryKey("show", show.tmdbId);
 
 export default function Library() {
   const isMobile = useIsMobile();
-  const shows = useLiveQuery(() => db.shows.toArray(), []);
+  // Whole tables, from the store that outlives this page (lib/libraryStore.ts):
+  // coming back to this tab finds them already loaded, so the grid is drawn
+  // on the first render instead of after a skeleton and a re-read.
+  const shows = useAllShows();
+  const allEpisodes = useAllEpisodes();
+  const allWatched = useAllWatchedEpisodes();
   // Per show: unique episodes watched (the progress bar: how far through the
   // show you are) and viewing events (Most watched: rewatches count, since a
   // show watched twice has been watched more than one watched once).
-  const watchedCounts = useLiveQuery(async () => {
-    const all = await db.watchedEpisodes.toArray();
+  const watchedCounts = useMemo(() => {
+    if (!allWatched) return undefined;
     const unique = new Map<number, number>();
     const views = new Map<number, number>();
-    for (const w of all) {
+    for (const w of allWatched) {
       unique.set(w.showId, (unique.get(w.showId) ?? 0) + 1);
       views.set(w.showId, (views.get(w.showId) ?? 0) + episodeWatchCount(w));
     }
     return { unique, views };
-  }, []);
+  }, [allWatched]);
   const [openDetails, setOpenDetails] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   // Defaults: Currently Watching, most recently watched first. A tracker is
@@ -74,13 +79,23 @@ export default function Library() {
   // Any filter off its default: Reset is offered, and the dock's filter button carries a dot.
   const filtersChanged = filterKey !== "currentlyWatching" || genreFilter !== null || sortKey !== "recentlyWatched";
   const [genres, setGenres] = useState<Genre[]>([]);
-  const [statusByShow, setStatusByShow] = useState<Map<number, ShowWatchStatus>>(new Map());
-  // Currently Watching is the default status now, and it is the one filter
-  // that cannot answer instantly: computeWatchStatus walks every show's
-  // cached episodes. Without this flag the page would say "no shows match"
-  // during that pass, which is a claim about the library rather than about
-  // the work still in progress.
-  const [statusesReady, setStatusesReady] = useState(false);
+  // Currently Watching relies on episode data already being cached locally
+  // (from having opened the show, or from Home's sync). It intentionally
+  // does NOT force a TMDB fetch for every show in a big library just to
+  // support this filter, that would mean one or more API calls per show on
+  // every visit to this page. Shows not yet cached show as "unknown" and
+  // won't match the filter until you've opened them once or visited Home.
+  //
+  // Worked out here, while rendering, from the tables already in memory. It
+  // used to be a pass of three database reads per show, started again on
+  // every visit to this tab and after every change to the library, and the
+  // page could only say "Working out which shows you're currently watching..."
+  // until it finished - about a second for a large library, every time.
+  const statusesReady = !!shows && !!allEpisodes && !!allWatched;
+  const statusByShow = useMemo<Map<number, ShowWatchStatus>>(
+    () => (shows && allEpisodes && allWatched ? watchStatusByShow(shows, allEpisodes, allWatched) : new Map()),
+    [shows, allEpisodes, allWatched]
+  );
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
 
@@ -89,33 +104,6 @@ export default function Library() {
   useEffect(() => {
     getTvGenres().then(setGenres).catch(() => setGenres([]));
   }, []);
-
-  // Currently Watching relies on episode data already being cached locally
-  // (from having opened the show, or from Home's sync). It intentionally
-  // does NOT force a TMDB fetch for every show in a big library just to
-  // support this filter, that would mean one or more API calls per show on
-  // every visit to this page. Shows not yet cached show as "unknown" and
-  // won't match the filter until you've opened them once or visited Home.
-  useEffect(() => {
-    if (!shows) return;
-    const showList = shows;
-    let cancelled = false;
-    setStatusesReady(false);
-    async function compute() {
-      const map = new Map<number, ShowWatchStatus>();
-      for (const show of showList) {
-        map.set(show.tmdbId, await computeWatchStatus(show.tmdbId));
-      }
-      if (!cancelled) {
-        setStatusByShow(map);
-        setStatusesReady(true);
-      }
-    }
-    compute();
-    return () => {
-      cancelled = true;
-    };
-  }, [shows]);
 
   const { visible, searching } = useMemo(() => {
     if (!shows) return { visible: [], searching: false };

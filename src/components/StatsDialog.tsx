@@ -1,7 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "../db";
+import { useAllEpisodes, useAllMovies, useAllShows, useAllWatchedEpisodes } from "../lib/libraryStore";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useBackHandler } from "../lib/backHandler";
 import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
@@ -112,14 +111,12 @@ export function ShowStatsDialog({
   statusesReady: boolean;
   onClose: () => void;
 }) {
-  const data = useLiveQuery(async () => {
-    const [shows, episodes, watched] = await Promise.all([
-      db.shows.toArray(),
-      db.episodes.toArray(),
-      db.watchedEpisodes.toArray(),
-    ]);
-    return { shows, episodes, watched };
-  }, []);
+  // Already in memory (lib/libraryStore.ts), so the dialog opens with its
+  // numbers rather than "Loading...".
+  const shows = useAllShows();
+  const episodes = useAllEpisodes();
+  const watched = useAllWatchedEpisodes();
+  const data = shows && episodes && watched ? { shows, episodes, watched } : undefined;
 
   let body: ReactNode = <p className="muted">Loading...</p>;
   if (data) {
@@ -167,7 +164,7 @@ export function ShowStatsDialog({
 
 /** The Movies tab's detailed statistics. */
 export function MovieStatsDialog({ totalMinutes, onClose }: { totalMinutes: number; onClose: () => void }) {
-  const movies = useLiveQuery(() => db.movies.toArray(), []);
+  const movies = useAllMovies();
 
   let body: ReactNode = <p className="muted">Loading...</p>;
   if (movies) {

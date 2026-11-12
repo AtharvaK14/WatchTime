@@ -1,4 +1,4 @@
-import { db, type Show } from "../db";
+import { db, type Episode, type Show, type WatchedEpisode } from "../db";
 import { ensureEpisodesCached, findNextUnwatched } from "./episodeSync";
 
 export type ShowWatchStatus = "not-started" | "currently-watching" | "up-to-date" | "unknown";
@@ -35,7 +35,19 @@ export async function computeWatchStatus(tmdbId: number): Promise<ShowWatchStatu
   const show = await db.shows.get(tmdbId);
   const episodes = await db.episodes.where("showId").equals(tmdbId).toArray();
   const watched = await db.watchedEpisodes.where("showId").equals(tmdbId).toArray();
+  return watchStatusOf(show, episodes, watched);
+}
 
+/**
+ * The status itself, from rows already in hand. Pure: the Shows grid works
+ * every show's status out from the tables it already holds in memory, in one
+ * pass, rather than asking the database three questions per show.
+ */
+export function watchStatusOf(
+  show: Pick<Show, "tvTimeStatus"> | undefined,
+  episodes: Episode[],
+  watched: Pick<WatchedEpisode, "key">[]
+): ShowWatchStatus {
   let liveStatus: ShowWatchStatus = "unknown";
   if (episodes.length > 0) {
     if (watched.length === 0) {
@@ -57,6 +69,34 @@ export async function computeWatchStatus(tmdbId: number): Promise<ShowWatchStatu
   // Otherwise prefer the live signal when we actually have episode data to
   // base it on, falling back to the import snapshot only when we don't.
   return liveStatus !== "unknown" ? liveStatus : imported;
+}
+
+/** Every show's status at once, from whole tables. Rows are grouped by show in one pass each. */
+export function watchStatusByShow(
+  shows: readonly Show[],
+  episodes: readonly Episode[],
+  watched: readonly WatchedEpisode[]
+): Map<number, ShowWatchStatus> {
+  const episodesByShow = new Map<number, Episode[]>();
+  for (const ep of episodes) {
+    const list = episodesByShow.get(ep.showId);
+    if (list) list.push(ep);
+    else episodesByShow.set(ep.showId, [ep]);
+  }
+  const watchedByShow = new Map<number, WatchedEpisode[]>();
+  for (const w of watched) {
+    const list = watchedByShow.get(w.showId);
+    if (list) list.push(w);
+    else watchedByShow.set(w.showId, [w]);
+  }
+  const statuses = new Map<number, ShowWatchStatus>();
+  for (const show of shows) {
+    statuses.set(
+      show.tmdbId,
+      watchStatusOf(show, episodesByShow.get(show.tmdbId) ?? [], watchedByShow.get(show.tmdbId) ?? [])
+    );
+  }
+  return statuses;
 }
 
 /** Same as computeWatchStatus, but forces an episode-list sync first so the TMDB-comparison fallback is reliable. */
