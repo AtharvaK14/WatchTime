@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Movie } from "../db";
+import { type Movie } from "../db";
+import { useAllMovies } from "../lib/libraryStore";
 import { TMDB_IMAGE_BASE, getMovieGenres, type Genre } from "../tmdb";
 import { useMovieStats } from "../lib/stats";
 import StatTiles, { DurationValue } from "../components/StatTiles";
@@ -57,7 +57,9 @@ export default function Movies({
   initialFilter?: FilterKey | null;
   onInitialFilterConsumed?: () => void;
 }) {
-  const movies = useLiveQuery(() => db.movies.toArray(), []);
+  // From the store that outlives this page, so the grid is there on the first
+  // render when coming back to this tab (lib/libraryStore.ts).
+  const movies = useAllMovies();
   const isMobile = useIsMobile();
   const [openDetails, setOpenDetails] = useState<number | null>(null);
   const [query, setQuery] = useState("");

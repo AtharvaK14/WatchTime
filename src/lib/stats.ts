@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from "react";
-import { useLiveQuery } from "dexie-react-hooks";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useAllEpisodes, useAllMovies, useAllShows, useAllWatchedEpisodes } from "./libraryStore";
 import { db, type Movie, type Show } from "../db";
 import { fillTitleMetadata } from "./titleMetadata";
 
@@ -116,12 +116,12 @@ async function backfillMovie(movie: Movie): Promise<void> {
 
 /** TV time and episode count, rewatch-aware (uses watchCount, not just presence of a row). */
 export function useShowStats() {
-  const shows = useLiveQuery(() => db.shows.toArray(), []);
-  const watched = useLiveQuery(() => db.watchedEpisodes.toArray(), []);
-  const episodesWithRuntime = useLiveQuery(
-    () => db.episodes.toArray().then((eps) => eps.filter((e) => e.runtimeMinutes != null)),
-    []
-  );
+  // The shared in-memory tables (lib/libraryStore.ts): already loaded when the
+  // Shows tab is opened, so the headline numbers do not blink to "..." first.
+  const shows = useAllShows();
+  const watched = useAllWatchedEpisodes();
+  const allEpisodes = useAllEpisodes();
+  const episodesWithRuntime = useMemo(() => allEpisodes?.filter((e) => e.runtimeMinutes != null), [allEpisodes]);
   const { backfilling, backfillProgress } = useLibraryBackfill(shows, showNeedsBackfill, attemptedShows, backfillShow);
 
   if (!shows || !watched || !episodesWithRuntime) {
@@ -167,7 +167,7 @@ export function useShowStats() {
 
 /** Movie time and count, rewatch-aware (uses rewatchCount). */
 export function useMovieStats() {
-  const movies = useLiveQuery(() => db.movies.toArray(), []);
+  const movies = useAllMovies();
   const { backfilling, backfillProgress } = useLibraryBackfill(movies, movieNeedsBackfill, attemptedMovies, backfillMovie);
 
   if (!movies) {

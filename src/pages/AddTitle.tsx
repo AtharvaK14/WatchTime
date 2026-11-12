@@ -160,15 +160,29 @@ function Results({
   );
 }
 
+/**
+ * The four shelves as last loaded, kept for the life of the app. The page is
+ * rebuilt every time the tab is opened; without this each visit drew
+ * skeletons first, even when the lists themselves were already cached.
+ */
+let lastShelves: {
+  popularShows: TvSearchResult[];
+  popularMovies: MovieSearchResult[];
+  upcomingMovies: MovieSearchResult[];
+  atHomeMovies: MovieSearchResult[];
+} | null = null;
+
 export default function AddTitle() {
   const [results, setResults] = useState<SearchResults | null>(null);
   const isMobile = useIsMobile();
   const [openDetails, setOpenDetails] = useState<{ kind: "show" | "movie"; tmdbId: number } | null>(null);
 
-  const [popularShows, setPopularShows] = useState<TvSearchResult[] | null>(null);
-  const [popularMovies, setPopularMovies] = useState<MovieSearchResult[] | null>(null);
-  const [upcomingMovies, setUpcomingMovies] = useState<MovieSearchResult[] | null>(null);
-  const [atHomeMovies, setAtHomeMovies] = useState<MovieSearchResult[] | null>(null);
+  // Start from the shelves as last loaded (lastShelves), so coming back to
+  // this tab draws them at once instead of skeletons first.
+  const [popularShows, setPopularShows] = useState<TvSearchResult[] | null>(() => lastShelves?.popularShows ?? null);
+  const [popularMovies, setPopularMovies] = useState<MovieSearchResult[] | null>(() => lastShelves?.popularMovies ?? null);
+  const [upcomingMovies, setUpcomingMovies] = useState<MovieSearchResult[] | null>(() => lastShelves?.upcomingMovies ?? null);
+  const [atHomeMovies, setAtHomeMovies] = useState<MovieSearchResult[] | null>(() => lastShelves?.atHomeMovies ?? null);
   const [discoverError, setDiscoverError] = useState<string | null>(null);
 
   const library = useLibraryIds();
@@ -184,13 +198,16 @@ export default function AddTitle() {
           getUpcomingMovies(),
           getRecentlyAvailableAtHome(),
         ]);
+        lastShelves = { popularShows: pop_s, popularMovies: pop_m, upcomingMovies: up_m, atHomeMovies: home_m };
         if (cancelled) return;
         setPopularShows(pop_s);
         setPopularMovies(pop_m);
         setUpcomingMovies(up_m);
         setAtHomeMovies(home_m);
       } catch (e) {
-        if (!cancelled) setDiscoverError(e instanceof Error ? e.message : String(e));
+        // With shelves already on screen a failed refresh is not worth an
+        // error: they stay as they are.
+        if (!cancelled && !lastShelves) setDiscoverError(e instanceof Error ? e.message : String(e));
       }
     }
     loadDiscovery();
