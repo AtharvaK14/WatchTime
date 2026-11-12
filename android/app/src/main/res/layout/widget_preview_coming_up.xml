@@ -36,6 +36,7 @@
         android:padding="10dp">
 
         <LinearLayout
+            android:id="@+id/preview_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
@@ -71,6 +72,7 @@
                 android:layout_width="30dp"
                 android:layout_height="45dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -104,6 +106,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:tag="detail"
                     android:text="The Long Thaw"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
@@ -140,6 +143,7 @@
                 android:layout_width="30dp"
                 android:layout_height="45dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -173,6 +177,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:tag="detail"
                     android:text="Ninety Seconds"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
@@ -209,6 +214,7 @@
                 android:layout_width="30dp"
                 android:layout_height="45dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -242,6 +248,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:tag="detail"
                     android:text="Reveille"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"

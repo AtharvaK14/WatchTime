@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { haptic } from "../lib/haptics";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Episode, type Show } from "../db";
 import EpisodeDetailsPanel, { type EpisodePanelTransition } from "../components/EpisodeDetailsPanel";
@@ -10,8 +11,8 @@ import {
   setEpisodesWatchedOnce,
 } from "../lib/watchEvents";
 import { canOpenInApp, closePanel, openEpisodeInApp, openSeriesInApp } from "../lib/widget/panelHost";
-import { pushSnapshot } from "../lib/widget/bridge";
-import { buildWidgetSnapshot, type WidgetSnapshot } from "../lib/widget/snapshot";
+import { type WidgetSnapshot } from "../lib/widget/snapshot";
+import { refreshWidgets } from "./refreshWidgets";
 import { prefersReducedMotion } from "../lib/useAnimatedDismiss";
 
 /**
@@ -135,30 +136,6 @@ export default function EpisodePanelApp({
   const show = liveShow ?? seed?.show;
 
   /**
-   * Rebuilds the snapshot from the library as it now stands and hands it to
-   * native, which stores it and redraws every placed widget.
-   *
-   * This is the fix for the widget not updating after a watch: the recompute
-   * runs right here, in the process that just did the write, so the widget is
-   * correct before the overlay even closes. Nothing waits on the app being
-   * launched.
-   *
-   * It returns the snapshot as well as pushing it, because the overlay needs
-   * the very same Up Next list to decide which episode to advance to.
-   */
-  async function refreshWidgets(): Promise<WidgetSnapshot> {
-    const [shows, episodes, watched, movies] = await Promise.all([
-      db.shows.toArray(),
-      db.episodes.toArray(),
-      db.watchedEpisodes.toArray(),
-      db.movies.toArray(),
-    ]);
-    const snapshot = buildWidgetSnapshot(shows, episodes, watched, movies);
-    await pushSnapshot(snapshot);
-    return snapshot;
-  }
-
-  /**
    * Marking watched, as a sequence rather than a write followed by a
    * disappearing window:
    *
@@ -172,6 +149,7 @@ export default function EpisodePanelApp({
   async function handleMarkWatched(current: Target, ep: Episode) {
     if (handingOff.current) return; // one is already playing
     handingOff.current = true;
+    haptic("confirm");
     await markNextEpisodeWatched(current.showId, ep);
     const snapshot = await refreshWidgets();
     const next = pickNextTarget(snapshot, current);
@@ -240,6 +218,8 @@ export default function EpisodePanelApp({
       // rather than one card being destroyed and another created. The class
       // change from "leave-watched" to "enter" is what restarts the animation,
       // and the panel's own effects re-run on the new episode regardless.
+      // The floating card over the wallpaper; in the app the panel is a page.
+      presentation="card"
       show={{ name: show.name, imdbId: show.imdbId }}
       episode={episode}
       watched={watch !== undefined}

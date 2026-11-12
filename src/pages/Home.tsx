@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type AnimationEvent } from "react";
+import { haptic } from "../lib/haptics";
 import { useLiveQuery } from "dexie-react-hooks";
 import { App as CapacitorApp } from "@capacitor/app";
 import { db, type Episode, type Movie } from "../db";
@@ -56,6 +57,8 @@ import type { HomeMedia } from "../lib/homeMedia";
 import { CheckIcon } from "../components/icons";
 import RatingChip from "../components/RatingChip";
 import { backfillMovieRatings, moviesNeedingRating } from "../lib/ratings";
+import { PosterGridSkeleton, UpNextSkeleton } from "../components/Skeleton";
+import PullToRefresh from "../components/PullToRefresh";
 
 type UpNextTab = "next" | "stale" | "not-started" | "stopped";
 
@@ -288,10 +291,13 @@ const UP_NEXT_EMPTY: Record<UpNextTab, string> = {
 };
 
 function ShowsHome({
+  active,
   onOpenShow,
   filter,
   onOpenDiscover,
 }: {
+  /** False while Home shows Movies: this section stays mounted, hidden. */
+  active: boolean;
   onOpenShow: (tmdbId: number) => void;
   filter: MoodFilter | null;
   onOpenDiscover: () => void;
@@ -353,6 +359,17 @@ function ShowsHome({
   showsForSync.current = shows;
   const lastSyncStartedAt = useRef(0);
   const [resyncTick, setResyncTick] = useState(0);
+  // Pull to refresh: the same sync, started now, and re-reading live seasons
+  // even if they were read within the last few hours.
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const forceNextSync = useRef(false);
+  const pullStartedAt = useRef(0);
+  const pullToRefresh = () => {
+    forceNextSync.current = true;
+    pullStartedAt.current = Date.now();
+    setPullRefreshing(true);
+    setResyncTick((t) => t + 1);
+  };
   useEffect(() => {
     const handle = CapacitorApp.addListener("appStateChange", ({ isActive }) => {
       if (isActive && Date.now() - lastSyncStartedAt.current >= EPISODE_RESYNC_MS) setResyncTick((t) => t + 1);
@@ -366,6 +383,8 @@ function ShowsHome({
     if (!toSync) return;
     let cancelled = false;
     lastSyncStartedAt.current = Date.now();
+    const force = forceNextSync.current;
+    forceNextSync.current = false;
     async function sync() {
       setSyncing(true);
       setSyncErrors([]);
@@ -373,13 +392,17 @@ function ShowsHome({
       for (const show of toSync!) {
         if (cancelled) return;
         try {
-          await ensureEpisodesCached(show.tmdbId);
+          await ensureEpisodesCached(show.tmdbId, new Date(), { force });
         } catch (e) {
           failures.push(`${show.name}: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
       if (!cancelled) {
         setSyncing(false);
+        // The spinner stays long enough to be seen even when nothing needed
+        // fetching, so a pull never looks like it did nothing.
+        const shown = Date.now() - pullStartedAt.current;
+        window.setTimeout(() => setPullRefreshing(false), Math.max(0, 600 - shown));
         setSyncErrors(failures);
         // The schedule was built at launch from the cache as it was then. A
         // season this sync just fetched has to reach it now, not at the next
@@ -465,10 +488,11 @@ function ShowsHome({
     // advances an in-progress one). Never a rewatch: Watch Next only ever
     // points at unseen episodes now, so this always creates a fresh record.
     // It is written immediately; only the card's exit waits.
+    haptic("confirm");
     startWatchedSequence(row, hasNext, () => markNextEpisodeWatched(row.showId, episode));
   }
 
-  if (!shows || !allEpisodes || !allWatched) return <p className="muted">Loading...</p>;
+  if (!shows || !allEpisodes || !allWatched) return <UpNextSkeleton />;
 
   if (shows.length === 0) {
     return (
@@ -505,7 +529,9 @@ function ShowsHome({
         ))}
       </div>
 
-      {syncing && <p className="muted small">Syncing episode data from TMDB...</p>}
+      <PullToRefresh enabled={active} refreshing={pullRefreshing} onRefresh={pullToRefresh} />
+      {/* A pull shows its own spinner; the line is for syncs nobody asked for. */}
+      {syncing && !pullRefreshing && <p className="muted small">Syncing episode data from TMDB...</p>}
 
       {!syncing && syncErrors.length > 0 && (
         <details className="status-error" style={{ marginBottom: 10 }}>
@@ -564,7 +590,10 @@ function ShowsHome({
           // count update in place.
           onToggleWatched={async () => {
             if (openEpisodeWatch) await markEpisodesUnwatched(openEpisode.showId, [openEpisode.episode]);
-            else await markNextEpisodeWatched(openEpisode.showId, openEpisode.episode);
+            else {
+              haptic("confirm");
+              await markNextEpisodeWatched(openEpisode.showId, openEpisode.episode);
+            }
           }}
           onWatchAgain={() => recordEpisodeRewatch(openEpisode.showId, [openEpisode.episode])}
           onWatchedOnce={() => setEpisodesWatchedOnce(openEpisode.showId, [openEpisode.episode])}
@@ -871,7 +900,7 @@ function MoviesHome({
     };
   }, [needRatingIds]);
 
-  if (!sorted) return <p className="muted">Loading...</p>;
+  if (!sorted) return <PosterGridSkeleton count={6} />;
 
   async function markWatched(tmdbId: number) {
     setWatchError(null);
@@ -1071,7 +1100,7 @@ export default function Home({
           Coming up is calendar data, not recommendations, so a mood filter
           deliberately does not apply to it. */}
       <section className={`home-media is-shows${mediaClass}`} hidden={media !== "shows"} aria-label="Shows">
-        <ShowsHome onOpenShow={setOpenShow} filter={mood.filter} onOpenDiscover={onOpenDiscover} />
+        <ShowsHome active={media === "shows"} onOpenShow={setOpenShow} filter={mood.filter} onOpenDiscover={onOpenDiscover} />
         <ComingUp section="episodes" />
       </section>
 

@@ -14,13 +14,31 @@
     <string name="widget_coming_up_title">Coming Up</string>
     <string name="widget_empty_up_next">Nothing queued up. Open WatchTime to add shows.</string>
     <string name="widget_empty_coming_up">No confirmed air dates yet.</string>
+    <string name="widget_mark_watched">Mark watched</string>
     <string name="widget_needs_app">Open WatchTime once to fill this in.</string>
 
     <!-- Widget configuration -->
-    <string name="widget_config_title">Widget appearance</string>
-    <string name="widget_config_opacity_label">Background opacity</string>
-    <string name="widget_config_hint">Shown over your own wallpaper. Only the background fades — episode text, artwork and separators always stay fully opaque.</string>
+    <string name="widget_config_title">Widget settings</string>
+    <string name="widget_config_hint">Previewed over your own wallpaper. Each widget keeps its own settings.</string>
+    <string name="widget_config_group_background">Background</string>
+    <string name="widget_config_opacity_label">Opacity</string>
     <string name="widget_config_opacity_value">%1$d%%</string>
+    <string name="widget_config_colour">Colour</string>
+    <string name="widget_config_colour_dark">Dark</string>
+    <string name="widget_config_colour_black">Black</string>
+    <string name="widget_config_colour_grey">Grey</string>
+    <string name="widget_config_group_layout">Layout</string>
+    <string name="widget_config_corners">Corners</string>
+    <string name="widget_config_text_size">Text size</string>
+    <string name="widget_config_size_small">Small</string>
+    <string name="widget_config_size_medium">Medium</string>
+    <string name="widget_config_size_default">Default</string>
+    <string name="widget_config_size_large">Large</string>
+    <string name="widget_config_compact">Compact rows</string>
+    <string name="widget_config_compact_sub">Fits more episodes, without artwork or episode names.</string>
+    <string name="widget_config_group_show">Show</string>
+    <string name="widget_config_header">Title bar</string>
+    <string name="widget_config_artwork">Artwork</string>
     <string name="widget_config_cancel">Cancel</string>
     <string name="widget_config_save">Add widget</string>
     <string name="widget_config_save_existing">Save</string>

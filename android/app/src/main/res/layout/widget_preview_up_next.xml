@@ -36,6 +36,7 @@
         android:padding="10dp">
 
         <LinearLayout
+            android:id="@+id/preview_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
@@ -71,6 +72,7 @@
                 android:layout_width="36dp"
                 android:layout_height="54dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -105,12 +107,22 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
+                    android:tag="detail"
                     android:text="+3 more"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
                     android:ellipsize="end" />
             </LinearLayout>
+
+            <ImageView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="4dp"
+                android:padding="8dp"
+                android:src="@drawable/widget_tick"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
         </LinearLayout>
 
         <ImageView
@@ -132,6 +144,7 @@
                 android:layout_width="36dp"
                 android:layout_height="54dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -165,12 +178,22 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
+                    android:tag="detail"
                     android:text="Series premiere"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
                     android:ellipsize="end" />
             </LinearLayout>
+
+            <ImageView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="4dp"
+                android:padding="8dp"
+                android:src="@drawable/widget_tick"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
         </LinearLayout>
 
         <ImageView
@@ -192,6 +215,7 @@
                 android:layout_width="36dp"
                 android:layout_height="54dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -222,6 +246,15 @@
                     android:maxLines="1"
                     android:ellipsize="end" />
             </LinearLayout>
+
+            <ImageView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="4dp"
+                android:padding="8dp"
+                android:src="@drawable/widget_tick"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

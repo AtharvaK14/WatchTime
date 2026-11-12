@@ -20,6 +20,7 @@ import { titleQuickActionProps } from "../lib/titleQuickActions";
 import { episodeWatchCount } from "../lib/watchHistory";
 import { searchOrBrowse } from "../lib/librarySearch";
 import { ShowStatsDialog } from "../components/StatsDialog";
+import { PosterGridSkeleton } from "../components/Skeleton";
 
 type SortKey = "name" | "mostWatched" | "recentlyWatched" | "recentlyAdded";
 type FilterKey = "all" | "following" | "stopped" | "currentlyWatching";
@@ -165,7 +166,7 @@ export default function Library() {
   // Ratings for shows stored before ratings were, top of the grid first.
   useRatingBackfill("show", shows ? visible : undefined);
 
-  if (!shows) return <p className="muted">Loading...</p>;
+  if (!shows) return <PosterGridSkeleton />;
 
   return (
     <div className="panel">

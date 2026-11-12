@@ -41,4 +41,15 @@
             android:ellipsize="end" />
     </LinearLayout>
 
+    <!-- Marks this episode watched without opening the panel. Smaller here so
+         compact rows stay compact. -->
+    <ImageView
+        android:id="@+id/row_tick"
+        android:layout_width="36dp"
+        android:layout_height="36dp"
+        android:layout_marginStart="4dp"
+        android:padding="6dp"
+        android:src="@drawable/widget_tick"
+        android:contentDescription="@string/widget_mark_watched" />
+
 </LinearLayout>

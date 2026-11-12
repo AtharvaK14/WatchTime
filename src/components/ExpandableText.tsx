@@ -25,7 +25,23 @@ const TOGGLE_EASING = "cubic-bezier(0.2, 0, 0, 1)";
  * arrives with the final height instead of the text being cut first and the
  * box shrinking around a gap.
  */
-export default function ExpandableText({ text, className = "" }: { text: string; className?: string }) {
+export default function ExpandableText({
+  text,
+  className = "",
+  lines = COLLAPSED_LINES,
+  inlineToggle = false,
+}: {
+  text: string;
+  className?: string;
+  /** Lines shown while collapsed. */
+  lines?: number;
+  /**
+   * The details page's "... more": while collapsed, the control sits at the
+   * end of the last visible line, over a fade, instead of on its own line
+   * under the paragraph. Expanded, it is "less" under the paragraph.
+   */
+  inlineToggle?: boolean;
+}) {
   const ref = useRef<HTMLParagraphElement>(null);
   const id = useId();
   // `expanded` is what the control says; `clamped` is what the paragraph
@@ -115,19 +131,19 @@ export default function ExpandableText({ text, className = "" }: { text: string;
       setClamped(false);
       setExpanded(true);
     } else {
-      const to = parseFloat(getComputedStyle(el).lineHeight) * COLLAPSED_LINES;
+      const to = parseFloat(getComputedStyle(el).lineHeight) * lines;
       setExpanded(false);
       play(el, from, Math.min(from, to), () => setClamped(true));
     }
   }
 
   return (
-    <div className="expandable-text">
+    <div className={`expandable-text${inlineToggle ? " is-inline" : ""}${expanded ? " is-expanded" : ""}`}>
       <p
         id={id}
         ref={ref}
         className={`${className}${clamped ? " is-clamped" : ""}`}
-        style={clamped ? { WebkitLineClamp: COLLAPSED_LINES } : undefined}
+        style={clamped ? { WebkitLineClamp: lines } : undefined}
       >
         {text}
       </p>
@@ -139,7 +155,7 @@ export default function ExpandableText({ text, className = "" }: { text: string;
           aria-controls={id}
           onClick={toggle}
         >
-          {expanded ? "Show less" : "Read more"}
+          {inlineToggle ? (expanded ? "less" : "more") : expanded ? "Show less" : "Read more"}
         </button>
       )}
     </div>

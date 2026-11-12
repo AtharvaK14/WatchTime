@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- widget_background with 8dp corners: the "Corners" setting (see WidgetStore.backgroundDrawable).
+     The colour is applied as a tint by the provider, from the "Background" setting. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/widget_bg" />
+    <corners android:radius="8dp" />
+</shape>

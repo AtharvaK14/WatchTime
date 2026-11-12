@@ -351,7 +351,6 @@ hr { border: none; border-top: 1px solid var(--border); }
   position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--muted);
   font-size: 1.4rem; line-height: 1; padding: 4px 8px; z-index: 2;
 }
-.details-body { display: flex; flex-direction: column; gap: 10px; }
 .ratings-row { display: flex; gap: 0; align-items: center; flex-wrap: wrap; font-size: 0.95rem; color: var(--muted); }
 .rating-pill {
   background: none;
@@ -409,9 +408,6 @@ hr { border: none; border-top: 1px solid var(--border); }
 /* Past every scale StatTiles may apply: equal halves, and the label ends in
    "..." instead of the tiles pushing the page sideways. */
 .stats-grid[data-cramped] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-
-/* Wider modal when the season browser is showing */
-.details-modal-wide { max-width: 720px; }
 
 .season-browser { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; }
 .season-header-right { display: flex; align-items: center; }
@@ -548,170 +544,11 @@ hr { border: none; border-top: 1px solid var(--border); }
    .modal-backdrop/.modal pattern, deliberately not converted,
    see the chat writeup for why only DetailsPanel became a sheet.
    ============================================================ */
-
-.details-sheet {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  /* height is set inline by useDraggableSheet (max ~75% of the viewport),
-     bottom-anchored, so the whole sheet stays on screen when expanded and
-     all of its content remains scrollable within .sheet-scroll-area. */
-  max-width: 640px;
-  margin: 0 auto;
-  background: var(--surface);
-  border-bottom: none;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden; /* .sheet-scroll-area below handles all scrolling, not this */
-  will-change: transform;
-  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.35);
-}
-.details-sheet.details-modal-wide { max-width: 720px; }
-
-/* The sheet's header row: grabber plus close, and nothing else.
-
-   It is a flex SIBLING of the scroll area, not an overlay on top of it.
-   That is the whole point: close was previously position:absolute over the
-   sheet, so every episode row's watched tick passed underneath it as the
-   season list scrolled, putting two unrelated controls in one place. A real
-   row cannot be scrolled into. */
-.sheet-top-bar {
-  position: relative;
-  flex-shrink: 0;
-  height: 48px; /* room for a 44px close target with the grabber centred in it */
-  z-index: 3;
-  background: var(--surface);
-}
-
-/* Fills the bar so the whole strip drags, rather than only the 40x4px
-   grabber. It is a sibling of the close button, so a press on close never
-   reaches these handlers and can never start a drag. */
-.sheet-grab-area {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: grab;
-  touch-action: none; /* stop the browser claiming this gesture for native
-                          page-scroll before our pointer handlers see it */
-}
-.sheet-grab-area:active { cursor: grabbing; }
 .sheet-drag-handle-bar {
   width: 40px;
   height: 4px;
   border-radius: 999px;
   background: var(--border-strong); /* it is a control; it should read as one */
-}
-
-/* Inside the bar rather than floating over the artwork. Same circular
-   treatment as before so it is still unmistakably the close control. */
-.sheet-close-x {
-  position: absolute;
-  top: 50%;
-  right: 8px;
-  transform: translateY(-50%);
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.4rem;
-  line-height: 1;
-  border-radius: 50%;
-  background: var(--surface-raised);
-  border: 1px solid var(--border-strong);
-  color: var(--text);
-  z-index: 1;
-}
-
-.sheet-scroll-area {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  padding: 0 20px 24px;
-  /* Expanded: the browser owns vertical scrolling, and useDraggableSheet only
-     takes the gesture over when the list is already at its top and the finger
-     is pulling down. */
-  touch-action: pan-y;
-}
-
-/* Collapsed (the half-open resting state).
-
-   Scrolling is off here on purpose. Previously the half-open sheet scrolled
-   internally, so the episode list could be reached without ever expanding the
-   panel — which is why expanding felt optional and obscure, and why the list
-   was hard to get at. With the inner scroller disabled, every vertical swipe
-   on the panel moves the SHEET, so "swipe up" is the single, obvious gesture
-   for reaching the episodes. */
-.sheet-scroll-area.is-collapsed {
-  overflow-y: hidden;
-  touch-action: none;
-}
-
-/* Hero header: blurred poster fills the banner, sharp thumbnail + title
-   overlap it at the bottom edge, everything else (release year, genres,
-   season count, status) sits in its own block below, never overlapping. */
-.details-hero {
-  position: relative;
-  height: 190px;
-  margin: 0 -20px;
-  overflow: hidden;
-  display: flex;
-  padding: 16px 20px;
-  align-items: flex-end;
-  justify-content: flex-start;
-  text-align: left;
-}
-
-.details-hero.centered {
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-
-.details-hero-bg-sharp {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center 35%;
-}
-
-.details-hero-bg-blurred {
-  position: absolute;
-  inset: -24px;
-  background-size: cover;
-  background-position: center 20%;
-  filter: blur(10px) saturate(1.15) brightness(0.82);
-  transform: scale(1.1);
-}
-.details-hero-scrim {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(18, 21, 26, 0) 0%, rgba(18, 21, 26, 0.92) 100%);
-}
-.details-hero-title {
-  position: relative;
-  z-index: 1;
-  margin: 0;
-  max-width: 100%;
-  line-height: 1.25;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.7);
-}
-
-/* .hero-close-x is gone: the mobile sheet's close button moved into
-   .sheet-top-bar above, because floating it over the hero put it in the same
-   patch of screen that the scrolling episode list passes through. .close-x
-   itself is unchanged and still used by EpisodeDetailsPanel and the desktop
-   pop-out. */
-
-.details-meta-line {
-   margin: 12px 0 14px;
 }
 
 /* ============================================================
@@ -909,82 +746,6 @@ hr { border: none; border-top: 1px solid var(--border); }
    EpisodeDetailsPanel still uses unchanged.
    ============================================================ */
 
-.details-modal-desktop {
-  max-width: 760px;
-  gap: 0; /* overrides .modal's gap:12px, spacing here is deliberate via
-             margins on the pieces below (the header row's overlap math
-             specifically depends on nothing else adding extra gap) */
-}
-.details-modal-desktop.details-modal-desktop-wide {
-  max-width: 900px;
-}
-
-.desktop-hero {
-  position: relative;
-  height: 240px;
-  margin: -20px -20px 0; /* bleed to the modal's edges, cancels .modal's 20px padding */
-  overflow: hidden;
-  border-radius: 12px 12px 0 0;
-}
-
-.desktop-hero-close-x {
-  position: absolute;
-  top: 14px;
-  right: 14px;
-  z-index: 2;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.3rem;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
-  color: #fff;
-  border: none;
-  cursor: pointer;
-}
-.desktop-hero-close-x:hover {
-  background: rgba(0, 0, 0, 0.65);
-}
-
-/* Poster card overlapping the hero's bottom edge, title/meta beside it.
-   -90px is a judgment call (overlap amount), tune it against how it
-   actually looks once you see it rendered. */
-.desktop-header-row {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 20px;
-  margin: -90px 0 0;
-}
-
-.desktop-poster-card {
-  width: 130px;
-  aspect-ratio: 2 / 3;
-  object-fit: cover;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.5);
-  flex-shrink: 0;
-}
-
-.desktop-header-text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-bottom: 4px;
-}
-
-.desktop-body {
-  margin-top: 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
 /* Small polish items requested alongside the redesign: shadow to lift the
    dialog off the darkened backdrop, frosted-glass separation from the page
    content behind it, and a quick fade+scale entrance instead of an
@@ -992,10 +753,6 @@ hr { border: none; border-top: 1px solid var(--border); }
    sheet already has its own drag-driven entrance and doesn't need this. */
 .modal-backdrop {
   backdrop-filter: blur(6px);
-}
-.details-modal-desktop {
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  animation: desktop-modal-in 180ms ease-out;
 }
 @keyframes desktop-modal-in {
   from {
@@ -1554,7 +1311,6 @@ details[open] > summary::after { transform: rotate(90deg); }
 /* ---- Episode detail (redesigned): landscape hero on top, stacked body ---- */
 
 .episode-detail-modal {
-  max-width: 480px;
   padding: 0;      /* hero image goes edge-to-edge; body has its own padding */
   gap: 0;
   position: relative;
@@ -1562,12 +1318,7 @@ details[open] > summary::after { transform: rotate(90deg); }
 
 /* Circular, high-contrast close button since it sits over the image. */
 .episode-detail-close {
-  top: 10px;
-  right: 10px;
-  width: 32px;
-  height: 32px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.5);
   color: var(--text);
   display: flex;
   align-items: center;
@@ -1578,21 +1329,17 @@ details[open] > summary::after { transform: rotate(90deg); }
 .episode-hero { position: relative; }
 .episode-hero-img {
   width: 100%;
-  aspect-ratio: 16 / 9;
   object-fit: cover;
-  display: block;
-  border-radius: 12px 12px 0 0; /* match the modal's top corners */
+  display: block; /* match the modal's top corners */
 }
 
 .episode-detail-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px 20px 20px;
 }
-.episode-detail-title { margin: 0; font-size: 1.25rem; line-height: 1.3; }
+.episode-detail-title { margin: 0; }
 
-.episode-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.episode-actions { display: flex; flex-wrap: wrap; }
 .ep-action-btn { flex: 1 1 130px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 
 /* The one filled control in the panel, so the ACTION is unmistakably an
@@ -2157,13 +1904,6 @@ button:active:not(:disabled),
   transform: scale(0.9);
 }
 
-/* The sheet's close button is vertically centred with translateY(-50%), and
-   the bare scale() above would drop that and jerk it half its height down on
-   every press. Its press state has to carry the centring. */
-.sheet-close-x:active {
-  transform: translateY(-50%) scale(0.9);
-}
-
 /* Rows are wide, so scaling the whole row is more movement than the
    interaction deserves; a brief dim reads as a press without the shift. */
 .watch-next-row:active,
@@ -2290,11 +2030,6 @@ select,
 @keyframes modal-in {
   from { opacity: 0; transform: translateY(10px) scale(0.98); }
   to { opacity: 1; transform: none; }
-}
-
-.details-modal-desktop.is-leaving {
-  animation: desktop-modal-out 180ms ease-in forwards;
-  pointer-events: none;
 }
 @keyframes desktop-modal-out {
   from { opacity: 1; transform: none; }
@@ -3485,21 +3220,18 @@ select,
 /* Opened from a menu that can sit over a details panel, so it goes above it. */
 .history-backdrop { z-index: 20; }
 .watch-history-modal { max-height: 85vh; overflow-y: auto; }
-.history-season h3 { display: flex; align-items: center; gap: 4px; font-size: 0.95rem; margin-top: 6px; }
-.history-list { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.history-season h3 { display: flex; align-items: center; gap: 4px; }
+.history-list { list-style: none; margin: 6px 0 0; display: flex; flex-direction: column; }
 .history-row {
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
-  column-gap: 8px;
-  padding: 6px 4px;
-  border-bottom: 1px solid var(--border);
 }
 .history-row .ep-number { font-family: var(--font-mono); color: var(--muted); font-size: 0.78rem; }
-.history-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.9rem; }
+.history-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-row .watch-count-badge { margin-left: 0; }
 .history-dates { grid-column: 2 / -1; }
-.history-facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 4px 0 0; }
+.history-facts { display: grid; grid-template-columns: auto 1fr; margin: 4px 0 0; }
 .history-facts dt { color: var(--muted); }
 .history-facts dd { margin: 0; }
 
@@ -3646,30 +3378,28 @@ select,
 
 .stats-backdrop { z-index: 20; }
 .stats-modal { max-height: 85vh; overflow-y: auto; }
-.stats-section { display: flex; flex-direction: column; gap: 6px; padding-top: 10px; border-top: 1px solid var(--border); }
-.stats-section h3 { font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.stats-section { display: flex; flex-direction: column; }
 .stats-facts { margin: 0; display: flex; flex-direction: column; }
 .stats-fact {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   gap: 12px;
-  padding: 6px 0;
 }
 .stats-fact + .stats-fact { border-top: 1px solid var(--border); }
 .stats-fact dt { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.stats-fact dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.stats-note { color: var(--muted); font-size: 0.78rem; }
-.stats-ranking { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.stats-fact dd { margin: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.stats-note { color: var(--muted); }
+.stats-ranking { margin: 0; display: flex; flex-direction: column; }
 .stats-ranking li { display: flex; justify-content: space-between; gap: 12px; }
 .stats-ranking-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stats-caption { margin: 0; }
 .stats-bars { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; align-items: end; height: 120px; margin-top: 4px; }
 .stats-bar { display: flex; flex-direction: column; align-items: center; gap: 4px; height: 100%; }
-.stats-bar-value { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-.stats-bar-track { flex: 1; width: 100%; max-width: 28px; display: flex; align-items: flex-end; background: var(--surface-raised); border-radius: 4px; overflow: hidden; }
-.stats-bar-track span { display: block; width: 100%; min-height: 2px; background: var(--watched); border-radius: 4px 4px 0 0; }
-.stats-bar-label { font-size: 0.72rem; color: var(--muted); }
+.stats-bar-value { color: var(--muted); font-variant-numeric: tabular-nums; }
+.stats-bar-track { flex: 1; width: 100%; max-width: 28px; display: flex; align-items: flex-end; background: var(--surface-raised); overflow: hidden; }
+.stats-bar-track span { display: block; width: 100%; min-height: 2px; background: var(--watched); }
+.stats-bar-label { color: var(--muted); }
 
 /* ============================================================
    REDESIGN PHASE 1: HOME
@@ -4227,77 +3957,6 @@ select,
    else on the page is red. */
 .settings-list.is-danger .settings-row-danger h3 { color: var(--danger); }
 
-/* ---- Primary action ---------------------------------------------------- */
-/* The app's existing primary treatment (as .ep-action-primary): the one filled
-   control in a panel, white on the dark surface. Red stays the brand mark. */
-.btn-primary {
-  background: var(--text);
-  color: var(--bg);
-  border-color: var(--text);
-  font-weight: 700;
-}
-.btn-primary:hover:not(:disabled) { border-color: var(--text); opacity: 0.9; }
-
-/* ---- Details panel: the ⋯ menu ----------------------------------------- */
-/* Phones: in the sheet's top bar, left of Close. */
-.sheet-more {
-  position: absolute;
-  top: 50%;
-  right: 48px;
-  transform: translateY(-50%);
-  z-index: 1; /* above the grab area, like Close */
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 50%;
-  background: var(--surface-raised);
-  color: var(--text);
-}
-.sheet-more:active { transform: translateY(-50%) scale(0.9); }
-/* Desktop: on the hero, left of Close. */
-.desktop-hero-more {
-  position: absolute;
-  top: 14px;
-  right: 56px;
-  z-index: 2;
-  width: 34px;
-  height: 34px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: none;
-  border-radius: 50%;
-  background: rgba(0, 0, 0, 0.45);
-  -webkit-backdrop-filter: blur(4px);
-  backdrop-filter: blur(4px);
-  color: var(--text);
-}
-/* Both are 34px circles that need a 44px target, the same invisible hit area
-   the close buttons get. */
-.sheet-more::after,
-.desktop-hero-more::after {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 44px;
-  height: 44px;
-  transform: translate(-50%, -50%);
-}
-
-/* ---- Details panel: header ---------------------------------------------- */
-.details-hero-title {
-  font-size: var(--fs-24);
-  font-weight: 700;
-  letter-spacing: -0.01em;
-}
-.details-meta-line { font-size: var(--fs-13); }
-
 /* ---- Episode panel: the context line ------------------------------------ */
 /* "Lupin › · S3 E1 · Aired 5 Oct 2025": what used to be two capsules over the
    still, now one quiet line under it, so the artwork is clear. */
@@ -4344,12 +4003,10 @@ select,
 /* ---- Bottom sheets ------------------------------------------------------ */
 /* One sheet shape for the details panel and the filter sheet: 24px top
    corners, no outline (the shadow and the surface separate it). */
-.details-sheet,
 .filter-sheet {
   border: none;
   border-radius: var(--r-xl) var(--r-xl) 0 0;
 }
-.sheet-top-bar { border-radius: var(--r-xl) var(--r-xl) 0 0; }
 
 /* ---- Toasts ------------------------------------------------------------- */
 /* Above the floating nav (12px float + 64px nav + 8px), and above Home's
@@ -4516,12 +4173,6 @@ a:hover { text-decoration-color: var(--text); }
 /* ---- For You insights --------------------------------------------------- */
 .insights-bar-fill { background: var(--text); }
 
-/* ---- Desktop details panel ------------------------------------------------ */
-/* The poster over the hero, on the same corners as every poster, and the
-   title at the sheet-title size. */
-.desktop-poster-card { border: none; border-radius: var(--r-sm); }
-.desktop-header-text h2 { font-size: var(--fs-24); font-weight: 700; letter-spacing: -0.01em; }
-
 /* ============================================================
    DETAILS PANEL OVERHAUL (components/DetailsPanel.tsx)
    After the reference layout: big artwork fading into the panel, the title
@@ -4529,40 +4180,6 @@ a:hover { text-decoration-color: var(--text); }
    line, genre chips, the synopsis, a Cast row, and on phones the main action
    as a full-width bar pinned to the bottom.
    ============================================================ */
-
-/* ---- Cover (phone sheet) ------------------------------------------------ */
-/* Full-bleed: it cancels the scroll area's 20px side padding. */
-.details-cover {
-  position: relative;
-  margin: 0 -20px;
-  aspect-ratio: 4 / 3;
-  max-height: 46vh;
-  overflow: hidden;
-  background: var(--surface-raised);
-}
-.details-cover-img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-/* A poster standing in for a missing backdrop: cropped from its upper part. */
-.details-cover-img.is-poster { object-position: center 22%; }
-.details-cover-empty { background: var(--surface-raised); }
-/* The art dissolves into the sheet, so the title below reads on solid ground
-   and the panel has no hard edge between picture and content. */
-.details-cover-fade {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(20, 20, 22, 0) 35%, rgba(20, 20, 22, 0.7) 70%, var(--surface) 100%);
-  pointer-events: none;
-}
-.details-cover-text {
-  position: absolute;
-  left: 20px;
-  right: 20px;
-  bottom: 12px;
-}
 
 /* ---- Title, rating, subtitle (both layouts) ---------------------------- */
 .details-title-row {
@@ -4617,11 +4234,6 @@ a:hover { text-decoration-color: var(--text); }
   font-weight: 500;
 }
 
-/* ---- Body rhythm (phone) ----------------------------------------------- */
-.details-sheet .details-body { gap: 14px; margin-top: 14px; }
-.details-sheet .overview,
-.details-modal-desktop .overview { font-size: var(--fs-15); line-height: 1.55; color: #D9D8DC; }
-
 /* ---- Cast -------------------------------------------------------------- */
 .details-section-title { margin: 0 0 10px; font-size: var(--fs-17); font-weight: 700; }
 .cast-rail {
@@ -4664,42 +4276,558 @@ a:hover { text-decoration-color: var(--text); }
 }
 .cast-name { color: var(--text); font-weight: 600; }
 .cast-role { color: var(--muted); }
+@keyframes action-bar-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes action-bar-out { from { transform: none; } to { transform: translateY(100%); } }
 
-/* ---- Pinned action bar (phone sheet) ------------------------------------ */
-/* The reference's "Watch now": the panel's main action as a full-width bar,
-   always in reach. Fixed to the bottom of the screen over the sheet (see
-   DetailsPanel.tsx for why it is not inside it), the sheet's own width, and
-   the scroll area keeps room for it so the last row is never under it. */
-.sheet-action-bar {
-  position: fixed;
+/* ============================================================
+   DETAILS PAGE (components/DetailsPanel.tsx)
+   Replaces the bottom sheet. After the reference: on a phone, a full-screen
+   page that slides up, the key art filling the top and fading into the page,
+   a large title with the rating on its line, one subtitle line, pill genre
+   chips, a three-line synopsis with "more" at its end, a Cast row of photo
+   cards, and the main action as a floating button. On desktop the same page,
+   as a centred dialog.
+   ============================================================ */
+
+.details-page-root { position: fixed; inset: 0; z-index: 10; }
+.details-page-root.is-dialog {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.6);
+  animation: backdrop-in 160ms ease-out;
+}
+.details-page-root.is-dialog.is-leaving { animation: details-fade-out 180ms ease-in forwards; pointer-events: none; }
+@keyframes details-fade-out { to { opacity: 0; } }
+
+/* --dp-bg is what the artwork fades into, so it must be the page's own
+   background: the app background on a phone, the dialog surface on desktop. */
+.details-page {
+  --dp-bg: var(--bg);
+  --dp-card: var(--surface);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--dp-bg);
+}
+.is-page .details-page {
+  position: absolute;
+  inset: 0;
+  animation: details-page-in 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.is-page.is-leaving .details-page { animation: details-page-out 240ms cubic-bezier(0.32, 0.72, 0, 1) forwards; pointer-events: none; }
+@keyframes details-page-in { from { transform: translateY(100%); } to { transform: none; } }
+@keyframes details-page-out { from { transform: translateY(var(--drag-y, 0px)); } to { transform: translateY(100%); } }
+.is-dialog .details-page {
+  --dp-bg: var(--surface);
+  --dp-card: var(--surface-raised);
+  width: min(640px, 100%);
+  max-height: min(90vh, 920px);
+  border-radius: var(--r-xl);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  animation: desktop-modal-in 180ms ease-out;
+}
+
+.details-page-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+/* ---- The artwork --------------------------------------------------------- */
+.details-page-hero {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  background: var(--surface-raised);
+}
+.details-page-hero.is-poster { aspect-ratio: 4 / 5; max-height: 64vh; }
+.is-dialog .details-page-hero.is-poster { aspect-ratio: 16 / 10; }
+.details-page-hero-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.details-page-hero.is-poster .details-page-hero-img { object-position: center 18%; }
+.details-page-hero-empty { background: var(--surface-raised); }
+/* A little shade at the top for the floating buttons, then the art dissolves
+   into the page so the title sits on it with no hard edge. */
+.details-page-hero-fade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(10, 10, 11, 0.55) 0%,
+    rgba(10, 10, 11, 0) 20%,
+    rgba(10, 10, 11, 0) 48%,
+    var(--dp-bg) 100%
+  );
+}
+
+/* ---- Body ------------------------------------------------------------------ */
+/* Pulled up over the bottom of the fade, as in the reference. */
+.details-page-body {
+  position: relative;
+  margin-top: -84px;
+  padding: 0 20px calc(32px + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.details-page.has-cta .details-page-body { padding-bottom: calc(116px + env(safe-area-inset-bottom)); }
+.is-dialog .details-page-body { padding-left: 28px; padding-right: 28px; }
+.details-page-head { display: flex; flex-direction: column; gap: 14px; }
+.details-page .details-title {
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.details-page .details-rating { font-size: 1.125rem; font-weight: 500; }
+.details-page .details-subtitle { margin-top: 6px; }
+.details-page .genre-chip {
+  padding: 6px 16px;
+  border-radius: var(--r-pill);
+  background: var(--dp-card);
+  color: var(--text-2);
+}
+.details-page .ratings-row { font-size: var(--fs-13); }
+.details-page .overview {
+  margin: 0;
+  font-size: var(--fs-15);
+  line-height: 1.55;
+  color: #D9D8DC;
+}
+.details-secondary { gap: 10px; }
+
+/* "... more" at the end of the third line, over a fade into the page, as in
+   the reference; "less" under the paragraph once it is open. */
+.expandable-text.is-inline { position: relative; }
+.expandable-text.is-inline .expandable-text-toggle {
+  font-size: var(--fs-15);
+  line-height: 1.55;
+  color: var(--text-2);
+  text-decoration: none;
+}
+.expandable-text.is-inline:not(.is-expanded) .expandable-text-toggle {
+  /* Exactly one line tall, so it sits ON the last line: the general 44px
+     touch minimum would lift it half a line above it. One line of 15px text
+     at 1.55 is still a 24px target. */
+  min-height: 0;
+  height: auto;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  padding-left: 32px;
+  background: linear-gradient(90deg, transparent, var(--dp-bg, var(--bg)) 28px);
+}
+
+/* Cast: bigger photo cards, bleeding to the page edges. */
+.details-page .details-section-title { font-size: var(--fs-20); font-weight: 600; margin-bottom: 12px; }
+.details-page .cast-rail { margin: 0 -20px; padding: 0 20px 4px; scroll-padding-inline: 20px; gap: 12px; }
+.is-dialog .details-page .cast-rail { margin: 0 -28px; padding: 0 28px 4px; scroll-padding-inline: 28px; }
+.details-page .cast-card { flex-basis: 96px; }
+.details-page .cast-photo { aspect-ratio: 4 / 5; border-radius: var(--r-lg); background: var(--dp-card); }
+
+/* The season list is part of the page now: it scrolls with it, not in a box. */
+.details-page .season-browser {
+  max-height: none;
+  overflow: visible;
+  margin-top: 6px;
+  padding-top: 0;
+  border-top: none;
+}
+
+/* ---- Floating controls --------------------------------------------------- */
+.details-page-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  padding: calc(env(safe-area-inset-top) + 12px) 14px 0;
+  pointer-events: none;
+}
+.details-page-topbar > * { pointer-events: auto; }
+.details-page-icon {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(10, 10, 11, 0.45);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  color: var(--text);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.details-page-icon:hover:not(:disabled) { background: rgba(10, 10, 11, 0.65); }
+
+/* The main action: a floating button over a fade, as the reference's
+   "Watch now". The fade keeps text from showing through its edges. */
+.details-page-cta {
+  position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  max-width: 640px;
-  margin: 0 auto;
-  box-sizing: border-box;
-  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
-  background: var(--surface);
-  border-top: 1px solid #232327;
-  animation: action-bar-in 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  z-index: 2;
+  padding: 28px 16px calc(16px + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, transparent, var(--dp-bg) 48%);
+  pointer-events: none;
 }
-.sheet-action-bar.is-wide { max-width: 720px; }
-.sheet-action-bar.is-leaving { animation: action-bar-out 220ms cubic-bezier(0.32, 0.72, 0, 1) forwards; pointer-events: none; }
-@keyframes action-bar-in { from { transform: translateY(100%); } to { transform: none; } }
-@keyframes action-bar-out { from { transform: none; } to { transform: translateY(100%); } }
-.sheet-scroll-area.has-action-bar { padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
-.sheet-action-bar .field-row { flex-wrap: nowrap; gap: 10px; }
-.sheet-action-bar .field-row > button {
-  flex: 1 1 0;
-  min-width: 0;
+.is-dialog .details-page-cta { padding-left: 28px; padding-right: 28px; padding-bottom: 20px; }
+.details-page-cta-button {
+  pointer-events: auto;
+  width: 100%;
+  height: 56px;
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--fs-17);
+  font-weight: 700;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+.details-page-cta-button:hover:not(:disabled) { opacity: 0.92; }
+
+/* ============================================================
+   SEASON AND EPISODE ROWS (show details)
+   Each season is a rounded group, like the Settings lists: its header row,
+   a thin progress line, then roomier episode rows with a larger still and
+   the same outlined tick as Up Next, filled green once watched.
+   ============================================================ */
+.details-page .season-block {
+  background: var(--dp-card);
+  border-top: none;
+  border-radius: var(--r-lg);
+  padding: 4px 14px;
+  margin-bottom: 10px;
+}
+.details-page .season-header { min-height: 56px; }
+.details-page .season-title { font-size: var(--fs-17); font-weight: 600; }
+.details-page .season-header-right .muted.small { font-size: var(--fs-13); }
+.details-page .season-progress { height: 3px; margin: 0 0 10px; }
+.details-page .episode-list { gap: 0; margin-bottom: 6px; }
+.details-page .episode-row {
+  padding: 10px 0 !important;
+  border-radius: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  gap: 12px;
+}
+.details-page .episode-row:first-child { border-top: none; }
+.details-page .episode-row.watched { background: none; }
+.details-page .episode-row.watched .ep-name { color: var(--text-2); }
+.details-page .episode-thumb { width: 96px; height: 54px; border-radius: var(--r-sm); }
+.details-page .episode-row-body .ep-number { font-size: var(--fs-12); }
+.details-page .episode-row-body .ep-name { font-size: var(--fs-15); }
+.details-page .watch-toggle {
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: 1.5px solid var(--border-strong);
+  color: var(--text);
+}
+.details-page .watch-toggle.on {
+  background: var(--watched);
+  border-color: var(--watched);
+  color: var(--bg);
+}
+
+/* ============================================================
+   EPISODE PANEL (components/EpisodeDetailsPanel.tsx)
+   The details page's language in a floating card (the card is also the
+   home-screen widget's overlay, so it stays a card): the still fading into
+   it, the context line, a large title with the rating on its line, and
+   full-width rounded actions.
+   ============================================================ */
+.episode-detail-modal { max-width: 460px; overflow: hidden; }
+.episode-hero-img { border-radius: 0; aspect-ratio: 16 / 9; }
+.episode-hero-fade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(20, 20, 22, 0.45) 0%, rgba(20, 20, 22, 0) 25%, rgba(20, 20, 22, 0) 55%, var(--surface) 100%);
+}
+.episode-detail-close {
+  width: 40px;
+  height: 40px;
+  top: 12px;
+  right: 12px;
+  font-size: 1.5rem;
+  background: rgba(10, 10, 11, 0.45);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  z-index: 2;
+}
+.episode-detail-body {
+  position: relative;
+  margin-top: -36px;
+  gap: 12px;
+  padding: 0 22px 22px;
+}
+.episode-title-row { align-items: baseline; }
+.episode-detail-title { font-size: var(--fs-24); font-weight: 600; letter-spacing: -0.01em; line-height: 1.2; }
+.episode-detail-body .ratings-row { font-size: var(--fs-13); }
+.episode-detail-body .overview { margin: 0; font-size: var(--fs-15); line-height: 1.55; color: #D9D8DC; }
+.episode-actions { gap: 10px; margin-top: 8px; }
+.ep-action-btn {
   min-height: 52px;
   border-radius: var(--r-lg);
   font-size: var(--fs-15);
+  font-weight: 600;
 }
-.sheet-action-bar .remove-confirm { display: flex; flex-direction: column; gap: 8px; }
-.sheet-action-bar .status-error { margin: 8px 0 0; }
 
-/* ---- Desktop dialog header ---------------------------------------------- */
-.desktop-header-text { gap: 8px; }
-.desktop-header-text .details-title { font-size: 1.75rem; }
-.details-modal-desktop .cast-rail { margin: 0; padding: 0 0 4px; scroll-padding-inline: 0; }
+/* ============================================================
+   STATS DIALOG and WATCH HISTORY SHEET
+   Section headings in sentence case at the body's scale rather than small
+   tracked capitals, facts as roomy rows in a rounded group, and the numbers
+   in white at the title weight.
+   ============================================================ */
+.stats-modal .episode-detail-body,
+.watch-history-modal .episode-detail-body { margin-top: 0; padding-top: 22px; gap: 16px; }
+.stats-modal .episode-detail-title,
+.watch-history-modal .episode-detail-title { padding-right: 44px; }
+.stats-section { gap: 10px; padding-top: 0; border-top: none; }
+.stats-section h3 {
+  margin: 0;
+  font-size: var(--fs-15);
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+.stats-facts {
+  background: var(--surface-raised);
+  border-radius: var(--r-lg);
+  padding: 0 14px;
+}
+.stats-fact { padding: 12px 0; }
+.stats-fact + .stats-fact { border-top-color: rgba(255, 255, 255, 0.06); }
+.stats-fact dt { font-size: var(--fs-15); }
+.stats-fact dd { font-size: var(--fs-17); font-weight: 600; color: var(--text); }
+.stats-note { font-size: var(--fs-13); }
+.stats-ranking { padding-left: 22px; gap: 8px; font-size: var(--fs-15); }
+.stats-bar-track { border-radius: var(--r-xs); }
+.stats-bar-track span { border-radius: var(--r-xs) var(--r-xs) 0 0; }
+.stats-bar-value,
+.stats-bar-label { font-size: var(--fs-12); }
+
+.history-season h3 { font-size: var(--fs-15); font-weight: 600; margin-top: 4px; }
+.history-list {
+  gap: 0;
+  background: var(--surface-raised);
+  border-radius: var(--r-lg);
+  padding: 0 14px;
+}
+.history-row { padding: 12px 0; border-bottom: none; border-top: 1px solid rgba(255, 255, 255, 0.06); column-gap: 10px; }
+.history-row:first-child { border-top: none; }
+.history-name { font-size: var(--fs-15); }
+.history-facts {
+  gap: 10px 16px;
+  font-size: var(--fs-15);
+  background: var(--surface-raised);
+  border-radius: var(--r-lg);
+  padding: 14px;
+}
+.stats-modal .episode-detail-body > p,
+.watch-history-modal .episode-detail-body > p { margin: 0; }
+
+/* ============================================================
+   EPISODE PAGE (components/EpisodeDetailsPanel.tsx, presentation="page")
+   The details page's layout for an episode: the still as the artwork, the
+   context line and the title with its rating, the synopsis, and Mark as
+   watched / Watch again as the floating button. The widget overlay keeps the
+   card (presentation="card").
+   ============================================================ */
+.episode-page .details-page-hero.is-still { aspect-ratio: 16 / 10; }
+.episode-page .details-page-body { margin-top: -64px; }
+.episode-page .details-page-head { gap: 8px; }
+.episode-page .episode-detail-title {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+.episode-page .episode-meta-line { font-size: var(--fs-13); }
+.episode-page .ep-watched-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  border-radius: var(--r-pill);
+  padding: 0 16px 0 8px;
+}
+
+/* ============================================================
+   SCROLLBARS
+   A slim pill thumb in the text colour at low strength on a clear track,
+   the way One UI draws its scroll indicator, instead of the browser's grey
+   bar. Firefox gets the same colours through scrollbar-color.
+   ============================================================ */
+:root { scrollbar-color: rgba(242, 241, 239, 0.24) transparent; }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background-color: rgba(242, 241, 239, 0.22);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(242, 241, 239, 0.4); }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* ============================================================
+   WIDGET TICK CONFIRMATION (src/panel/QuickMarkWatched.tsx)
+
+   An Up Next widget row's tick marks the episode without opening the
+   panel; this one line is all that appears over the home screen, styled
+   as the app's toast, before the overlay closes itself.
+   ============================================================ */
+.quick-watched {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 48px);
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 12px 18px 12px 12px;
+  border-radius: var(--r-pill);
+  background: var(--surface-raised);
+  color: var(--text);
+  font-size: var(--fs-15);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  animation: quick-watched-in 260ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.quick-watched-tick {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--watched);
+  color: #0a0a0b;
+}
+.quick-watched-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+@keyframes quick-watched-in {
+  from { opacity: 0; transform: translate(-50%, 16px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* ============================================================
+   LOADING PLACEHOLDERS (components/Skeleton.tsx)
+
+   Grey shapes inside the real card frames, with one soft highlight
+   sweeping across them. The sweep is a fixed background, so every
+   placeholder on screen shimmers in step rather than each on its own beat.
+   ============================================================ */
+.skeleton {
+  display: block;
+  background: var(--surface-raised);
+  background-image: linear-gradient(100deg, transparent 30%, rgba(242, 241, 239, 0.06) 50%, transparent 70%);
+  background-size: 200vw 100%;
+  background-attachment: fixed;
+  animation: skeleton-sweep 1.4s linear infinite;
+}
+@keyframes skeleton-sweep {
+  from { background-position: 100vw 0; }
+  to { background-position: -100vw 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; background-image: none; }
+}
+.skeleton-card { pointer-events: none; }
+.skeleton-poster { width: 100%; aspect-ratio: 2 / 3; border-radius: var(--r-sm); background-color: #2A2A30; }
+.skeleton-caption { display: flex; flex-direction: column; gap: 6px; padding: 11px 4px 13px; }
+@media (max-width: 640px) { .skeleton-caption { padding: 10px 3px 12px; } }
+.skeleton-line { height: 12px; border-radius: var(--r-xs); }
+.skeleton-line.is-small { height: 10px; }
+.skeleton-line.is-title { height: 15px; }
+.skeleton-line.is-heading { height: 30px; border-radius: var(--r-sm); }
+.skeleton-wn-poster { width: 56px; height: 84px; flex: none; border-radius: 6px; }
+.skeleton-wn-body { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 8px; }
+.skeleton-tick { width: 32px; height: 32px; flex: none; border-radius: 50%; }
+.skeleton-rail { overflow: hidden; }
+.details-skeleton { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+.skeleton-chip-row { display: flex; gap: 8px; margin: 4px 0 8px; }
+.skeleton-chip { width: 72px; height: 30px; border-radius: var(--r-pill); }
+
+/* ============================================================
+   PULL TO REFRESH (components/PullToRefresh.tsx)
+
+   A round chip that drops from above the top edge. Its arrow turns with
+   the pull; at the threshold it turns white ("let go to refresh"), then
+   spins while the refresh runs. Moved by inline transforms during the
+   pull; the transition here is only for settling back.
+   ============================================================ */
+.ptr {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) - 44px);
+  left: 50%;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface-raised);
+  color: var(--text-2);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  transform: translate(-50%, 0);
+  transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1), opacity 200ms ease, color 120ms ease;
+  pointer-events: none;
+}
+.ptr-icon { transform: rotate(var(--ptr-turn, 0deg)); }
+.ptr[data-state="armed"],
+.ptr[data-state="refreshing"] { color: var(--text); }
+.ptr[data-state="refreshing"] .ptr-icon { animation: ptr-spin 800ms linear infinite; }
+.ptr[data-state="refreshing"] .ptr-head { opacity: 0; }
+@keyframes ptr-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ptr[data-state="refreshing"] .ptr-icon { animation: none; }
+}
+
+/* ============================================================
+   CAST PAGES (components/PersonPage.tsx)
+
+   A cast card is now a button that opens the person's page: the details
+   page's own layout with their photo as the artwork, then rails of their
+   shows and movies.
+   ============================================================ */
+.cast-open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.cast-open:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; border-radius: var(--r-md); }
+.cast-open:active .cast-photo { opacity: 0.8; }
+.person-credits .details-section-title { display: flex; align-items: baseline; gap: 8px; }
+.person-credit-count { font-size: var(--fs-13); font-weight: 500; color: var(--muted); }
+/* The page body has 20px (28px in the dialog) of side padding, not the
+   tab pages' 16/32px, so the rail bleeds by that instead. */
+.details-page .person-rail { margin: 0 -20px; padding: 0 20px 4px; scroll-padding-inline: 20px; }
+.is-dialog .details-page .person-rail { margin: 0 -28px; padding: 0 28px 4px; scroll-padding-inline: 28px; }
+.details-page .person-rail > .show-card { flex-basis: 124px; }

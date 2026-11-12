@@ -4,31 +4,38 @@ import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProviderInfo;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.TypedValue;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.RadioButton;
+import android.widget.RadioGroup;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.SwitchCompat;
 
 import com.indie.watchtime.R;
 
 /**
- * The widget's appearance screen: how transparent its background should be.
+ * The widget's settings screen: background opacity and colour, corners, text
+ * size, compact rows, the title bar and artwork. Each placed widget keeps its
+ * own settings (WidgetStore).
  *
  * Declared as android:configure on both providers, so it runs when a widget is
  * added, and again on demand because both are marked reconfigurable - the
- * setting is not a one-shot choice trapped at add time.
+ * settings are not a one-shot choice trapped at add time.
  *
  * The preview is the SAME layout the launcher's widget picker renders
  * (widget_preview_up_next / widget_preview_coming_up), inflated normally here
  * rather than as RemoteViews. Reusing it means the picker, this screen and the
- * placed widget cannot show three different designs, and it is why the slider
- * previews truthfully.
+ * placed widget cannot show three different designs. Every control updates it
+ * as it changes, so what Save applies is what the user was looking at.
  *
  * It is shown over the user's actual wallpaper rather than a flat page, which
  * is the only way a transparency setting can be judged: 40% over a dark
@@ -36,26 +43,32 @@ import com.indie.watchtime.R;
  * WidgetConfigTheme and WallpaperViewportView for how the wallpaper gets
  * there, given that an app is not allowed to read it.
  *
- * Opacity is applied to the widget_bg layer alone, in both the preview and the
- * real widget. Nothing above that layer is touched, so the episode list, its
- * text, its artwork and its separators stay fully opaque at every setting -
- * including 0%, where the background disappears entirely and the list is still
- * perfectly readable.
+ * Opacity and colour apply to the widget_bg layer alone, in both the preview
+ * and the real widget, so the episode list, its text and artwork stay fully
+ * legible at any setting.
  */
 public class WidgetConfigActivity extends AppCompatActivity {
 
     private int appWidgetId = AppWidgetManager.INVALID_APPWIDGET_ID;
+
+    private View preview;
     private ImageView previewBackground;
     private TextView valueLabel;
+
     private int opacity = WidgetStore.DEFAULT_OPACITY;
+    private int background;
+    private int corners;
+    private int textSize;
+    private boolean compact;
+    private boolean showHeader;
+    private boolean showArtwork;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // Cancelled unless the user completes the screen: on RESULT_CANCELED at
-        // add time the launcher drops the widget rather than placing a
-        // half-configured one.
+        // Backing out (back gesture, Cancel) must not leave a half-configured
+        // widget on the home screen: the launcher removes it on CANCELED.
         setResult(RESULT_CANCELED);
 
         Intent intent = getIntent();
@@ -72,11 +85,18 @@ public class WidgetConfigActivity extends AppCompatActivity {
         setContentView(R.layout.activity_widget_config);
 
         opacity = WidgetStore.getOpacity(this, appWidgetId);
+        background = WidgetStore.getBackground(this, appWidgetId);
+        corners = WidgetStore.getCorners(this, appWidgetId);
+        textSize = WidgetStore.getTextSize(this, appWidgetId);
+        compact = WidgetStore.getCompact(this, appWidgetId);
+        showHeader = WidgetStore.getShowHeader(this, appWidgetId);
+        showArtwork = WidgetStore.getShowArtwork(this, appWidgetId);
 
         FrameLayout previewHost = findViewById(R.id.config_preview_host);
-        View preview = LayoutInflater.from(this).inflate(previewLayoutFor(appWidgetId), previewHost, false);
+        preview = LayoutInflater.from(this).inflate(previewLayoutFor(appWidgetId), previewHost, false);
         previewHost.addView(preview);
         previewBackground = preview.findViewById(R.id.widget_bg);
+        rememberTextSizes(preview);
 
         valueLabel = findViewById(R.id.config_opacity_value);
 
@@ -95,21 +115,50 @@ public class WidgetConfigActivity extends AppCompatActivity {
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {}
         });
+
+        bindChoice(R.id.config_background, background, i -> background = i);
+        bindChoice(R.id.config_corners, corners, i -> corners = i);
+        bindChoice(R.id.config_text_size, textSize, i -> textSize = i);
+        bindSwitch(R.id.config_compact, compact, v -> compact = v);
+        bindSwitch(R.id.config_header, showHeader, v -> showHeader = v);
+        bindSwitch(R.id.config_artwork, showArtwork, v -> showArtwork = v);
+
         applyToPreview();
 
         Button save = findViewById(R.id.config_save);
-        // Adding versus adjusting an existing widget are different actions and
-        // the button should not claim to be the first when it is the second.
         save.setText(isReconfiguring() ? R.string.widget_config_save_existing : R.string.widget_config_save);
         save.setOnClickListener(v -> commit());
 
-        // Leaves RESULT_CANCELED in place, which at add time tells the launcher
-        // not to place the widget at all, and when reconfiguring simply drops
-        // the unsaved change.
         findViewById(R.id.config_cancel).setOnClickListener(v -> finish());
     }
 
-    /** True when the launcher opened this for a widget already on a home screen. */
+    private interface IntSetter { void set(int value); }
+    private interface BoolSetter { void set(boolean value); }
+
+    /** A segmented choice: its options are the group's children, in order. */
+    private void bindChoice(int groupId, int selected, IntSetter onChange) {
+        RadioGroup group = findViewById(groupId);
+        View option = group.getChildAt(selected);
+        if (option instanceof RadioButton) ((RadioButton) option).setChecked(true);
+        group.setOnCheckedChangeListener((g, checkedId) -> {
+            onChange.set(g.indexOfChild(g.findViewById(checkedId)));
+            applyToPreview();
+        });
+    }
+
+    private void bindSwitch(int id, boolean checked, BoolSetter onChange) {
+        SwitchCompat toggle = findViewById(id);
+        toggle.setChecked(checked);
+        toggle.setOnCheckedChangeListener((b, value) -> {
+            onChange.set(value);
+            applyToPreview();
+        });
+    }
+
+    /**
+     * Whether this widget is already on the home screen (opened to edit it)
+     * rather than being added right now, which decides the button's wording.
+     */
     private boolean isReconfiguring() {
         int[] placed = AppWidgetManager.getInstance(this)
                 .getAppWidgetIds(new android.content.ComponentName(this, providerClassFor(appWidgetId)));
@@ -120,23 +169,64 @@ public class WidgetConfigActivity extends AppCompatActivity {
         return false;
     }
 
+    /** The preview shows every setting as the real widget will. */
     private void applyToPreview() {
         if (previewBackground != null) {
-            // The same call the real widget makes through RemoteViews, so the
-            // preview cannot flatter the result.
+            previewBackground.setImageResource(WidgetStore.backgroundDrawable(corners));
+            previewBackground.setColorFilter(WidgetStore.backgroundColor(background));
             previewBackground.setAlpha(WidgetStore.opacityToAlpha(opacity));
         }
         if (valueLabel != null) {
             valueLabel.setText(getString(R.string.widget_config_opacity_value, opacity));
         }
+        if (preview != null) {
+            View header = preview.findViewById(R.id.preview_header);
+            if (header != null) header.setVisibility(showHeader ? View.VISIBLE : View.GONE);
+            applyToViews(preview, WidgetStore.textScale(textSize));
+        }
+    }
+
+    /**
+     * Walks the preview: artwork is hidden when Artwork is off or rows are
+     * compact, the second text line ("detail") when rows are compact, and every
+     * text is scaled from its own original size.
+     */
+    private void applyToViews(View view, float scale) {
+        Object tag = view.getTag();
+        if ("poster".equals(tag)) {
+            view.setVisibility(showArtwork && !compact ? View.VISIBLE : View.GONE);
+        } else if ("detail".equals(tag)) {
+            view.setVisibility(compact ? View.GONE : View.VISIBLE);
+        }
+        if (view instanceof TextView) {
+            Object base = view.getTag(R.id.config_base_text_size);
+            if (base instanceof Float) {
+                ((TextView) view).setTextSize(TypedValue.COMPLEX_UNIT_PX, (Float) base * scale);
+            }
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) applyToViews(group.getChildAt(i), scale);
+        }
+    }
+
+    /** Records each preview text's designed size, so scaling never compounds. */
+    private void rememberTextSizes(View view) {
+        if (view instanceof TextView) {
+            view.setTag(R.id.config_base_text_size, ((TextView) view).getTextSize());
+        }
+        if (view instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) view;
+            for (int i = 0; i < group.getChildCount(); i++) rememberTextSizes(group.getChildAt(i));
+        }
     }
 
     private void commit() {
         WidgetStore.setOpacity(this, appWidgetId, opacity);
+        WidgetStore.saveAppearance(this, appWidgetId, background, corners, textSize, compact, showHeader, showArtwork);
 
-        // A widget added through a configuration activity gets no automatic
-        // APPWIDGET_UPDATE broadcast: drawing it for the first time is this
-        // screen's responsibility, and skipping it leaves a blank widget.
+        // Redraw now rather than waiting for the next update: the container
+        // (background, title bar) here, and the rows through the list factory.
         AppWidgetManager manager = AppWidgetManager.getInstance(this);
         providerFor(appWidgetId).render(this, manager, appWidgetId);
         manager.notifyAppWidgetViewDataChanged(appWidgetId, R.id.widget_list);
@@ -147,11 +237,9 @@ public class WidgetConfigActivity extends AppCompatActivity {
         finish();
     }
 
-    // ---- Which of the two widgets is being configured ----------------------
-    //
-    // Read from the widget's own provider info rather than passed in, because
-    // the launcher decides which provider it is launching this for and the
-    // intent carries only the id.
+    // ---- Which widget this is ----------------------------------------------
+    // One activity serves both widgets; the provider recorded for the id says
+    // which preview to show and which provider to ask for a redraw.
 
     private boolean isComingUp(int id) {
         AppWidgetProviderInfo info = AppWidgetManager.getInstance(this).getAppWidgetInfo(id);

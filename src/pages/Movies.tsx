@@ -28,6 +28,7 @@ import { movieWatchCount, viewingsInWords } from "../lib/watchHistory";
 import WatchMark from "../components/WatchMark";
 import { searchOrBrowse } from "../lib/librarySearch";
 import { MovieStatsDialog } from "../components/StatsDialog";
+import { PosterGridSkeleton } from "../components/Skeleton";
 
 type SortKey = "title" | "releaseYear" | "recentlyWatched" | "recentlyAdded" | "rating";
 type FilterKey = "all" | "watched" | "wantToWatch";
@@ -165,7 +166,7 @@ export default function Movies({
     }
   }, []);
 
-  if (!movies) return <p className="muted">Loading...</p>;
+  if (!movies) return <PosterGridSkeleton />;
 
   return (
     <div className="panel">

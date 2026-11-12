@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Where the settings screen keeps a preview TextView's original size,
+         so the Text size setting scales from it rather than compounding. -->
+    <item name="config_base_text_size" type="id" />
+</resources>

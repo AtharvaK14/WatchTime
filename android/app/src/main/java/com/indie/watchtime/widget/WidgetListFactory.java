@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.text.SpannableStringBuilder;
+import android.util.TypedValue;
 import android.text.Spanned;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
@@ -48,6 +49,10 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
     private final WidgetKind kind;
     private final List<JSONObject> rows = new ArrayList<>();
     private boolean compact;
+    /** The widget's Artwork setting (WidgetStore), read with the data. */
+    private boolean showArtwork = true;
+    /** The widget's Text size setting, as a factor on each view's own size. */
+    private float textScale = 1f;
 
     WidgetListFactory(Context context, Intent intent) {
         this.context = context.getApplicationContext();
@@ -61,7 +66,17 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
 
     @Override
     public void onDataSetChanged() {
+        // Appearance settings first: a change on the settings screen ends in
+        // notifyAppWidgetViewDataChanged, which lands here.
+        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID) {
+            showArtwork = WidgetStore.getShowArtwork(context, appWidgetId);
+            textScale = WidgetStore.textScale(WidgetStore.getTextSize(context, appWidgetId));
+        }
         resolveCompact();
+        // The Compact rows setting: compact everywhere, not only when small.
+        if (appWidgetId != AppWidgetManager.INVALID_APPWIDGET_ID && WidgetStore.getCompact(context, appWidgetId)) {
+            compact = true;
+        }
         rows.clear();
 
         JSONArray source = WidgetStore.readRows(context, kind.snapshotField());
@@ -119,15 +134,27 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
         }
 
         if (!compact) {
-            bindPoster(views, row.optString("posterUrl", null));
+            if (showArtwork) {
+                views.setViewVisibility(R.id.row_poster, View.VISIBLE);
+                bindPoster(views, row.optString("posterUrl", null));
+            } else {
+                views.setViewVisibility(R.id.row_poster, View.GONE);
+            }
         }
+        applyTextScale(views);
 
-        // The whole row is the tap target, not just its text: with the
-        // per-row watch button gone there is nothing else competing for the
-        // touch, and a row with dead zones feels broken. Widget collection
-        // items can only carry a fill-in intent; the template lives on the
-        // provider side (setPendingIntentTemplate).
+        // The whole row opens the episode; the tick at its end marks it
+        // watched without opening anything. Widget collection items can only
+        // carry fill-in intents; the template lives on the provider side
+        // (setPendingIntentTemplate). Both go to EpisodePanelActivity, which
+        // is what can write the app's database: the tick's extra makes it do
+        // the write, show a one-line confirmation and close by itself.
         views.setOnClickFillInIntent(R.id.row_root, openIntent(row));
+        if (kind == WidgetKind.WATCH_NEXT) {
+            Intent mark = openIntent(row);
+            mark.putExtra(EpisodePanelActivity.EXTRA_MARK_WATCHED, true);
+            views.setOnClickFillInIntent(R.id.row_tick, mark);
+        }
 
         return views;
     }
@@ -185,6 +212,30 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
         if (!compact) {
             views.setTextViewText(R.id.row_episode_name, row.optString("episodeName"));
         }
+    }
+
+    /**
+     * The Text size setting. Each view's size is its layout's own, times the
+     * factor, so the hierarchy within a row stays as designed. The sizes here
+     * mirror the row layouts' android:textSize values.
+     */
+    private void applyTextScale(RemoteViews views) {
+        if (textScale == 1f) return;
+        boolean comingUp = kind == WidgetKind.COMING_UP;
+        if (!comingUp && !compact) {
+            size(views, R.id.row_show, 14); size(views, R.id.row_episode, 12); size(views, R.id.row_meta, 11);
+        } else if (!comingUp) {
+            size(views, R.id.row_show, 12); size(views, R.id.row_episode, 11);
+        } else if (!compact) {
+            size(views, R.id.row_show, 12); size(views, R.id.row_episode, 11);
+            size(views, R.id.row_episode_name, 11); size(views, R.id.row_date, 12);
+        } else {
+            size(views, R.id.row_show, 12); size(views, R.id.row_episode, 10); size(views, R.id.row_date, 11);
+        }
+    }
+
+    private void size(RemoteViews views, int id, float sp) {
+        views.setTextViewTextSize(id, TypedValue.COMPLEX_UNIT_SP, sp * textScale);
     }
 
     private void bindPoster(RemoteViews views, String posterUrl) {

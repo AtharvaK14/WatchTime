@@ -5,6 +5,7 @@
      in the app has one obvious place to be reflected here. -->
 <resources>
     <color name="widget_bg">#FF0A0A0B</color>          <!-- var(bg). Opaque: the opacity SETTING supplies alpha, see WidgetStore.getOpacity -->
+    <color name="widget_surface">#141416</color>        <!-- var(surface): settings groups -->
     <color name="widget_surface_raised">#1D1D20</color> <!-- var(surface-raised) -->
     <color name="widget_text">#F2F1EF</color>           <!-- var(text) -->
     <color name="widget_muted">#86858A</color>          <!-- var(muted) -->
@@ -14,4 +15,5 @@
          should organise the list, not compete with it. It replaced the card
          outline that used to box every row. -->
     <color name="widget_divider">#1FF2F1EF</color>
+    <color name="widget_control_outline">#6A6A73</color> <!-- var(border-strong): an off switch's 3:1 outline -->
 </resources>

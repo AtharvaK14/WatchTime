@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { haptic } from "../lib/haptics";
 import type { HomeMedia } from "../lib/homeMedia";
 
 const OPTIONS: { value: HomeMedia; label: string }[] = [
@@ -48,7 +49,11 @@ export default function HomeMediaSwitch({
           type="button"
           className={`media-switch-option${value === opt.value ? " active" : ""}`}
           aria-pressed={value === opt.value}
-          onClick={() => value !== opt.value && onChange(opt.value)}
+          onClick={() => {
+            if (value === opt.value) return;
+            haptic("toggle");
+            onChange(opt.value);
+          }}
         >
           {opt.label}
         </button>

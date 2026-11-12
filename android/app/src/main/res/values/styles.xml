@@ -52,9 +52,85 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="colorAccent">@color/widget_text</item>
+        <item name="colorControlActivated">@color/widget_text</item>
         <item name="android:windowIsTranslucent">true</item>
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:windowShowWallpaper">true</item>
         <item name="android:textColorPrimary">@color/widget_text</item>
+    </style>
+
+    <!-- ==== Widget settings screen (activity_widget_config.xml) ==== -->
+    <!-- The small grey label over a settings group. -->
+    <style name="WidgetConfigGroupLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingTop">18dp</item>
+        <item name="android:paddingBottom">8dp</item>
+        <item name="android:textColor">@color/widget_text_2</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+    <!-- A rounded settings group. -->
+    <style name="WidgetConfigGroup">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:background">@drawable/widget_config_card</item>
+        <item name="android:paddingStart">18dp</item>
+        <item name="android:paddingEnd">18dp</item>
+        <item name="android:paddingTop">14dp</item>
+        <item name="android:paddingBottom">14dp</item>
+    </style>
+    <style name="WidgetConfigRowTitle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textColor">@color/widget_text</item>
+        <item name="android:textSize">16sp</item>
+    </style>
+    <style name="WidgetConfigRowSub">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">-4dp</item>
+        <item name="android:paddingEnd">64dp</item>
+        <item name="android:textColor">@color/widget_text_2</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+    <style name="WidgetConfigDivider">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginTop">14dp</item>
+        <item name="android:layout_marginBottom">14dp</item>
+        <item name="android:background">@drawable/widget_config_divider</item>
+    </style>
+    <!-- A segmented choice: options in a pill track, the selected one white. -->
+    <style name="WidgetConfigSegmented">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">44dp</item>
+        <item name="android:layout_marginTop">10dp</item>
+        <item name="android:orientation">horizontal</item>
+        <item name="android:padding">4dp</item>
+        <item name="android:background">@drawable/widget_config_segment_track</item>
+    </style>
+    <style name="WidgetConfigSegment">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">match_parent</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:button">@null</item>
+        <item name="android:gravity">center</item>
+        <item name="android:background">@drawable/widget_config_segment</item>
+        <item name="android:textColor">@color/widget_config_segment_text</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+    <!-- A switch row: the label fills the row, the app's switch at the end. -->
+    <style name="WidgetConfigSwitch">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textColor">@color/widget_text</item>
+        <item name="android:textSize">16sp</item>
+        <item name="android:thumb">@drawable/widget_config_switch_thumb</item>
+        <item name="android:background">@null</item>
     </style>
 </resources>

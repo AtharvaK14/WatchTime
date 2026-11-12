@@ -225,6 +225,120 @@ export async function getCredits(kind: "show" | "movie", tmdbId: number): Promis
   };
 }
 
+// ---- People (cast pages) -----------------------------------------------------
+
+export interface PersonCredit {
+  kind: "show" | "movie";
+  tmdbId: number;
+  name: string;
+  year: number | null;
+  posterPath: string | null;
+  rating: number | null;
+  /** Their character, or their job for a crew credit; "" when TMDB has none. */
+  role: string;
+}
+
+export interface PersonDetails {
+  id: number;
+  name: string;
+  biography: string;
+  /** TMDB's known_for_department: "Acting", "Directing", ... */
+  knownFor: string | null;
+  birthday: string | null;
+  deathday: string | null;
+  placeOfBirth: string | null;
+  profilePath: string | null;
+  shows: PersonCredit[];
+  movies: PersonCredit[];
+}
+
+/**
+ * TV genres that are not the person's work but an appearance as themselves:
+ * talk shows, news, reality and award-show broadcasts. A cast page listing
+ * every late-night interview an actor ever gave would bury their actual
+ * series under them.
+ */
+const APPEARANCE_GENRES = new Set([10767 /* Talk */, 10763 /* News */, 10764 /* Reality */]);
+
+interface RawPersonCredit {
+  id: number;
+  media_type: "tv" | "movie";
+  title?: string;
+  name?: string;
+  release_date?: string;
+  first_air_date?: string;
+  poster_path: string | null;
+  vote_average?: number;
+  vote_count?: number;
+  character?: string;
+  job?: string;
+  genre_ids?: number[];
+}
+
+/**
+ * A cast member's page: who they are, and the shows and movies they are in,
+ * best known first (TMDB vote count, which favours titles many people have
+ * actually seen over ones that are merely new). One request: the credits come
+ * appended to the person.
+ *
+ * Acting credits for actors; for someone known for directing, writing or
+ * producing, their crew credits too, so a director's page is not empty.
+ */
+export async function getPerson(personId: number): Promise<PersonDetails> {
+  const data = await tmdbGet<{
+    id: number;
+    name: string;
+    biography?: string;
+    known_for_department?: string;
+    birthday?: string | null;
+    deathday?: string | null;
+    place_of_birth?: string | null;
+    profile_path: string | null;
+    combined_credits?: { cast?: RawPersonCredit[]; crew?: RawPersonCredit[] };
+  }>(`/person/${personId}`, { append_to_response: "combined_credits" });
+
+  const knownFor = data.known_for_department ?? null;
+  const raw = [
+    ...(data.combined_credits?.cast ?? []),
+    ...(knownFor && knownFor !== "Acting" ? (data.combined_credits?.crew ?? []) : []),
+  ];
+
+  const seen = new Map<string, RawPersonCredit & { votes: number }>();
+  for (const c of raw) {
+    if (c.media_type !== "tv" && c.media_type !== "movie") continue;
+    if (c.media_type === "tv" && c.genre_ids?.some((g) => APPEARANCE_GENRES.has(g))) continue;
+    // Self-appearances outside those genres (documentaries, specials).
+    if (/^(self|himself|herself|themselves)\b/i.test(c.character ?? "")) continue;
+    const key = `${c.media_type}:${c.id}`;
+    // One card per title even when they hold several roles or jobs on it.
+    if (!seen.has(key)) seen.set(key, { ...c, votes: c.vote_count ?? 0 });
+  }
+
+  const toCredit = (c: RawPersonCredit): PersonCredit => ({
+    kind: c.media_type === "tv" ? "show" : "movie",
+    tmdbId: c.id,
+    name: (c.media_type === "tv" ? c.name : c.title) ?? "",
+    year: Number((c.media_type === "tv" ? c.first_air_date : c.release_date)?.slice(0, 4)) || null,
+    posterPath: c.poster_path,
+    rating: c.vote_average ?? null,
+    role: c.character || c.job || "",
+  });
+  const credits = [...seen.values()].sort((a, b) => b.votes - a.votes);
+
+  return {
+    id: data.id,
+    name: data.name,
+    biography: data.biography ?? "",
+    knownFor,
+    birthday: data.birthday ?? null,
+    deathday: data.deathday ?? null,
+    placeOfBirth: data.place_of_birth ?? null,
+    profilePath: data.profile_path,
+    shows: credits.filter((c) => c.media_type === "tv").map(toCredit),
+    movies: credits.filter((c) => c.media_type === "movie").map(toCredit),
+  };
+}
+
 export async function getMovieDetails(tmdbId: number): Promise<MovieDetails> {
   return tmdbGet<MovieDetails>(`/movie/${tmdbId}`, { append_to_response: "external_ids" });
 }

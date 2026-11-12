@@ -3,13 +3,17 @@ import type { Episode } from "../db";
 import { TMDB_STILL_BASE } from "../tmdb";
 import { getOmdbEpisodeRating, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbEpisodeRating } from "../omdb";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
+import { useIsMobile } from "../lib/useIsMobile";
+import ExpandableText from "./ExpandableText";
 import { useDismissKeyboardOnOpen } from "../lib/keyboard";
 import { useBackHandler } from "../lib/backHandler";
 import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
+import { useSwipeDismiss } from "../lib/useSwipeDismiss";
 import { rectAnchor } from "../lib/contextActions";
 import StreamingCapsules from "./StreamingCapsules";
 import ActionMenu from "./ActionMenu";
-import { CheckIcon, MinusCircleIcon, RepeatIcon, UnwatchedIcon } from "./icons";
+import { CheckIcon, MinusCircleIcon, RepeatIcon, StarIcon, UnwatchedIcon } from "./icons";
+import { formatRating } from "../lib/ratings";
 import WatchMark from "./WatchMark";
 import { viewingsInWords } from "../lib/watchHistory";
 import { viewingStatusActions } from "../lib/quickActions";
@@ -36,6 +40,8 @@ type WatchAction = () => void | Promise<unknown>;
  * one leaves a finished panel sitting on screen.
  */
 const EPISODE_PANEL_EXIT_MS = 200;
+/** The phone page's exit, matching the details page's slide down. */
+const EPISODE_PAGE_EXIT_MS = 240;
 
 /**
  * A transition the PARENT is driving, overriding the panel's own.
@@ -97,6 +103,14 @@ interface Props {
    */
   dismissOnOpenSeries?: boolean;
   /**
+   * "page" (the default, in the app): the details page's layout, full screen
+   * on a phone and a centred dialog on desktop, with the main action as the
+   * floating button. "card": the floating card the home-screen widget's
+   * overlay shows over the wallpaper, where a full-screen page would read as
+   * opening the app.
+   */
+  presentation?: "page" | "card";
+  /**
    * The SHOW's TMDB id, which turns on the "Available on" row.
    *
    * An episode is not licensed separately from its series, so the row asks
@@ -132,6 +146,7 @@ export default function EpisodeDetailsPanel({
   onOpenEpisodeInApp,
   onOpenSeries,
   dismissOnOpenSeries = false,
+  presentation = "page",
   streamingShowId,
   transition,
   onClose,
@@ -146,10 +161,20 @@ export default function EpisodeDetailsPanel({
   // The panel plays a short exit before it actually unmounts, so closing it
   // no longer reads as the card being deleted mid-tap. Every close route
   // below goes through requestClose so they all animate identically.
-  const { closing, requestClose } = useAnimatedDismiss(onClose, EPISODE_PANEL_EXIT_MS);
+  const isMobile = useIsMobile();
+  const asPage = presentation === "page";
+  // The page slides back down on a phone (240ms); the card and the desktop
+  // dialog keep their own, shorter exit.
+  const { closing, requestClose } = useAnimatedDismiss(
+    onClose,
+    asPage && isMobile ? EPISODE_PAGE_EXIT_MS : EPISODE_PANEL_EXIT_MS
+  );
   // Stacked on top of DetailsPanel's handler, so Android back closes this
   // episode layer first, then the parent panel on the next press.
   useBackHandler(true, requestClose);
+  const pageRef = useRef<HTMLDivElement>(null);
+  const pageScrollRef = useRef<HTMLDivElement>(null);
+  useSwipeDismiss(pageRef, pageScrollRef, asPage && isMobile, requestClose);
 
   const [rating, setRating] = useState<OmdbEpisodeRating | null | "loading">("loading");
 
@@ -268,6 +293,195 @@ export default function EpisodeDetailsPanel({
   // after arriving. Verified in the running app, not assumed.
   const animationClass = closing ? "is-leaving" : transition ? `is-${transition}` : "";
 
+  // The pieces both layouts share: the context line, the title with its
+  // rating, the IMDb line and "Available on".
+  const metaLine = (
+    <p className="episode-meta-line">
+      {onOpenSeries ? (
+        <button type="button" className="episode-show-link" onClick={handleOpenSeries} aria-label={openSeriesLabel}>
+          <span className="episode-show-link-name">{show.name}</span>
+          <span aria-hidden="true"> &rsaquo;</span>
+        </button>
+      ) : (
+        <span className="episode-show-link-name">{show.name}</span>
+      )}
+      <span aria-hidden="true"> · </span>
+      <span className="episode-meta-code">{seasonEp}</span>
+      <span aria-hidden="true"> · </span>
+      <span>{airLine}</span>
+    </p>
+  );
+  const titleRow = (
+    <div className="details-title-row episode-title-row">
+      <h2 className="episode-detail-title">
+        {onOpenEpisodeInApp ? (
+          <button
+            type="button"
+            className="episode-open-list episode-title-link"
+            onClick={onOpenEpisodeInApp}
+            aria-label={openEpisodeLabel}
+          >
+            {episode.name}
+            <span aria-hidden="true"> &rsaquo;</span>
+          </button>
+        ) : (
+          episode.name
+        )}
+      </h2>
+      {formatRating(episode.tmdbRating) && (
+        <span className="details-rating">
+          <span className="sr-only">TMDB rating </span>
+          {formatRating(episode.tmdbRating)}
+          <StarIcon size={15} />
+        </span>
+      )}
+    </div>
+  );
+  const ratingsRow = (
+    <div className="ratings-row">
+      {rating === "loading" && hasOmdbKey() && <span className="muted small">Loading IMDb rating...</span>}
+      {rating && rating !== "loading" && rating.imdbRating && (
+        <span className="rating-pill">IMDb {rating.imdbRating}</span>
+      )}
+      {rating && rating !== "loading" && !rating.imdbRating && (
+        <span className="muted small">
+          {rating.rateLimited
+            ? OMDB_RATE_LIMIT_MESSAGE
+            : rating.error
+              ? `OMDb: ${rating.error}`
+              : "No IMDb rating found for this episode."}
+        </span>
+      )}
+      {!hasOmdbKey() && <span className="muted small">Add an OMDb key in Settings to see IMDb ratings.</span>}
+    </div>
+  );
+  const streamingRow = (
+    streamingShowId !== undefined && (
+      <StreamingCapsules kind="show" tmdbId={streamingShowId} title={show.name} />
+    )
+  );
+
+  // The main action for the page's floating button: Mark as watched, or once
+  // watched, Watch again. The watched status itself (the green tick or count,
+  // which opens the viewing choices) sits in the body.
+  const pageAction = !canToggleWatched
+    ? null
+    : !watched
+      ? { label: "Mark as watched", run: () => runWatchAction(onToggleWatched, null) }
+      : onWatchAgain
+        ? { label: "Watch again", run: () => runWatchAction(onWatchAgain, "again") }
+        : null;
+
+  const statusMenuEl = statusMenu && (
+    <ActionMenu
+      anchor={rectAnchor(statusMenu)}
+      label={`${episode.name}: viewing status`}
+      title={episode.name}
+      subtitle={`${seasonEp} · ${viewingsInWords(watchCount)}`}
+      returnFocusTo={statusMenu}
+      anchorEl={statusMenu}
+      items={viewingStatusActions(watchCount)
+        .filter((a) => a.id === "not-watched" || statusCallbacks[a.id] !== undefined)
+        .map((a) => ({ id: a.id, label: a.label, danger: a.danger, checked: a.checked, icon: STATUS_ICONS[a.id] }))}
+      onSelect={(id) => {
+        setStatusMenu(null);
+        if (id === "watched-once") {
+          // Already watched exactly once: choosing it again writes nothing.
+          if (watchCount > 1) void runWatchAction(onWatchedOnce, "status");
+        } else if (id === "watched-again") void runWatchAction(onWatchAgain, "status");
+        else if (id === "remove-last") void runWatchAction(onRemoveLatestViewing, "minus");
+        else void runWatchAction(onToggleWatched, null);
+      }}
+      onClose={() => setStatusMenu(null)}
+    />
+  );
+
+  if (asPage) {
+    return (
+      <div
+        className={`details-page-root${isMobile ? " is-page" : " is-dialog"}${closing ? " is-leaving" : ""}`}
+        onClick={isMobile ? undefined : requestClose}
+      >
+        <div
+          ref={pageRef}
+          className={`details-page episode-page${pageAction ? " has-cta" : ""}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label={episode.name}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="details-page-scroll" ref={pageScrollRef}>
+            <div className="details-page-hero is-still">
+              {episode.stillPath ? (
+                <img src={`${TMDB_STILL_BASE}${episode.stillPath}`} alt="" className="details-page-hero-img" />
+              ) : (
+                <div className="details-page-hero-img details-page-hero-empty" />
+              )}
+              <div className="details-page-hero-fade" />
+            </div>
+            <div className="details-page-body">
+              <div className="details-page-head">
+                {metaLine}
+                {titleRow}
+              </div>
+              {ratingsRow}
+              <ExpandableText
+                className="overview"
+                lines={4}
+                inlineToggle
+                text={episode.overview || (rating !== "loading" && rating?.plot) || "No summary available."}
+              />
+              {canToggleWatched && watched && (
+                <div className="field-row details-secondary">
+                  <button
+                    className={`ep-watched-status${confirmed === "status" ? " is-confirmed" : ""}`}
+                    onClick={(e) => setStatusMenu(e.currentTarget)}
+                    aria-disabled={saving}
+                    aria-haspopup="menu"
+                    aria-expanded={statusMenu !== null}
+                    aria-label={`${viewingsInWords(watchCount)}. Change viewing status`}
+                  >
+                    <span className="watch-indicator on" aria-hidden="true">
+                      <WatchMark count={watchCount} minus={confirmed === "minus"} />
+                    </span>
+                    Watched
+                  </button>
+                </div>
+              )}
+              {saveError && (
+                <p className="status-error small" role="alert">
+                  Couldn't save that, so nothing changed. ({saveError})
+                </p>
+              )}
+              {streamingRow}
+            </div>
+          </div>
+
+          <div className="details-page-topbar">
+            <button className="details-page-icon" onClick={requestClose} aria-label="Close">
+              &times;
+            </button>
+          </div>
+
+          {pageAction && (
+            <div className="details-page-cta">
+              <button
+                type="button"
+                className={`details-page-cta-button${confirmed === "again" ? " is-confirmed" : ""}`}
+                onClick={pageAction.run}
+                aria-disabled={saving}
+              >
+                {pageAction.label}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {statusMenuEl}
+      </div>
+    );
+  }
+
   return (
     <div className={`modal-backdrop ${closing ? "is-leaving" : ""}`} onClick={requestClose}>
       <div className={`modal episode-detail-modal ${animationClass}`} onClick={(e) => e.stopPropagation()}>
@@ -282,6 +496,7 @@ export default function EpisodeDetailsPanel({
           ) : (
             <div className="poster-placeholder episode-hero-img" />
           )}
+          <div className="episode-hero-fade" />
         </div>
 
         <div className="episode-detail-body">
@@ -294,20 +509,7 @@ export default function EpisodeDetailsPanel({
               app and the widget sharing this component. The route to this
               EPISODE in the app is its title below, so each control goes to
               the thing it names. */}
-          <p className="episode-meta-line">
-            {onOpenSeries ? (
-              <button type="button" className="episode-show-link" onClick={handleOpenSeries} aria-label={openSeriesLabel}>
-                <span className="episode-show-link-name">{show.name}</span>
-                <span aria-hidden="true"> &rsaquo;</span>
-              </button>
-            ) : (
-              <span className="episode-show-link-name">{show.name}</span>
-            )}
-            <span aria-hidden="true"> · </span>
-            <span className="episode-meta-code">{seasonEp}</span>
-            <span aria-hidden="true"> · </span>
-            <span>{airLine}</span>
-          </p>
+          {metaLine}
 
           {/* 3: title. A CONTROL only in the widget overlay, where it is the
               route into the app's own episode page. Inside the app this panel
@@ -317,40 +519,10 @@ export default function EpisodeDetailsPanel({
               undefined at every in-app call site, which is what enforces
               that — the app cannot accidentally acquire the behaviour by
               rendering this panel somewhere new. */}
-          <h2 className="episode-detail-title">
-            {onOpenEpisodeInApp ? (
-              <button
-                type="button"
-                className="episode-open-list episode-title-link"
-                onClick={onOpenEpisodeInApp}
-                aria-label={openEpisodeLabel}
-              >
-                {episode.name}
-                <span aria-hidden="true"> &rsaquo;</span>
-              </button>
-            ) : (
-              episode.name
-            )}
-          </h2>
+          {titleRow}
 
           {/* 5: rating */}
-          <div className="ratings-row">
-            <span className="rating-pill">TMDB {episode.tmdbRating.toFixed(1)}</span>
-            {rating === "loading" && hasOmdbKey() && <span className="muted small">Loading IMDb rating...</span>}
-            {rating && rating !== "loading" && rating.imdbRating && (
-              <span className="rating-pill">IMDb {rating.imdbRating}</span>
-            )}
-            {rating && rating !== "loading" && !rating.imdbRating && (
-              <span className="muted small">
-                {rating.rateLimited
-                  ? OMDB_RATE_LIMIT_MESSAGE
-                  : rating.error
-                    ? `OMDb: ${rating.error}`
-                    : "No IMDb rating found for this episode."}
-              </span>
-            )}
-            {!hasOmdbKey() && <span className="muted small">Add an OMDb key in Settings to see IMDb ratings.</span>}
-          </div>
+          {ratingsRow}
 
           {/* 6: description / synopsis */}
           <p className="overview">
@@ -359,9 +531,7 @@ export default function EpisodeDetailsPanel({
 
           {/* 7: where to watch it. Below the synopsis and above the actions,
               the same position it takes in the show and movie panels. */}
-          {streamingShowId !== undefined && (
-            <StreamingCapsules kind="show" tmdbId={streamingShowId} title={show.name} />
-          )}
+          {streamingRow}
 
           {/* 8: actions. Separate "Mark watched" toggle and "Watch again",
               the latter shown only once watched. Deliberately plain buttons,
@@ -431,29 +601,7 @@ export default function EpisodeDetailsPanel({
       {/* The viewing-status choices, by the shared rule (viewingStatusActions)
           so they match the season list's tick and a movie's indicator; an
           entry is left out where this context has no callback for it. */}
-      {statusMenu && (
-        <ActionMenu
-          anchor={rectAnchor(statusMenu)}
-          label={`${episode.name}: viewing status`}
-          title={episode.name}
-          subtitle={`${seasonEp} · ${viewingsInWords(watchCount)}`}
-          returnFocusTo={statusMenu}
-          anchorEl={statusMenu}
-          items={viewingStatusActions(watchCount)
-            .filter((a) => a.id === "not-watched" || statusCallbacks[a.id] !== undefined)
-            .map((a) => ({ id: a.id, label: a.label, danger: a.danger, checked: a.checked, icon: STATUS_ICONS[a.id] }))}
-          onSelect={(id) => {
-            setStatusMenu(null);
-            if (id === "watched-once") {
-              // Already watched exactly once: choosing it again writes nothing.
-              if (watchCount > 1) void runWatchAction(onWatchedOnce, "status");
-            } else if (id === "watched-again") void runWatchAction(onWatchAgain, "status");
-            else if (id === "remove-last") void runWatchAction(onRemoveLatestViewing, "minus");
-            else void runWatchAction(onToggleWatched, null);
-          }}
-          onClose={() => setStatusMenu(null)}
-        />
-      )}
+      {statusMenuEl}
 
       {/* The "it worked" beat of the widget's mark-watched hand-off. Without it
           the panel just leaves and the user has to infer from the widget behind

@@ -15,6 +15,7 @@ import MovieWatchedOverlay from "./MovieWatchedOverlay";
 import RatingChip from "./RatingChip";
 import { BookmarkIcon } from "./icons";
 import { titleQuickActionProps } from "../lib/titleQuickActions";
+import { PosterRailSkeleton } from "./Skeleton";
 
 const itemKey = (item: SectionItem) => libraryKey(item.kind, item.tmdbId);
 
@@ -246,7 +247,23 @@ export default function ForYou({ onOpen }: { onOpen: (kind: "show" | "movie", tm
   }, []);
 
   if (!hasApiKey()) return null;
-  if (loading) return <p className="muted small">Working out what you might like...</p>;
+  if (loading) {
+    return (
+      <div className="for-you" aria-busy="true">
+        <div className="for-you-head">
+          <h2>For you</h2>
+        </div>
+        {[0, 1, 2].map((i) => (
+          <section className="rail-section" key={i}>
+            <div className="rail-head">
+              <span className="skeleton skeleton-line is-title" style={{ width: 160 }} />
+            </div>
+            <PosterRailSkeleton count={5} />
+          </section>
+        ))}
+      </div>
+    );
+  }
   if (!result) return null;
 
   if (result.status === "cold-start") {

@@ -292,7 +292,16 @@ async function fetchSeasonInto(tmdbId: number, seasonNumber: number, cached: Epi
  * the show details response this function already fetches, and a finished
  * season is never in flight.
  */
-export async function ensureEpisodesCached(tmdbId: number, now = new Date()): Promise<number[]> {
+export async function ensureEpisodesCached(
+  tmdbId: number,
+  now = new Date(),
+  /**
+   * A pull to refresh: re-read every in-flight season now, ignoring the
+   * IN_FLIGHT_REFRESH_MS pause. Finished seasons are still left alone unless
+   * their episode count changed, so this stays cheap.
+   */
+  options: { force?: boolean } = {}
+): Promise<number[]> {
   const details = await getTvShowDetails(tmdbId);
   const seasonNumbers = details.seasons.filter((s) => s.season_number > 0).map((s) => s.season_number);
 
@@ -320,7 +329,8 @@ export async function ensureEpisodesCached(tmdbId: number, now = new Date()): Pr
     for (const n of withdrawn) cachedBySeason.delete(n);
   }
 
-  for (const { seasonNumber } of seasonsNeedingRefresh(details, cachedBySeason, now)) {
+  const recent = options.force ? new Map<string, number>() : lastInFlightRefresh;
+  for (const { seasonNumber } of seasonsNeedingRefresh(details, cachedBySeason, now, recent)) {
     // Marked before the request, not after: a season whose fetch fails should
     // not be retried on every re-render until the interval is up. The count
     // check is not subject to it, so a count change is still fetched on the

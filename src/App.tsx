@@ -1,15 +1,11 @@
-import { useState, useEffect, useRef, type ComponentType, type CSSProperties } from "react";
+import { lazy, Suspense, useState, useEffect, useRef, type ComponentType, type CSSProperties } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { App as CapacitorApp } from "@capacitor/app";
 import { db } from "./db";
 import Home from "./pages/Home";
 import Library from "./pages/Library";
 import Movies from "./pages/Movies";
-import AddTitle from "./pages/AddTitle";
-import ForYouPage from "./pages/ForYouPage";
-import Settings from "./pages/Settings";
 import BackupNudge from "./components/BackupNudge";
-import FirstRunWizard from "./components/FirstRunWizard";
 import BrandMark from "./components/BrandMark";
 import { hasApiKey } from "./tmdb";
 import { APP_NAME } from "./appInfo";
@@ -37,6 +33,27 @@ import { useWidgetSync } from "./lib/widget/sync";
 import { useOnline } from "./lib/useOnline";
 import { HomeIcon, ShowsIcon, MoviesIcon, DiscoverIcon, ForYouIcon, SettingsIcon, type IconProps } from "./components/icons";
 import "./index.css";
+
+// Screens that are not Home load as their own chunks, so the app starts by
+// parsing only what the first screen needs. They are fetched in the
+// background as soon as the app is idle (preloadScreens), so by the time
+// anyone taps Discover, For You or Settings the code is already there.
+const loadAddTitle = () => import("./pages/AddTitle");
+const loadForYou = () => import("./pages/ForYouPage");
+const loadSettings = () => import("./pages/Settings");
+const AddTitle = lazy(loadAddTitle);
+const ForYouPage = lazy(loadForYou);
+const Settings = lazy(loadSettings);
+// Only ever shown before a TMDB key exists.
+const FirstRunWizard = lazy(() => import("./components/FirstRunWizard"));
+
+function preloadScreens(): void {
+  const run = () => {
+    for (const load of [loadAddTitle, loadForYou, loadSettings]) load().catch(() => {});
+  };
+  if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 3000 });
+  else setTimeout(run, 1500);
+}
 
 type Tab = "home" | "shows" | "movies" | "discover" | "forYou" | "settings";
 
@@ -131,6 +148,10 @@ function App() {
   useWidgetSync();
 
   useEffect(() => {
+    preloadScreens();
+  }, []);
+
+  useEffect(() => {
     initStoragePersistence().then(setPersistStatus);
     const onBackupCompleted = () => forceNudgeRecheck((t) => t + 1);
     window.addEventListener(BACKUP_COMPLETED_EVENT, onBackupCompleted);
@@ -200,12 +221,14 @@ function App() {
   return (
     <>
       {showOnboarding && (
-        <FirstRunWizard
-          onComplete={() => {
-            setShowOnboarding(false);
-            setShowNotificationPrompt(needsNotificationAnswer());
-          }}
-        />
+        <Suspense fallback={null}>
+          <FirstRunWizard
+            onComplete={() => {
+              setShowOnboarding(false);
+              setShowNotificationPrompt(needsNotificationAnswer());
+            }}
+          />
+        </Suspense>
       )}
       {showNotificationPrompt && <NotificationPrompt onClose={() => setShowNotificationPrompt(false)} />}
 
@@ -297,9 +320,11 @@ function App() {
             {tab === "movies" && (
               <Movies initialFilter={moviesInitialFilter} onInitialFilterConsumed={() => setMoviesInitialFilter(null)} />
             )}
-            {tab === "discover" && <AddTitle />}
-            {tab === "forYou" && <ForYouPage />}
-            {tab === "settings" && <Settings />}
+            <Suspense fallback={null}>
+              {tab === "discover" && <AddTitle />}
+              {tab === "forYou" && <ForYouPage />}
+              {tab === "settings" && <Settings />}
+            </Suspense>
           </div>
         </main>
 

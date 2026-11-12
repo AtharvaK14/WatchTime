@@ -5,7 +5,7 @@
      "+7 more · New · Season premiere" with only "New" in the accent.
 
      The middle column is the only flexible one (weight=1); the poster and the
-     button are fixed, so narrowing the widget shortens the text and never
+     tick are fixed, so narrowing the widget shortens the text and never
      pushes the button off the edge. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/row_root"
@@ -62,5 +62,16 @@
             android:ellipsize="end"
             android:visibility="gone" />
     </LinearLayout>
+
+    <!-- Marks this episode watched without opening the panel. 44dp touch
+         target around the 28dp tick. -->
+    <ImageView
+        android:id="@+id/row_tick"
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:layout_marginStart="4dp"
+        android:padding="8dp"
+        android:src="@drawable/widget_tick"
+        android:contentDescription="@string/widget_mark_watched" />
 
 </LinearLayout>

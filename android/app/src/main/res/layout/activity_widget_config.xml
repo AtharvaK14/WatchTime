@@ -1,17 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- The widget appearance screen.
+<!-- The widget settings screen, in the app's Settings style (One UI grouped
+     lists): a large title, the live preview over the user's wallpaper, then
+     rounded groups of settings under small labels, and Cancel / Save pinned
+     at the bottom.
 
      The window is translucent and carries android:windowShowWallpaper (see
      WidgetConfigTheme), so the user's own wallpaper sits behind everything
-     here. That is why the root and the preview band below have NO background:
-     the wallpaper shows exactly where nothing opaque is drawn, and the panels
+     here. That is why the root and the preview band have NO background: the
+     wallpaper shows exactly where nothing opaque is drawn, and the panels
      above and below paint themselves over it. WallpaperViewportView rounds the
-     opening. Without this, the preview sat on a flat page and told the user
-     nothing about how the widget would actually look on their home screen.
+     opening.
 
      fitsSystemWindows keeps the title clear of the status bar, which a
      translucent window would otherwise draw underneath. -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
@@ -22,41 +25,38 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:background="@color/widget_bg"
-        android:paddingStart="20dp"
-        android:paddingEnd="20dp"
-        android:paddingTop="16dp"
+        android:paddingStart="24dp"
+        android:paddingEnd="24dp"
+        android:paddingTop="20dp"
         android:paddingBottom="12dp">
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:fontFamily="sans-serif-medium"
             android:text="@string/widget_config_title"
             android:textColor="@color/widget_text"
-            android:textSize="22sp"
-            android:textStyle="bold" />
+            android:textSize="26sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:text="@string/widget_config_hint"
-            android:textColor="@color/widget_muted"
+            android:textColor="@color/widget_text_2"
             android:textSize="13sp" />
     </LinearLayout>
 
-    <!-- The wallpaper band. Deliberately backgroundless. Tall enough for the
-         preview's full three rows: the previous height cut the last one off
-         mid-poster, which looked like a glitch rather than a longer list. -->
+    <!-- The wallpaper band, with the widget preview floating in the opening at
+         roughly the size and inset it would have on a home screen. -->
     <FrameLayout
         android:layout_width="match_parent"
-        android:layout_height="340dp">
+        android:layout_height="300dp">
 
         <com.indie.watchtime.widget.WallpaperViewportView
             android:layout_width="match_parent"
             android:layout_height="match_parent" />
 
-        <!-- The widget preview floats inside the opening, at roughly the size
-             and inset it would have on a home screen. -->
         <FrameLayout
             android:id="@+id/config_preview_host"
             android:layout_width="match_parent"
@@ -64,8 +64,8 @@
             android:layout_gravity="center"
             android:paddingStart="34dp"
             android:paddingEnd="34dp"
-            android:paddingTop="18dp"
-            android:paddingBottom="18dp" />
+            android:paddingTop="16dp"
+            android:paddingBottom="16dp" />
     </FrameLayout>
 
     <ScrollView
@@ -79,14 +79,18 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:padding="20dp">
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="16dp">
+
+            <!-- ==== Background ==== -->
+            <TextView
+                style="@style/WidgetConfigGroupLabel"
+                android:text="@string/widget_config_group_background" />
 
             <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:background="@drawable/widget_config_card"
-                android:padding="16dp">
+                style="@style/WidgetConfigGroup">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -95,55 +99,156 @@
                     android:gravity="center_vertical">
 
                     <TextView
+                        style="@style/WidgetConfigRowTitle"
                         android:layout_width="0dp"
-                        android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="@string/widget_config_opacity_label"
-                        android:textColor="@color/widget_text"
-                        android:textSize="15sp" />
+                        android:text="@string/widget_config_opacity_label" />
 
                     <TextView
                         android:id="@+id/config_opacity_value"
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/widget_text"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
+                        android:textColor="@color/widget_text_2"
+                        android:textSize="15sp" />
                 </LinearLayout>
 
                 <SeekBar
                     android:id="@+id/config_opacity_slider"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:max="100" />
+                    android:layout_height="44dp"
+                    android:layout_marginTop="2dp"
+                    android:max="100"
+                    android:maxHeight="10dp"
+                    android:minHeight="10dp"
+                    android:paddingStart="13dp"
+                    android:paddingEnd="13dp"
+                    android:progressDrawable="@drawable/widget_config_slider_track"
+                    android:thumb="@drawable/widget_config_slider_thumb"
+                    android:thumbOffset="0dp"
+                    android:splitTrack="false"
+                    android:background="@null" />
+
+                <View style="@style/WidgetConfigDivider" />
+
+                <TextView
+                    style="@style/WidgetConfigRowTitle"
+                    android:text="@string/widget_config_colour" />
+
+                <RadioGroup
+                    android:id="@+id/config_background"
+                    style="@style/WidgetConfigSegmented">
+                    <RadioButton style="@style/WidgetConfigSegment" android:id="@+id/config_bg_dark" android:text="@string/widget_config_colour_dark" />
+                    <RadioButton style="@style/WidgetConfigSegment" android:id="@+id/config_bg_black" android:text="@string/widget_config_colour_black" />
+                    <RadioButton style="@style/WidgetConfigSegment" android:id="@+id/config_bg_grey" android:text="@string/widget_config_colour_grey" />
+                </RadioGroup>
             </LinearLayout>
 
+            <!-- ==== Layout ==== -->
+            <TextView
+                style="@style/WidgetConfigGroupLabel"
+                android:text="@string/widget_config_group_layout" />
+
             <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="20dp"
-                android:orientation="horizontal">
+                style="@style/WidgetConfigGroup">
 
-                <Button
-                    android:id="@+id/config_cancel"
-                    style="?android:attr/borderlessButtonStyle"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="@string/widget_config_cancel"
-                    android:textColor="@color/widget_muted" />
+                <TextView
+                    style="@style/WidgetConfigRowTitle"
+                    android:text="@string/widget_config_corners" />
 
-                <Button
-                    android:id="@+id/config_save"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:layout_marginStart="12dp"
-                    android:backgroundTint="@color/widget_text"
-                    android:textColor="@color/widget_bg"
-                    android:text="@string/widget_config_save" />
+                <RadioGroup
+                    android:id="@+id/config_corners"
+                    style="@style/WidgetConfigSegmented">
+                    <RadioButton style="@style/WidgetConfigSegment" android:id="@+id/config_corners_small" android:text="@string/widget_config_size_small" />
+                    <RadioButton style="@style/WidgetConfigSegment" android:id="@+id/config_corners_medium" android:text="@string/widget_config_size_medium" />
+                    <RadioButton style="@style/WidgetConfigSegment" android:id="@+id/config_corners_large" android:text="@string/widget_config_size_large" />
+                </RadioGroup>
+
+                <View style="@style/WidgetConfigDivider" />
+
+                <TextView
+                    style="@style/WidgetConfigRowTitle"
+                    android:text="@string/widget_config_text_size" />
+
+                <RadioGroup
+                    android:id="@+id/config_text_size"
+                    style="@style/WidgetConfigSegmented">
+                    <RadioButton style="@style/WidgetConfigSegment" android:id="@+id/config_text_small" android:text="@string/widget_config_size_small" />
+                    <RadioButton style="@style/WidgetConfigSegment" android:id="@+id/config_text_default" android:text="@string/widget_config_size_default" />
+                    <RadioButton style="@style/WidgetConfigSegment" android:id="@+id/config_text_large" android:text="@string/widget_config_size_large" />
+                </RadioGroup>
+
+                <View style="@style/WidgetConfigDivider" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/config_compact"
+                    style="@style/WidgetConfigSwitch"
+                    android:text="@string/widget_config_compact"
+                    app:track="@drawable/widget_config_switch_track" />
+                <TextView
+                    style="@style/WidgetConfigRowSub"
+                    android:text="@string/widget_config_compact_sub" />
+            </LinearLayout>
+
+            <!-- ==== Show ==== -->
+            <TextView
+                style="@style/WidgetConfigGroupLabel"
+                android:text="@string/widget_config_group_show" />
+
+            <LinearLayout
+                style="@style/WidgetConfigGroup">
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/config_header"
+                    style="@style/WidgetConfigSwitch"
+                    android:text="@string/widget_config_header"
+                    app:track="@drawable/widget_config_switch_track" />
+
+                <View style="@style/WidgetConfigDivider" />
+
+                <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/config_artwork"
+                    style="@style/WidgetConfigSwitch"
+                    android:text="@string/widget_config_artwork"
+                    app:track="@drawable/widget_config_switch_track" />
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
+
+    <!-- Cancel and the one primary action, always in reach. -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="@color/widget_bg"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="16dp">
+
+        <Button
+            android:id="@+id/config_cancel"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:text="@string/widget_config_cancel"
+            android:textColor="@color/widget_text_2" />
+
+        <Button
+            android:id="@+id/config_save"
+            android:layout_width="0dp"
+            android:layout_height="52dp"
+            android:layout_weight="1"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/widget_config_primary"
+            android:fontFamily="sans-serif-medium"
+            android:stateListAnimator="@null"
+            android:textAllCaps="false"
+            android:textSize="16sp"
+            android:textColor="@color/widget_bg"
+            android:text="@string/widget_config_save" />
+    </LinearLayout>
 </LinearLayout>

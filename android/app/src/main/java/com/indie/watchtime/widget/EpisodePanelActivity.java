@@ -47,6 +47,12 @@ public class EpisodePanelActivity extends AppCompatActivity {
     public static final String EXTRA_EPISODE_KEY = "episodeKey";
     /** Coming Up rows pass this: an episode that has not aired cannot be marked watched. */
     public static final String EXTRA_READONLY = "readonly";
+    /**
+     * Set by an Up Next row's tick: mark the episode watched straight away,
+     * show a short confirmation over the home screen, and close, instead of
+     * opening the panel.
+     */
+    public static final String EXTRA_MARK_WATCHED = "markWatched";
 
     private static final String INTERFACE_NAME = "WatchTimePanelHost";
 
@@ -60,6 +66,7 @@ public class EpisodePanelActivity extends AppCompatActivity {
         int showId = getIntent().getIntExtra(EXTRA_SHOW_ID, 0);
         String episodeKey = getIntent().getStringExtra(EXTRA_EPISODE_KEY);
         boolean readonly = getIntent().getBooleanExtra(EXTRA_READONLY, false);
+        boolean markWatched = !readonly && getIntent().getBooleanExtra(EXTRA_MARK_WATCHED, false);
         if (episodeKey == null || episodeKey.isEmpty()) {
             finish();
             return;
@@ -112,6 +119,7 @@ public class EpisodePanelActivity extends AppCompatActivity {
                 .appendQueryParameter("showId", String.valueOf(showId))
                 .appendQueryParameter("episodeKey", episodeKey)
                 .appendQueryParameter("readonly", readonly ? "1" : "0")
+                .appendQueryParameter("quick", markWatched ? "1" : "0")
                 .build();
         webView.loadUrl(url.toString());
     }
@@ -130,13 +138,23 @@ public class EpisodePanelActivity extends AppCompatActivity {
     }
 
     /**
-     * The page's channel back to native. Four methods, matching
+     * The page's channel back to native. Five methods, matching
      * src/lib/widget/panelHost.ts.
      *
      * All are called on a WebView JavaScript thread, so anything touching the
      * activity or the widget manager is posted to the main thread.
      */
     private class PanelHost {
+
+        /** Touch feedback for the panel's tick (src/lib/haptics.ts). */
+        @JavascriptInterface
+        public void haptic(String kind) {
+            runOnUiThread(() -> {
+                if (webView != null) {
+                    webView.performHapticFeedback(com.indie.watchtime.HapticsPlugin.constantFor(kind));
+                }
+            });
+        }
 
         @JavascriptInterface
         public void close() {
