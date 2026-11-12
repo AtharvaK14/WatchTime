@@ -46,6 +46,7 @@ import { KebabIcon, StarIcon } from "./icons";
 import WatchMark from "./WatchMark";
 import { DetailsSkeleton } from "./Skeleton";
 import PersonPage from "./PersonPage";
+import EpisodeOffer from "./EpisodeOffer";
 import CastRail from "./CastRail";
 import { formatRuntime } from "../lib/runtime";
 
@@ -405,6 +406,14 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   const [catchUpOffer, setCatchUpOffer] = useState<{ episodesInSeason: Episode[]; earlierSeasonNumbers: number[] } | null>(
     null
   );
+  // See offerUnwatchAfter. Never set at the same time as catchUpOffer: each
+  // write that sets one clears the other.
+  const [unwatchOffer, setUnwatchOffer] = useState<{
+    rows: WatchedEpisode[];
+    inSeason: number;
+    laterSeasons: number;
+    from: "episode" | "season";
+  } | null>(null);
 
   /**
    * Every episode write in this panel goes through here: skipped (resolving
@@ -470,10 +479,63 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   }
 
   /** Not watched: the rows go, which is what unwatched is in this data model (see markEpisodesUnwatched). */
-  async function unmarkEpisodes(eps: Episode[]) {
+  async function unmarkEpisodes(eps: { key: string }[]) {
     const removed = await episodeWrite(eps, () => markEpisodesUnwatched(tmdbId, eps));
-    if (removed !== undefined) setCatchUpOffer(null);
+    if (removed !== undefined) {
+      setCatchUpOffer(null);
+      setUnwatchOffer(null);
+    }
     return removed;
+  }
+
+  /**
+   * The mirror of the catch-up offer. After something is marked not watched,
+   * anything still marked watched AFTER it (later in the season, and in later
+   * seasons) is offered for unmarking too: someone who jumped ahead, caught
+   * up, and then steps back to episode 17 usually means "I am at 17", not
+   * "17 is the one hole". Only ever an offer: the write already made is
+   * exactly what was asked for, and nothing else changes unless they accept.
+   *
+   * Read from the database after the write rather than from this render's
+   * rows, so it is right even when called from a menu that opened earlier.
+   * Watch rows carry their own season and episode numbers, so later seasons
+   * count whether or not their episode lists are cached here. Specials
+   * (season 0) are outside the running order and are never offered.
+   */
+  async function offerUnwatchAfter(seasonNumber: number, afterEpisode: number | null) {
+    if (seasonNumber <= 0) return;
+    const rows = await db.watchedEpisodes.where("showId").equals(tmdbId).toArray();
+    const inSeason =
+      afterEpisode === null
+        ? []
+        : rows.filter((w) => w.seasonNumber === seasonNumber && w.episodeNumber > afterEpisode);
+    const inLaterSeasons = rows.filter((w) => w.seasonNumber > seasonNumber);
+    setUnwatchOffer(
+      inSeason.length > 0 || inLaterSeasons.length > 0
+        ? {
+            rows: [...inSeason, ...inLaterSeasons],
+            inSeason: inSeason.length,
+            laterSeasons: new Set(inLaterSeasons.map((w) => w.seasonNumber)).size,
+            from: afterEpisode === null ? "season" : "episode",
+          }
+        : null
+    );
+  }
+
+  /** One episode marked not watched, then the offer for the watched ones after it. */
+  async function unmarkEpisode(ep: Episode) {
+    const removed = await unmarkEpisodes([ep]);
+    if (removed !== undefined) await offerUnwatchAfter(ep.seasonNumber, ep.episodeNumber).catch(() => {});
+    return removed;
+  }
+
+  async function acceptUnwatchOffer() {
+    if (!unwatchOffer) return;
+    try {
+      await unmarkEpisodes(unwatchOffer.rows);
+    } catch (e) {
+      showErrorToast(e);
+    }
   }
 
   /**
@@ -504,10 +566,11 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   async function toggleEpisodeWatched(ep: Episode): Promise<boolean> {
     if (!inLibrary) return false;
     if (watchedKeys.has(ep.key)) {
-      return (await unmarkEpisodes([ep])) !== undefined;
+      return (await unmarkEpisode(ep)) !== undefined;
     }
     haptic("confirm");
     if ((await markEpisodesWatched([ep])) === undefined) return false;
+    setUnwatchOffer(null);
 
     const seasonEps = episodesBySeason.get(ep.seasonNumber) ?? [];
     const episodesInSeason = seasonEps.filter((e) => e.episodeNumber < ep.episodeNumber && !watchedKeys.has(e.key));
@@ -526,12 +589,17 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     if (markWatched) {
       haptic("confirm");
       if ((await markEpisodesWatched(seasonEpisodes)) === undefined) return false;
+      setUnwatchOffer(null);
       const thisSeason = seasonEpisodes[0]?.seasonNumber;
       const earlierSeasonNumbers = thisSeason === undefined ? [] : earlierSeasonsNeedingCatchUp(thisSeason);
       setCatchUpOffer(earlierSeasonNumbers.length > 0 ? { episodesInSeason: [], earlierSeasonNumbers } : null);
       return true;
     }
-    return (await unmarkEpisodes(seasonEpisodes)) !== undefined;
+    if ((await unmarkEpisodes(seasonEpisodes)) === undefined) return false;
+    // A whole season unmarked: the same offer, for the seasons after it.
+    const season = seasonEpisodes[0]?.seasonNumber;
+    if (season !== undefined) await offerUnwatchAfter(season, null).catch(() => {});
+    return true;
   }
 
   /**
@@ -571,7 +639,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
           if ((await rewatchEpisodes([ep])) !== undefined) confirmVisually([ep.key]);
         },
         "remove-last": async () => void (await removeLastViewing(ep)),
-        "not-watched": async () => void (await unmarkEpisodes([ep])),
+        "not-watched": async () => void (await unmarkEpisode(ep)),
       }),
     });
   }
@@ -601,7 +669,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
           return `Removed the last viewing of ${episodeCode(ep)}. ${viewingsInWords(now)} now.`;
         },
         "mark-unwatched": async () => {
-          if ((await unmarkEpisodes([ep])) === undefined) return;
+          if ((await unmarkEpisode(ep)) === undefined) return;
           return `${episodeCode(ep)} marked as unwatched.`;
         },
         "episode-details": () => setOpenEpisode(ep),
@@ -863,6 +931,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     setWatchCountByKey(new Map());
     setWatchedRows([]);
     setCatchUpOffer(null);
+    setUnwatchOffer(null);
   }
 
   /**
@@ -1145,23 +1214,6 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
           Previewing seasons and episodes. Add this show to your Shows to start tracking what you've watched.
         </p>
       )}
-      {catchUpOffer && (
-        <div className="catch-up-offer">
-          <span>
-            Also mark{" "}
-            {catchUpOffer.episodesInSeason.length > 0 &&
-              `the ${catchUpOffer.episodesInSeason.length} episode${catchUpOffer.episodesInSeason.length === 1 ? "" : "s"} before this one in this season`}
-            {catchUpOffer.episodesInSeason.length > 0 && catchUpOffer.earlierSeasonNumbers.length > 0 && " and "}
-            {catchUpOffer.earlierSeasonNumbers.length > 0 &&
-              `${catchUpOffer.earlierSeasonNumbers.length} earlier season${catchUpOffer.earlierSeasonNumbers.length === 1 ? "" : "s"}`}
-            {" "}as watched?
-          </span>
-          <div className="field-row">
-            <button onClick={acceptCatchUp}>Yes, catch up</button>
-            <button onClick={() => setCatchUpOffer(null)}>No, just this one</button>
-          </div>
-        </div>
-      )}
       {seasonNumbers!.map((seasonNumber) => {
         const isExpanded = expandedSeason === seasonNumber;
         const eps = episodesBySeason.get(seasonNumber) ?? [];
@@ -1327,6 +1379,53 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     </div>
   );
 
+  // Both offers as one floating card at the bottom of the page (and over the
+  // episode page, when the mark was made there): what was skipped, in a
+  // sentence, then "Just this one" and the action. The card is not modal:
+  // the list behind it stays usable and the next mark replaces the offer,
+  // exactly as the inline banner behaved.
+  const count = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const offerCard = catchUpOffer ? (
+    <EpisodeOffer
+      raised={openEpisode !== null}
+      title="Mark earlier ones too?"
+      body={`${[
+        catchUpOffer.episodesInSeason.length > 0
+          ? `${count(catchUpOffer.episodesInSeason.length, "episode")} before this one in this season`
+          : null,
+        catchUpOffer.earlierSeasonNumbers.length > 0 ? count(catchUpOffer.earlierSeasonNumbers.length, "earlier season") : null,
+      ]
+        .filter(Boolean)
+        .join(" and ")} ${
+        catchUpOffer.episodesInSeason.length + catchUpOffer.earlierSeasonNumbers.length === 1 ? "is" : "are"
+      } not marked as watched.`}
+      dismissLabel={catchUpOffer.episodesInSeason.length === 0 ? "Just this season" : "Just this one"}
+      actionLabel="Mark as watched"
+      onDismiss={() => setCatchUpOffer(null)}
+      onAction={acceptCatchUp}
+    />
+  ) : unwatchOffer ? (
+    <EpisodeOffer
+      raised={openEpisode !== null}
+      title="Unmark later ones too?"
+      body={`${[
+        unwatchOffer.inSeason > 0 ? `${count(unwatchOffer.inSeason, "episode")} after this one in this season` : null,
+        unwatchOffer.laterSeasons > 0
+          ? `${count(unwatchOffer.rows.length - unwatchOffer.inSeason, "episode")} in ${count(unwatchOffer.laterSeasons, "later season")}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" and ")} ${unwatchOffer.rows.length === 1 ? "is" : "are"} still marked as watched. Unmarking ${
+        unwatchOffer.rows.length === 1 ? "it" : "them"
+      } deletes ${unwatchOffer.rows.length === 1 ? "its" : "their"} watch history.`}
+      dismissLabel={unwatchOffer.from === "season" ? "Just this season" : "Just this one"}
+      actionLabel={`Unmark ${unwatchOffer.rows.length}`}
+      destructive
+      onDismiss={() => setUnwatchOffer(null)}
+      onAction={acceptUnwatchOffer}
+    />
+  ) : null;
+
   const episodeDetailsModal = openEpisode && details && (
     <EpisodeDetailsPanel
       show={{ name: details.name, imdbId: details.imdbId }}
@@ -1431,6 +1530,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
       </div>
 
       {episodeDetailsModal}
+      {offerCard}
       {openPerson && (
         <PersonPage
           key={openPerson.id}

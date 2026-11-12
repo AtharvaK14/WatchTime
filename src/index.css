@@ -526,10 +526,6 @@ hr { border: none; border-top: 1px solid var(--border); }
 .watch-toggle-circle:hover:not(:disabled) { border-color: var(--text); }
 .watch-toggle-circle:disabled { color: var(--muted); opacity: 0.5; }
 
-.catch-up-offer {
-  padding: 12px 14px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 8px; font-size: 0.9rem;
-  position: sticky; top: 0; z-index: 3;
-}
 
 /* Season section restyle: clearer separation, bigger touch targets */
 .season-block { border-top: 1px solid var(--border); padding: 14px 0; }
@@ -4080,12 +4076,6 @@ a:hover { text-decoration-color: var(--text); }
 /* Progress in white, like the Shows grid: progress is not "done". */
 .season-progress { background: var(--surface-raised); }
 .season-progress span { background: var(--text); }
-/* The catch-up offer is a suggestion, not a warning: no red outline. */
-.catch-up-offer {
-  border: none;
-  border-radius: var(--r-md);
-  background: var(--surface-raised);
-}
 
 /* ---- Episode panel ------------------------------------------------------ */
 /* The flash after Mark as Watched is a watched mark, so it is green like every
@@ -5333,3 +5323,178 @@ a:hover { text-decoration-color: var(--text); }
   }
   .usearch.is-docked:not(:has(p)) { display: contents; }
 }
+
+/* ============================================================
+   BASE CONTROLS, One UI (the screens the redesign phases did not rebuild:
+   Settings sections, Diagnostics, the import wizard, first-run setup)
+
+   A plain button is a borderless tonal pill, like the buttons in the sheets
+   and the details page; the fill is a white wash rather than a surface
+   colour so it reads on the page, on a card and inside a raised group alike.
+   Fields and dropdowns are filled the same way, with the white focus ring as
+   their boundary. Classed controls keep their own shapes.
+   ============================================================ */
+button:not([class]),
+button.danger-button,
+.field-row > button:not([class]) {
+  min-height: 44px;
+  padding: 0 18px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  font-size: var(--fs-15);
+  font-weight: 600;
+}
+button:not([class]):hover:not(:disabled),
+button.danger-button:hover:not(:disabled) { background: rgba(255, 255, 255, 0.14); transform: none; }
+button:not([class]):active:not(:disabled) { background: rgba(255, 255, 255, 0.18); }
+/* Destructive, before its confirmation: the same pill, named in red. */
+button.danger-button { color: var(--danger); }
+
+input[type="text"],
+input[type="number"],
+input[type="password"],
+select {
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.07);
+  font-size: var(--fs-15);
+}
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23A9A8AE' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+}
+select option { background: var(--surface-raised); color: var(--text); }
+input[type="file"] { font-size: var(--fs-13); color: var(--text-2); }
+input[type="file"]::file-selector-button {
+  min-height: 40px;
+  margin-right: 12px;
+  padding: 0 16px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+}
+
+/* Home's release tag ("In Theaters"): a quiet sentence-case chip, not an
+   outlined capital label. */
+.release-tag {
+  border: none;
+  padding: 2px 9px;
+  font-size: var(--fs-12);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-2);
+}
+/* The season's menu button: round, like every other icon button. */
+.season-header .season-kebab { border-radius: 50%; }
+
+/* ============================================================
+   EPISODE OFFER (components/EpisodeOffer.tsx)
+   "Mark earlier ones too?" / "Unmark later ones too?": a floating card at
+   the bottom of the show page, in the sheets' shape. Not modal.
+   ============================================================ */
+.episode-offer {
+  position: fixed;
+  left: 8px;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  z-index: 12; /* over the show page and the episode page opened from it */
+  max-width: 460px;
+  margin: 0 auto;
+  padding: 18px 16px 14px;
+  border-radius: 28px;
+  background: var(--surface-raised);
+  box-shadow: 0 -4px 40px rgba(0, 0, 0, 0.6), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  animation: episode-offer-in 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* Clear of the episode page's floating main button. */
+.episode-offer.is-raised { bottom: calc(92px + env(safe-area-inset-bottom)); }
+@keyframes episode-offer-in {
+  from { opacity: 0; transform: translateY(24px); }
+  to { opacity: 1; transform: none; }
+}
+.episode-offer-title { margin: 0 6px 4px; font-size: var(--fs-17); font-weight: 700; }
+.episode-offer-body { margin: 0 6px 14px; font-size: var(--fs-15); line-height: 1.45; color: var(--text-2); }
+.episode-offer-actions { display: flex; gap: 8px; }
+.episode-offer .episode-offer-button,
+.episode-offer .episode-offer-button:hover:not(:disabled) {
+  flex: 1;
+  min-width: 0;
+  min-height: 48px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  font-size: var(--fs-15);
+  font-weight: 600;
+}
+.episode-offer .episode-offer-button.is-primary,
+.episode-offer .episode-offer-button.is-primary:hover:not(:disabled) { background: var(--text); color: var(--bg); }
+.episode-offer .episode-offer-button.is-danger,
+.episode-offer .episode-offer-button.is-danger:hover:not(:disabled) { background: var(--danger); color: #fff; }
+.episode-offer .episode-offer-button[aria-disabled="true"] { opacity: 0.6; }
+
+/* ============================================================
+   OLDER SCREENS, brought onto the same shapes: first-run setup, the
+   notification prompt, the import wizard, Diagnostics, About, the backup
+   reminder.
+   ============================================================ */
+/* Setup dialogs: the sheets' large corners, a sentence-case step label, and
+   the main action as the full-width white pill with "skip" centred below. */
+.modal.wizard { border-radius: 28px; padding: 24px 20px 20px; }
+.wizard-step-label {
+  font-size: var(--fs-13);
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-2);
+}
+.wizard-actions { align-items: stretch; gap: 6px; margin-top: 8px; }
+.wizard .wizard-primary,
+.wizard-primary {
+  min-height: 52px;
+  padding: 0 20px;
+  border: none;
+  border-radius: var(--r-pill);
+  font-size: var(--fs-15);
+}
+.wizard-actions .link-button { align-self: center; min-height: 44px; }
+
+/* The backup reminder's button: the white pill, like every primary. */
+.backup-nudge-cta,
+.backup-nudge-cta:hover:not(:disabled) { padding: 0 18px; border: none; border-radius: var(--r-pill); font-size: var(--fs-15); }
+
+/* Import progress and results, the diagnostic report, and About's sources:
+   borderless raised groups with the shared corners (About's had a rule down
+   the left edge instead). */
+.progress-block,
+.result-block,
+.diagnostic-report {
+  border: none;
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+  padding: 16px;
+}
+.about-source {
+  border-left: none;
+  padding: 14px 16px;
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+}
+/* Import: "which title did you mean" choices as tonal rows. */
+.candidate,
+.candidate:hover:not(:disabled) { border: none; border-radius: var(--r-lg); padding: 10px 12px; min-height: 56px; }
+.candidate img { border-radius: var(--r-xs); }
+.modal.wizard .wizard-primary { min-height: 52px; }
