@@ -22,11 +22,15 @@ if (panel === 'episode') {
   document.documentElement.dataset.wtpanel = 'episode'
   const showId = Number(params.get('showId'))
   const episodeKey = params.get('episodeKey') ?? ''
-  // quick=1 is an Up Next row's tick: mark watched and close, no panel.
+  // quick=1 is a widget row's tick: mark watched and close, no panel. A
+  // movieId means a Movies to Watch row rather than an Up Next one.
+  const movieId = Number(params.get('movieId'))
   if (params.get('quick') === '1') {
     root.render(
       <StrictMode>
-        <QuickMarkWatched showId={showId} episodeKey={episodeKey} />
+        <QuickMarkWatched
+          target={movieId > 0 ? { kind: 'movie', tmdbId: movieId } : { kind: 'episode', showId, episodeKey }}
+        />
       </StrictMode>,
     )
   } else root.render(

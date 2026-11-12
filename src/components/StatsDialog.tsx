@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "../db";
@@ -6,11 +6,14 @@ import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useBackHandler } from "../lib/backHandler";
 import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
 import { toDurationParts } from "../lib/stats";
-import { movieLibraryStats, showLibraryStats, type RankedTitle } from "../lib/libraryStats";
+import { movieLibraryStats, showLibraryStats, type MonthCount, type RankedTitle } from "../lib/libraryStats";
 import type { ShowWatchStatus } from "../lib/showWatchStatus";
 
 /** Matches the .episode-detail-modal exit this dialog borrows. */
 const EXIT_MS = 200;
+
+/** Months the "Watched by month" chart covers, ending with this one. */
+const CHART_MONTHS = 12;
 
 function duration(minutes: number): string {
   const d = toDurationParts(minutes);
@@ -120,8 +123,7 @@ export function ShowStatsDialog({
 
   let body: ReactNode = <p className="muted">Loading...</p>;
   if (data) {
-    const s = showLibraryStats(data.shows, data.episodes, data.watched, statusByShow);
-    const peak = Math.max(1, ...s.firstWatchesByMonth.map((m) => m.count));
+    const s = showLibraryStats(data.shows, data.episodes, data.watched, statusByShow, new Date(), CHART_MONTHS);
     body = (
       <>
         <Section title="Library">
@@ -149,29 +151,8 @@ export function ShowStatsDialog({
             ]}
           />
         </Section>
-        {s.mostWatched.length > 0 && (
-          <Section title="Most watched">
-            <Ranking
-              items={s.mostWatched}
-              unit={(t) => `${fmt(t.views)} view${t.views === 1 ? "" : "s"} · ${fmt(t.unique)} unique`}
-            />
-          </Section>
-        )}
-        <Section title="New episodes by month">
-          <p className="muted small stats-caption">
-            Episodes watched for the first time. Rewatches are left out: imported ones carry no dates.
-          </p>
-          <div className="stats-bars" role="list">
-            {s.firstWatchesByMonth.map((m) => (
-              <div key={m.month} className="stats-bar" role="listitem" aria-label={`${monthLabel(m.month)}: ${m.count}`}>
-                <span className="stats-bar-value">{m.count}</span>
-                <span className="stats-bar-track">
-                  <span style={{ height: `${(m.count / peak) * 100}%` }} />
-                </span>
-                <span className="stats-bar-label">{monthLabel(m.month, true)}</span>
-              </div>
-            ))}
-          </div>
+        <Section title="Watched by month">
+          <MonthChart data={s.firstWatchesByMonth} noun="episode" />
         </Section>
       </>
     );
@@ -190,7 +171,7 @@ export function MovieStatsDialog({ totalMinutes, onClose }: { totalMinutes: numb
 
   let body: ReactNode = <p className="muted">Loading...</p>;
   if (movies) {
-    const s = movieLibraryStats(movies);
+    const s = movieLibraryStats(movies, new Date(), CHART_MONTHS);
     body = (
       <>
         <Section title="Library">
@@ -211,6 +192,9 @@ export function MovieStatsDialog({ totalMinutes, onClose }: { totalMinutes: numb
             ]}
           />
         </Section>
+        <Section title="Watched by month">
+          <MonthChart data={s.firstWatchesByMonth} noun="movie" />
+        </Section>
         {s.mostRewatched.length > 0 && (
           <Section title="Most rewatched">
             <Ranking items={s.mostRewatched} unit={(t) => `${fmt(t.views)} viewings`} />
@@ -224,6 +208,64 @@ export function MovieStatsDialog({ totalMinutes, onClose }: { totalMinutes: numb
     <StatsShell title="Movie statistics" onClose={onClose}>
       {body}
     </StatsShell>
+  );
+}
+
+/**
+ * Twelve months as bars, the Digital Wellbeing way: the selected month's
+ * count large above the chart (this month to begin with), tap a bar to read
+ * another, and a dashed line for the monthly average. Bars are the watched
+ * green; the selected one is solid, the rest a step back.
+ *
+ * Counts first viewings: the only viewings every record has a date for.
+ */
+function MonthChart({ data, noun }: { data: MonthCount[]; noun: string }) {
+  const [selected, setSelected] = useState(data.length - 1);
+  const peak = Math.max(1, ...data.map((m) => m.count));
+  const average = data.reduce((sum, m) => sum + m.count, 0) / Math.max(1, data.length);
+  const current = data[Math.min(selected, data.length - 1)];
+  if (!current) return null;
+  return (
+    <div className="month-chart">
+      <div className="month-chart-head" aria-live="polite">
+        <span className="month-chart-value">{fmt(current.count)}</span>
+        <span className="month-chart-caption">
+          {noun}
+          {current.count === 1 ? "" : "s"} in {monthLabel(current.month)}
+        </span>
+        {average > 0 && (
+          <span className="month-chart-average">
+            <span className="month-chart-avg-key" aria-hidden="true" />
+            Monthly average {fmt(Math.round(average))}
+          </span>
+        )}
+      </div>
+      <div className="month-chart-plot">
+        {average > 0 && (
+          <span className="month-chart-avg" style={{ bottom: `${(average / peak) * 100}%` }} aria-hidden="true" />
+        )}
+        {data.map((m, i) => (
+          <button
+            key={m.month}
+            type="button"
+            className={`month-chart-bar${i === selected ? " is-selected" : ""}`}
+            aria-pressed={i === selected}
+            aria-label={`${monthLabel(m.month)}: ${fmt(m.count)}`}
+            onClick={() => setSelected(i)}
+          >
+            <span className="month-chart-fill" style={{ height: `${(m.count / peak) * 100}%` }} />
+          </button>
+        ))}
+      </div>
+      <div className="month-chart-axis" aria-hidden="true">
+        {data.map((m, i) => (
+          <span key={m.month} className={i === selected ? "is-selected" : ""}>
+            {monthLabel(m.month, true).slice(0, 1)}
+          </span>
+        ))}
+      </div>
+      <p className="month-chart-note">First viewings. Imported rewatches carry no dates, so they are not counted.</p>
+    </div>
   );
 }
 

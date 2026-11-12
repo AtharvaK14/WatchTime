@@ -14,13 +14,18 @@ import { buildWidgetSnapshot, type WidgetSnapshot } from "../lib/widget/snapshot
  * very same Up Next list to decide which episode to advance to.
  */
 export async function refreshWidgets(): Promise<WidgetSnapshot> {
+  const snapshot = await snapshotNow();
+  await pushSnapshot(snapshot);
+  return snapshot;
+}
+
+/** The snapshot for the library as it stands, without pushing it. */
+export async function snapshotNow(): Promise<WidgetSnapshot> {
   const [shows, episodes, watched, movies] = await Promise.all([
     db.shows.toArray(),
     db.episodes.toArray(),
     db.watchedEpisodes.toArray(),
     db.movies.toArray(),
   ]);
-  const snapshot = buildWidgetSnapshot(shows, episodes, watched, movies);
-  await pushSnapshot(snapshot);
-  return snapshot;
+  return buildWidgetSnapshot(shows, episodes, watched, movies);
 }

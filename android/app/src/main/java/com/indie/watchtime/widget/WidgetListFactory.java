@@ -125,12 +125,23 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
         JSONObject row = rows.get(position);
         RemoteViews views = new RemoteViews(context.getPackageName(), kind.rowLayout(compact));
 
-        views.setTextViewText(R.id.row_show, row.optString("showName"));
-
-        if (kind == WidgetKind.WATCH_NEXT) {
-            bindWatchNext(views, row);
-        } else {
-            bindComingUp(views, row);
+        switch (kind) {
+            case WATCH_NEXT:
+                views.setTextViewText(R.id.row_show, row.optString("showName"));
+                bindWatchNext(views, row);
+                break;
+            case COMING_UP:
+                views.setTextViewText(R.id.row_show, row.optString("showName"));
+                bindComingUp(views, row);
+                break;
+            case MOVIES_TO_WATCH:
+                views.setTextViewText(R.id.row_show, row.optString("title"));
+                bindMovie(views, row);
+                break;
+            case MOVIE_RELEASES:
+                views.setTextViewText(R.id.row_show, row.optString("title"));
+                bindMovieRelease(views, row);
+                break;
         }
 
         if (!compact) {
@@ -150,13 +161,74 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
         // is what can write the app's database: the tick's extra makes it do
         // the write, show a one-line confirmation and close by itself.
         views.setOnClickFillInIntent(R.id.row_root, openIntent(row));
-        if (kind == WidgetKind.WATCH_NEXT) {
+        if (kind.hasTick()) {
+            bindWatchedPhase(views, row.optString("watchedPhase", ""));
             Intent mark = openIntent(row);
             mark.putExtra(EpisodePanelActivity.EXTRA_MARK_WATCHED, true);
             views.setOnClickFillInIntent(R.id.row_tick, mark);
         }
 
         return views;
+    }
+
+    /**
+     * The moment after a row's tick is tapped (see QuickMarkWatched.tsx): the
+     * app's green veil over the row with the white tick ("next": the show has
+     * another episode) or "That's all folks!" ("done"). The page pushes this
+     * state first and the real Up Next about a second later, so the row
+     * confirms the watch before it moves on, instead of vanishing. Always set
+     * explicitly: the launcher may reuse a row view that was showing it.
+     */
+    private void bindWatchedPhase(RemoteViews views, String phase) {
+        boolean shown = "next".equals(phase) || "done".equals(phase);
+        views.setViewVisibility(R.id.row_watched, shown ? View.VISIBLE : View.GONE);
+        views.setViewVisibility(R.id.row_watched_tick, "done".equals(phase) ? View.GONE : View.VISIBLE);
+        views.setViewVisibility(R.id.row_watched_folks, "done".equals(phase) ? View.VISIBLE : View.GONE);
+    }
+
+    /** Plain text in a row view whose layout sets a monospace face for episode codes. */
+    private static CharSequence sans(String text) {
+        SpannableStringBuilder b = new SpannableStringBuilder(text);
+        b.setSpan(new TypefaceSpan("sans-serif"), 0, b.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        return b;
+    }
+
+    /**
+     * A watchlist movie in the Up Next row: title, "2024 · 2h 15m" where the
+     * episode line goes, and the TMDB rating with its gold star on the meta
+     * line (the app's rating chip, as text).
+     */
+    private void bindMovie(RemoteViews views, JSONObject row) {
+        String meta = row.optString("meta");
+        String rating = row.optString("rating");
+        if (compact) {
+            String line = rating.isEmpty() ? meta : (meta.isEmpty() ? "★ " + rating : meta + " · ★ " + rating);
+            views.setTextViewText(R.id.row_episode, sans(line));
+            return;
+        }
+        SpannableStringBuilder line = new SpannableStringBuilder(meta);
+        line.setSpan(new ForegroundColorSpan(context.getColor(R.color.widget_text_2)), 0, line.length(),
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        views.setTextViewText(R.id.row_episode, line);
+        if (rating.isEmpty()) {
+            views.setViewVisibility(R.id.row_meta, View.GONE);
+        } else {
+            SpannableStringBuilder chip = new SpannableStringBuilder("★ " + rating);
+            chip.setSpan(new ForegroundColorSpan(context.getColor(R.color.widget_rating_star)), 0, 1,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            views.setTextViewText(R.id.row_meta, chip);
+            views.setViewVisibility(R.id.row_meta, View.VISIBLE);
+        }
+    }
+
+    /** A movie release in the Coming Up row: title, "In Theaters", and the date. */
+    private void bindMovieRelease(RemoteViews views, JSONObject row) {
+        String label = row.optString("releaseLabel");
+        views.setTextViewText(R.id.row_episode, sans(label));
+        views.setViewVisibility(R.id.row_episode, label.isEmpty() ? View.GONE : View.VISIBLE);
+        views.setTextViewText(R.id.row_date, WidgetDates.relativeLabel(
+                row.optString("releaseDate", null), row.optString("dateLabel")));
+        if (!compact) views.setViewVisibility(R.id.row_episode_name, View.GONE);
     }
 
     private void bindWatchNext(RemoteViews views, JSONObject row) {
@@ -221,7 +293,8 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
      */
     private void applyTextScale(RemoteViews views) {
         if (textScale == 1f) return;
-        boolean comingUp = kind == WidgetKind.COMING_UP;
+        // The movie families use the episode rows, so they scale the same way.
+        boolean comingUp = kind == WidgetKind.COMING_UP || kind == WidgetKind.MOVIE_RELEASES;
         if (!comingUp && !compact) {
             size(views, R.id.row_show, 14); size(views, R.id.row_episode, 12); size(views, R.id.row_meta, 11);
         } else if (!comingUp) {
@@ -258,6 +331,12 @@ class WidgetListFactory implements RemoteViewsService.RemoteViewsFactory {
         // A fill-in intent: only the extras matter. The component, flags and
         // task handling all come from the provider's PendingIntent template.
         Intent intent = new Intent();
+        if (kind.isMovie()) {
+            // A movie has no overlay of its own: the row opens it in the app,
+            // and the tick (which adds EXTRA_MARK_WATCHED) marks it watched.
+            intent.putExtra(EpisodePanelActivity.EXTRA_MOVIE_ID, row.optInt("tmdbId"));
+            return intent;
+        }
         intent.putExtra(EpisodePanelActivity.EXTRA_SHOW_ID, row.optInt("showId"));
         intent.putExtra(EpisodePanelActivity.EXTRA_EPISODE_KEY, row.optString("episodeKey"));
         intent.putExtra(EpisodePanelActivity.EXTRA_READONLY, kind == WidgetKind.COMING_UP);

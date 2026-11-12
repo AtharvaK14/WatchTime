@@ -225,6 +225,47 @@ export async function getCredits(kind: "show" | "movie", tmdbId: number): Promis
   };
 }
 
+// ---- One episode's credits (the episode page) -------------------------------
+
+export interface EpisodeCredits {
+  /** Minutes, from TMDB; null when it has none. */
+  runtime: number | null;
+  directors: string[];
+  writers: string[];
+  /** The series regulars in this episode first, then its guest stars. */
+  cast: CastMember[];
+}
+
+const EPISODE_CAST_LIMIT = 16;
+const WRITER_JOBS = new Set(["Writer", "Screenplay", "Teleplay", "Story"]);
+
+export async function getEpisodeCredits(showId: number, season: number, episode: number): Promise<EpisodeCredits> {
+  type RawPerson = { id: number; name: string; character?: string; profile_path: string | null };
+  const data = await tmdbGet<{
+    runtime?: number | null;
+    crew?: { job?: string; name: string }[];
+    guest_stars?: RawPerson[];
+    credits?: { cast?: RawPerson[] };
+  }>(`/tv/${showId}/season/${season}/episode/${episode}`, { append_to_response: "credits" });
+
+  const names = (jobs: (job: string) => boolean) => [
+    ...new Set((data.crew ?? []).filter((c) => c.job && jobs(c.job)).map((c) => c.name)),
+  ];
+  const seen = new Set<number>();
+  const cast: CastMember[] = [];
+  for (const p of [...(data.credits?.cast ?? []), ...(data.guest_stars ?? [])]) {
+    if (seen.has(p.id) || cast.length >= EPISODE_CAST_LIMIT) continue;
+    seen.add(p.id);
+    cast.push({ id: p.id, name: p.name, character: p.character ?? "", profilePath: p.profile_path });
+  }
+  return {
+    runtime: data.runtime ?? null,
+    directors: names((j) => j === "Director"),
+    writers: names((j) => WRITER_JOBS.has(j)),
+    cast,
+  };
+}
+
 // ---- People (cast pages) -----------------------------------------------------
 
 export interface PersonCredit {

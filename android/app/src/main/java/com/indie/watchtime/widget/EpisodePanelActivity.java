@@ -53,6 +53,12 @@ public class EpisodePanelActivity extends AppCompatActivity {
      * opening the panel.
      */
     public static final String EXTRA_MARK_WATCHED = "markWatched";
+    /**
+     * A movie widget row (Movies to Watch, Coming Soon). Without
+     * EXTRA_MARK_WATCHED it opens that movie in the app; with it (a Movies to
+     * Watch tick) it marks it watched in place, like an episode tick.
+     */
+    public static final String EXTRA_MOVIE_ID = "movieId";
 
     private static final String INTERFACE_NAME = "WatchTimePanelHost";
 
@@ -67,7 +73,15 @@ public class EpisodePanelActivity extends AppCompatActivity {
         String episodeKey = getIntent().getStringExtra(EXTRA_EPISODE_KEY);
         boolean readonly = getIntent().getBooleanExtra(EXTRA_READONLY, false);
         boolean markWatched = !readonly && getIntent().getBooleanExtra(EXTRA_MARK_WATCHED, false);
-        if (episodeKey == null || episodeKey.isEmpty()) {
+        int movieId = getIntent().getIntExtra(EXTRA_MOVIE_ID, 0);
+        if (movieId > 0 && !markWatched) {
+            // Opening a movie is the app's details page, not an overlay: hand
+            // off the same way the overlay's own "open in app" does, without
+            // ever loading a page here.
+            openAppAt("{\"kind\":\"movie\",\"tmdbId\":" + movieId + "}");
+            return;
+        }
+        if (movieId <= 0 && (episodeKey == null || episodeKey.isEmpty())) {
             finish();
             return;
         }
@@ -117,11 +131,27 @@ public class EpisodePanelActivity extends AppCompatActivity {
                 .path("/index.html")
                 .appendQueryParameter("wtpanel", "episode")
                 .appendQueryParameter("showId", String.valueOf(showId))
-                .appendQueryParameter("episodeKey", episodeKey)
+                .appendQueryParameter("episodeKey", episodeKey == null ? "" : episodeKey)
+                .appendQueryParameter("movieId", String.valueOf(movieId))
                 .appendQueryParameter("readonly", readonly ? "1" : "0")
                 .appendQueryParameter("quick", markWatched ? "1" : "0")
                 .build();
         webView.loadUrl(url.toString());
+    }
+
+    /**
+     * Launches the main app on a deep-link target and closes this activity.
+     * The target goes through the pending-deep-link slot, which handles both
+     * a cold start and resuming an existing task (see PanelHost.openInApp).
+     */
+    private void openAppAt(String target) {
+        android.content.Context context = getApplicationContext();
+        WidgetStore.setPendingDeepLink(context, target);
+        Intent openApp = new Intent(context, com.indie.watchtime.MainActivity.class);
+        openApp.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        context.startActivity(openApp);
+        finish();
+        overridePendingTransition(0, android.R.anim.fade_out);
     }
 
     @Override
@@ -201,17 +231,9 @@ public class EpisodePanelActivity extends AppCompatActivity {
         @JavascriptInterface
         public void openInApp(String target) {
             if (target == null || target.isEmpty()) return;
-            runOnUiThread(() -> {
-                android.content.Context context = getApplicationContext();
-                WidgetStore.setPendingDeepLink(context, target);
-                Intent openApp = new Intent(context, com.indie.watchtime.MainActivity.class);
-                openApp.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                context.startActivity(openApp);
-                // The overlay has served its purpose; leaving it behind the app
-                // would put a stale panel on the back stack.
-                finish();
-                overridePendingTransition(0, android.R.anim.fade_out);
-            });
+            // The overlay has served its purpose; leaving it behind the app
+            // would put a stale panel on the back stack, so this also finishes.
+            runOnUiThread(() -> openAppAt(target));
         }
 
         /**

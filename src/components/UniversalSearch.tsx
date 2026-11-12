@@ -11,6 +11,8 @@ import { looksDescriptive } from "../lib/moodSearch/constraints";
 import { discoverByMood, type DiscoveryItem } from "../lib/moodSearch/discover";
 import type { IndexProgress } from "../lib/moodSearch/titleIndex";
 import SearchField from "./SearchField";
+import SearchDock, { SearchDockClear } from "./SearchDock";
+import { SearchIcon } from "./icons";
 
 /**
  * One search box replaces what used to be three (title search, mood
@@ -84,10 +86,16 @@ export default function UniversalSearch({
   onOpen,
   onResults,
   onClear,
+  docked = false,
 }: {
   onOpen: (kind: "show" | "movie", tmdbId: number) => void;
   onResults: (results: SearchResults | null) => void;
   onClear: () => void;
+  /**
+   * Phones: the field lives in the bottom dock (SearchDock), with its title
+   * suggestions opening upward from it; the progress lines stay up here.
+   */
+  docked?: boolean;
 }) {
   const [query, setQuery] = useState("");
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -95,6 +103,9 @@ export default function UniversalSearch({
   const [activeIndex, setActiveIndex] = useState(-1);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<IndexProgress | null>(null);
+  const [dockOpen, setDockOpen] = useState(false);
+  // A search has run and its results are on the page: the docked field stays open.
+  const [hasResults, setHasResults] = useState(false);
 
   const boxRef = useRef<HTMLDivElement>(null);
   const runId = useRef(0);
@@ -157,6 +168,8 @@ export default function UniversalSearch({
     setOpen(false);
     setBusy(true);
     setProgress(null);
+    setHasResults(true);
+    if (docked) dismissKeyboard();
 
     const descriptive = looksDescriptive(trimmed);
     // Titles are shown for every query, descriptive or not: someone typing a
@@ -227,7 +240,100 @@ export default function UniversalSearch({
     setOpen(false);
     setBusy(false);
     setProgress(null);
+    setHasResults(false);
     onClear();
+  }
+
+  const suggestionList = open && suggestions.length > 0 && (
+
+          <ul className="usearch-suggestions" id="usearch-suggestions" role="listbox">
+            {suggestions.map((s, i) => (
+              <li
+                key={`${s.kind}:${s.tmdbId}`}
+                id={`usearch-option-${i}`}
+                role="option"
+                aria-selected={i === activeIndex}
+                className={`usearch-option ${i === activeIndex ? "active" : ""}`}
+                onMouseEnter={() => setActiveIndex(i)}
+                onMouseDown={(e) => e.preventDefault()} // keep focus so the click lands
+                onClick={() => pick(s)}
+              >
+                {s.posterPath ? (
+                  <img src={`${TMDB_IMAGE_BASE}${s.posterPath}`} alt="" className="usearch-option-poster" />
+                ) : (
+                  <div className="poster-placeholder usearch-option-poster" />
+                )}
+                <span className="usearch-option-name">{s.name}</span>
+                <span className="muted small">
+                  {s.kind === "show" ? "TV" : "Film"}
+                  {s.year ? ` · ${s.year}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+  );
+
+  if (docked) {
+    const closeDock = () => {
+      clear();
+      setDockOpen(false);
+    };
+    return (
+      <div className="usearch is-docked" ref={boxRef}>
+        <SearchDock
+          expanded={dockOpen || query !== "" || hasResults}
+          collapsible={query === "" && !hasResults}
+          onExpand={() => setDockOpen(true)}
+          onCollapse={closeDock}
+          label="Search shows and movies"
+        >
+          <form className="search-dock-field" onSubmit={submit} role="search">
+            <SearchIcon size={20} />
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={onKeyDown}
+              onFocus={() => suggestions.length > 0 && setOpen(true)}
+              placeholder="Search titles, or describe a mood"
+              aria-label="Search shows and movies, or describe a mood"
+              role="combobox"
+              aria-expanded={open}
+              aria-controls="usearch-suggestions"
+              aria-autocomplete="list"
+              aria-activedescendant={activeIndex >= 0 ? `usearch-option-${activeIndex}` : undefined}
+              enterKeyHint="search"
+              autoComplete="off"
+            />
+            {query.trim() !== "" && (
+              <button
+                type="submit"
+                className="search-dock-go"
+                onPointerDown={(e) => e.preventDefault()}
+                disabled={busy}
+                aria-label={busy ? "Searching" : "Search"}
+              >
+                {busy ? (
+                  <span className="search-dock-spinner" aria-hidden="true" />
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M5 12h14M13 6l6 6-6 6" />
+                  </svg>
+                )}
+              </button>
+            )}
+            <SearchDockClear hasText={query !== "" || hasResults} onClear={clear} onClose={closeDock} />
+            {suggestionList}
+          </form>
+        </SearchDock>
+        {progress && (
+          <p className="muted small">
+            Reading summaries ({progress.done} of {progress.total})...
+          </p>
+        )}
+        {!progress && busy && looksDescriptive(query) && <p className="muted small">Working out what matches that...</p>}
+      </div>
+    );
   }
 
   return (
@@ -254,33 +360,7 @@ export default function UniversalSearch({
           {busy ? "Searching..." : "Search"}
         </button>
 
-        {open && suggestions.length > 0 && (
-          <ul className="usearch-suggestions" id="usearch-suggestions" role="listbox">
-            {suggestions.map((s, i) => (
-              <li
-                key={`${s.kind}:${s.tmdbId}`}
-                id={`usearch-option-${i}`}
-                role="option"
-                aria-selected={i === activeIndex}
-                className={`usearch-option ${i === activeIndex ? "active" : ""}`}
-                onMouseEnter={() => setActiveIndex(i)}
-                onMouseDown={(e) => e.preventDefault()} // keep focus so the click lands
-                onClick={() => pick(s)}
-              >
-                {s.posterPath ? (
-                  <img src={`${TMDB_IMAGE_BASE}${s.posterPath}`} alt="" className="usearch-option-poster" />
-                ) : (
-                  <div className="poster-placeholder usearch-option-poster" />
-                )}
-                <span className="usearch-option-name">{s.name}</span>
-                <span className="muted small">
-                  {s.kind === "show" ? "TV" : "Film"}
-                  {s.year ? ` · ${s.year}` : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        {suggestionList}
       </form>
 
       {progress && (

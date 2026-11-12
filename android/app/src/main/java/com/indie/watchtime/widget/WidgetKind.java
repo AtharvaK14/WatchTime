@@ -5,7 +5,7 @@ import android.content.Intent;
 import com.indie.watchtime.R;
 
 /**
- * The two widget families, and the small set of things that actually differ
+ * The widget families, and the small set of things that actually differ
  * between them: which array of the snapshot they read, which row layouts they
  * use, and what they say when empty.
  *
@@ -21,6 +21,13 @@ enum WidgetKind {
     WATCH_NEXT("watchNext", R.string.widget_up_next_title, R.string.widget_empty_up_next,
             R.layout.widget_row_watch_next, R.layout.widget_row_watch_next_compact),
     COMING_UP("comingUp", R.string.widget_coming_up_title, R.string.widget_empty_coming_up,
+            R.layout.widget_row_coming_up, R.layout.widget_row_coming_up_compact),
+    // The movie families reuse the episode rows: a watchlist movie has the
+    // same shape as an Up Next row (artwork, title, a line, a tick), and a
+    // release the same shape as a Coming Up row (artwork, title, a date).
+    MOVIES_TO_WATCH("moviesToWatch", R.string.widget_movies_title, R.string.widget_empty_movies,
+            R.layout.widget_row_watch_next, R.layout.widget_row_watch_next_compact),
+    MOVIE_RELEASES("movieReleases", R.string.widget_releases_title, R.string.widget_empty_releases,
             R.layout.widget_row_coming_up, R.layout.widget_row_coming_up_compact);
 
     static final String EXTRA_KIND = "com.indie.watchtime.widget.KIND";
@@ -55,8 +62,23 @@ enum WidgetKind {
         return compact ? compactLayout : fullLayout;
     }
 
+    /** A movie family: rows are movies, keyed by tmdbId, opened in the app. */
+    boolean isMovie() {
+        return this == MOVIES_TO_WATCH || this == MOVIE_RELEASES;
+    }
+
+    /** Rows built from the Up Next layouts, which carry the tick. */
+    boolean hasTick() {
+        return this == WATCH_NEXT || this == MOVIES_TO_WATCH;
+    }
+
     static WidgetKind fromIntent(Intent intent) {
         String name = intent == null ? null : intent.getStringExtra(EXTRA_KIND);
-        return COMING_UP.name().equals(name) ? COMING_UP : WATCH_NEXT;
+        if (name != null) {
+            for (WidgetKind k : values()) {
+                if (k.name().equals(name)) return k;
+            }
+        }
+        return WATCH_NEXT;
     }
 }

@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Episode } from "../db";
-import { TMDB_STILL_BASE } from "../tmdb";
+import { getEpisodeCredits, hasApiKey, TMDB_STILL_BASE, type CastMember, type EpisodeCredits } from "../tmdb";
+import CastRail from "./CastRail";
+import { formatRuntime } from "../lib/runtime";
+import PersonPage from "./PersonPage";
 import { getOmdbEpisodeRating, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbEpisodeRating } from "../omdb";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useIsMobile } from "../lib/useIsMobile";
@@ -231,13 +234,33 @@ export default function EpisodeDetailsPanel({
     }
   }
 
+  // The page's extra detail: runtime, who directed and wrote it, and its cast
+  // (the series regulars in it, then its guest stars). One TMDB request, made
+  // only for the page; the widget overlay's card stays the short version.
+  const [episodeCredits, setEpisodeCredits] = useState<EpisodeCredits | null>(null);
+  const [openPerson, setOpenPerson] = useState<CastMember | null>(null);
   useEffect(() => {
+    setEpisodeCredits(null);
+    if (!asPage || !hasApiKey()) return;
+    let cancelled = false;
+    getEpisodeCredits(episode.showId, episode.seasonNumber, episode.episodeNumber)
+      .then((c) => !cancelled && setEpisodeCredits(c))
+      // Extra detail only: without it the page is simply what it was before.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [asPage, episode.showId, episode.seasonNumber, episode.episodeNumber]);
+
+  useEffect(() => {
+    // An open cast page handles its own Escape.
+    if (openPerson) return;
     function handleKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") requestClose();
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [requestClose]);
+  }, [requestClose, openPerson]);
 
   useEffect(() => {
     let cancelled = false;
@@ -268,6 +291,8 @@ export default function EpisodeDetailsPanel({
     const text = date.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
     return `${date.getTime() > Date.now() ? "Airs" : "Aired"} ${text}`;
   })();
+  // TVmaze's per-episode runtime when the library has it, TMDB's otherwise.
+  const runtime = episode.runtimeMinutes ?? episodeCredits?.runtime ?? null;
   const openEpisodeLabel = `Open ${episode.name} in the app`;
   // "in the app" only when that is what actually happens. From inside the app
   // the capsule opens a panel, and saying otherwise would mislead exactly the
@@ -309,6 +334,12 @@ export default function EpisodeDetailsPanel({
       <span className="episode-meta-code">{seasonEp}</span>
       <span aria-hidden="true"> · </span>
       <span>{airLine}</span>
+      {runtime !== null && (
+        <>
+          <span aria-hidden="true"> · </span>
+          <span>{formatRuntime(runtime)}</span>
+        </>
+      )}
     </p>
   );
   const titleRow = (
@@ -453,6 +484,23 @@ export default function EpisodeDetailsPanel({
                   Couldn't save that, so nothing changed. ({saveError})
                 </p>
               )}
+              {episodeCredits && (episodeCredits.directors.length > 0 || episodeCredits.writers.length > 0) && (
+                <dl className="episode-crew">
+                  {episodeCredits.directors.length > 0 && (
+                    <div className="episode-crew-row">
+                      <dt>{episodeCredits.directors.length > 1 ? "Directors" : "Director"}</dt>
+                      <dd>{episodeCredits.directors.join(", ")}</dd>
+                    </div>
+                  )}
+                  {episodeCredits.writers.length > 0 && (
+                    <div className="episode-crew-row">
+                      <dt>{episodeCredits.writers.length > 1 ? "Writers" : "Writer"}</dt>
+                      <dd>{episodeCredits.writers.join(", ")}</dd>
+                    </div>
+                  )}
+                </dl>
+              )}
+              {episodeCredits && <CastRail cast={episodeCredits.cast} onOpenPerson={setOpenPerson} />}
               {streamingRow}
             </div>
           </div>
@@ -478,6 +526,15 @@ export default function EpisodeDetailsPanel({
         </div>
 
         {statusMenuEl}
+        {openPerson && (
+          <PersonPage
+            key={openPerson.id}
+            personId={openPerson.id}
+            name={openPerson.name}
+            profilePath={openPerson.profilePath}
+            onClose={() => setOpenPerson(null)}
+          />
+        )}
       </div>
     );
   }

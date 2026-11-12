@@ -5,51 +5,97 @@
      episode: the show name and the season/episode number. Reducing what is
      shown is deliberate; the alternative at these sizes is ellipsised stubs
      of everything, which identifies nothing. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/row_root"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:paddingTop="8dp"
-    android:paddingBottom="8dp">
+    android:layout_height="wrap_content">
 
     <LinearLayout
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
 
-        <TextView
-            android:id="@+id/row_show"
-            android:layout_width="match_parent"
+        <LinearLayout
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:fontFamily="sans-serif-medium"
-            android:textColor="@color/widget_text"
-            android:textSize="12sp"
-            android:maxLines="1"
-            android:ellipsize="end" />
+            android:layout_weight="1"
+            android:orientation="vertical">
 
-        <TextView
-            android:id="@+id/row_episode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:fontFamily="monospace"
-            android:textColor="@color/widget_muted"
-            android:textSize="11sp"
-            android:maxLines="1"
-            android:ellipsize="end" />
+            <TextView
+                android:id="@+id/row_show"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/widget_text"
+                android:textSize="12sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/row_episode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:textColor="@color/widget_muted"
+                android:textSize="11sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
+        </LinearLayout>
+
+        <!-- Marks this episode watched without opening the panel. Smaller here so
+             compact rows stay compact. -->
+        <ImageView
+            android:id="@+id/row_tick"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginStart="4dp"
+            android:padding="6dp"
+            android:src="@drawable/widget_tick"
+            android:contentDescription="@string/widget_mark_watched" />
     </LinearLayout>
 
-    <!-- Marks this episode watched without opening the panel. Smaller here so
-         compact rows stay compact. -->
-    <ImageView
-        android:id="@+id/row_tick"
-        android:layout_width="36dp"
-        android:layout_height="36dp"
-        android:layout_marginStart="4dp"
-        android:padding="6dp"
-        android:src="@drawable/widget_tick"
-        android:contentDescription="@string/widget_mark_watched" />
+    <!-- Shown for a moment after the tick is tapped, as the app's Up Next card
+         does: the green veil over the row, with the white tick, or "That's
+         all folks!" when the show has nothing left. Hidden otherwise. -->
+    <LinearLayout
+        android:id="@+id/row_watched"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="2dp"
+        android:layout_marginBottom="2dp"
+        android:background="@drawable/widget_row_watched"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:visibility="gone">
 
-</LinearLayout>
+        <TextView
+            android:id="@+id/row_watched_tick"
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:background="@drawable/widget_watched_mark"
+            android:gravity="center"
+            android:text="@string/widget_watched_tick"
+            android:textColor="@color/widget_watched_dim"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/row_watched_folks"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/widget_watched_mark"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="5dp"
+            android:paddingBottom="5dp"
+            android:text="@string/widget_watched_folks"
+            android:textColor="@color/widget_watched_dim"
+            android:textSize="12sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+    </LinearLayout>
+
+</FrameLayout>

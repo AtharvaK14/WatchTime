@@ -12,6 +12,7 @@ import DetailsPanel from "../components/DetailsPanel";
 import TitleCard from "../components/TitleCard";
 import UniversalSearch, { type SearchResults } from "../components/UniversalSearch";
 import { useLibraryIds } from "../lib/useLibraryIds";
+import { useIsMobile } from "../lib/useIsMobile";
 import { PosterRailSkeleton } from "../components/Skeleton";
 
 /** "2026-03-14" -> 2026. Null for a missing or empty TMDB date. */
@@ -161,6 +162,7 @@ function Results({
 
 export default function AddTitle() {
   const [results, setResults] = useState<SearchResults | null>(null);
+  const isMobile = useIsMobile();
   const [openDetails, setOpenDetails] = useState<{ kind: "show" | "movie"; tmdbId: number } | null>(null);
 
   const [popularShows, setPopularShows] = useState<TvSearchResult[] | null>(null);
@@ -207,6 +209,8 @@ export default function AddTitle() {
         onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })}
         onResults={setResults}
         onClear={() => setResults(null)}
+        // Phones: the search lives in the bottom dock, in reach of the thumb.
+        docked={isMobile}
       />
 
       {!hasApiKey() && <p className="status-error">Add your TMDB API key on the Settings page to search or browse.</p>}

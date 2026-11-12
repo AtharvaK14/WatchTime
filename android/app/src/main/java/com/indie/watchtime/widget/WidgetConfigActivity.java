@@ -1,7 +1,6 @@
 package com.indie.watchtime.widget;
 
 import android.appwidget.AppWidgetManager;
-import android.appwidget.AppWidgetProviderInfo;
 import android.content.Intent;
 import android.os.Bundle;
 import android.util.TypedValue;
@@ -238,24 +237,23 @@ public class WidgetConfigActivity extends AppCompatActivity {
     }
 
     // ---- Which widget this is ----------------------------------------------
-    // One activity serves both widgets; the provider recorded for the id says
+    // One activity serves every widget; the provider recorded for the id says
     // which preview to show and which provider to ask for a redraw.
 
-    private boolean isComingUp(int id) {
-        AppWidgetProviderInfo info = AppWidgetManager.getInstance(this).getAppWidgetInfo(id);
-        return info != null && info.provider != null
-                && ComingUpWidgetProvider.class.getName().equals(info.provider.getClassName());
-    }
-
     private int previewLayoutFor(int id) {
-        return isComingUp(id) ? R.layout.widget_preview_coming_up : R.layout.widget_preview_up_next;
+        switch (BaseWidgetProvider.kindOf(this, id)) {
+            case COMING_UP: return R.layout.widget_preview_coming_up;
+            case MOVIES_TO_WATCH: return R.layout.widget_preview_movies;
+            case MOVIE_RELEASES: return R.layout.widget_preview_movie_releases;
+            default: return R.layout.widget_preview_up_next;
+        }
     }
 
     private Class<?> providerClassFor(int id) {
-        return isComingUp(id) ? ComingUpWidgetProvider.class : WatchNextWidgetProvider.class;
+        return providerFor(id).getClass();
     }
 
     private BaseWidgetProvider providerFor(int id) {
-        return isComingUp(id) ? new ComingUpWidgetProvider() : new WatchNextWidgetProvider();
+        return BaseWidgetProvider.providerFor(BaseWidgetProvider.kindOf(this, id));
     }
 }

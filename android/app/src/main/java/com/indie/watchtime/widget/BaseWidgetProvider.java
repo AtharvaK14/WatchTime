@@ -151,6 +151,8 @@ abstract class BaseWidgetProvider extends AppWidgetProvider {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         refreshFamily(context, manager, WatchNextWidgetProvider.class);
         refreshFamily(context, manager, ComingUpWidgetProvider.class);
+        refreshFamily(context, manager, MoviesToWatchWidgetProvider.class);
+        refreshFamily(context, manager, MovieReleasesWidgetProvider.class);
     }
 
     private static void refreshFamily(Context context, AppWidgetManager manager, Class<?> provider) {
@@ -175,11 +177,33 @@ abstract class BaseWidgetProvider extends AppWidgetProvider {
         }
     }
 
-    /** True when the user has at least one widget of either family on a home screen. */
+    /** True when the user has at least one widget of any family on a home screen. */
     static boolean anyPlaced(Context context) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         return count(manager, context, WatchNextWidgetProvider.class) > 0
-                || count(manager, context, ComingUpWidgetProvider.class) > 0;
+                || count(manager, context, ComingUpWidgetProvider.class) > 0
+                || count(manager, context, MoviesToWatchWidgetProvider.class) > 0
+                || count(manager, context, MovieReleasesWidgetProvider.class) > 0;
+    }
+
+    /** Which family a placed widget id belongs to, from its provider class. */
+    static WidgetKind kindOf(Context context, int appWidgetId) {
+        android.appwidget.AppWidgetProviderInfo info = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId);
+        String cls = info == null || info.provider == null ? "" : info.provider.getClassName();
+        if (ComingUpWidgetProvider.class.getName().equals(cls)) return WidgetKind.COMING_UP;
+        if (MoviesToWatchWidgetProvider.class.getName().equals(cls)) return WidgetKind.MOVIES_TO_WATCH;
+        if (MovieReleasesWidgetProvider.class.getName().equals(cls)) return WidgetKind.MOVIE_RELEASES;
+        return WidgetKind.WATCH_NEXT;
+    }
+
+    /** A provider instance for a family, to redraw one of its widgets. */
+    static BaseWidgetProvider providerFor(WidgetKind kind) {
+        switch (kind) {
+            case COMING_UP: return new ComingUpWidgetProvider();
+            case MOVIES_TO_WATCH: return new MoviesToWatchWidgetProvider();
+            case MOVIE_RELEASES: return new MovieReleasesWidgetProvider();
+            default: return new WatchNextWidgetProvider();
+        }
     }
 
     private static int count(AppWidgetManager manager, Context context, Class<?> provider) {

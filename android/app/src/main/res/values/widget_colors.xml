@@ -16,4 +16,7 @@
          outline that used to box every row. -->
     <color name="widget_divider">#1FF2F1EF</color>
     <color name="widget_control_outline">#6A6A73</color> <!-- var(border-strong): an off switch's 3:1 outline -->
+    <color name="widget_watched_veil">#CC3FB950</color> <!-- var(watched-veil) -->
+    <color name="widget_watched_dim">#1A4D21</color>   <!-- var(watched-dim): the tick on the white mark -->
+    <color name="widget_rating_star">#E8B64C</color>   <!-- var(rating-star) -->
 </resources>

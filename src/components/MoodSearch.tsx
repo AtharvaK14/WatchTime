@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import type { SetupPhase } from "../lib/moodSearch/useMoodSearch";
 import type { MoodFilter } from "../lib/moodSearch/search";
 import SearchField from "./SearchField";
+import SearchDock, { SearchDockClear } from "./SearchDock";
+import { SearchIcon } from "./icons";
 
 function setupMessage(setup: SetupPhase): string | null {
   switch (setup.state) {
@@ -35,6 +37,7 @@ export default function MoodSearch({
   onCancelSetup,
   resultCount,
   placeholder = "Search shows & movies",
+  docked = false,
 }: {
   setup: SetupPhase;
   filter: MoodFilter | null;
@@ -46,12 +49,21 @@ export default function MoodSearch({
   resultCount: number;
   /** What the box searches, in the page's own words: Home says "your shows" or "your movies". */
   placeholder?: string;
+  /**
+   * Phones: the field lives in the bottom dock beside Home's Shows/Movies
+   * switch (SearchDock, "home"); the setup progress and the match summary
+   * stay here at the top of the page, above the lists they describe.
+   */
+  docked?: boolean;
 }) {
   const [text, setText] = useState("");
+  const [dockOpen, setDockOpen] = useState(false);
 
   function submit(e: FormEvent) {
     e.preventDefault();
     onSearch(text);
+    // Docked: the keyboard goes, so the results it was covering show.
+    if (docked && document.activeElement instanceof HTMLElement) document.activeElement.blur();
   }
 
   function clear() {
@@ -67,6 +79,57 @@ export default function MoodSearch({
       {/* Same shape as Discover's search: field with an inline clear, then
           one button. Clear moved inside the field so the row is always
           exactly two items and can stay on a single line at any width. */}
+      {docked ? (
+        <SearchDock
+          variant="home"
+          expanded={dockOpen || text !== "" || filter !== null}
+          collapsible={text === "" && filter === null}
+          onExpand={() => setDockOpen(true)}
+          onCollapse={() => {
+            clear();
+            setDockOpen(false);
+          }}
+          label={placeholder}
+        >
+          <form className="search-dock-field" onSubmit={submit} role="search">
+            <SearchIcon size={20} />
+            <input
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              placeholder={placeholder}
+              aria-label={placeholder}
+              enterKeyHint="search"
+              autoComplete="off"
+            />
+            {text.trim() !== "" && (
+              <button
+                type="submit"
+                className="search-dock-go"
+                onPointerDown={(e) => e.preventDefault()}
+                disabled={searching}
+                aria-label={searching ? "Searching" : "Search"}
+              >
+                {searching ? (
+                  <span className="search-dock-spinner" aria-hidden="true" />
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M5 12h14M13 6l6 6-6 6" />
+                  </svg>
+                )}
+              </button>
+            )}
+            <SearchDockClear
+              hasText={text !== "" || filter !== null}
+              onClear={clear}
+              onClose={() => {
+                clear();
+                setDockOpen(false);
+              }}
+            />
+          </form>
+        </SearchDock>
+      ) : (
       <form className="mood-search-row" onSubmit={submit} role="search">
         {/* The placeholder says what this box searches, and only that. It used
             to open with "Describe what you're in the mood for", which read as
@@ -87,6 +150,7 @@ export default function MoodSearch({
           {searching ? "Searching..." : "Search"}
         </button>
       </form>
+      )}
 
       {/* Non-blocking by design: the lists below stay interactive and usable
           throughout setup, and dismissing leaves plain search working. */}

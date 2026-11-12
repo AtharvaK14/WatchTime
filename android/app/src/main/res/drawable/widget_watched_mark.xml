@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's .wn-watched-mark: a white capsule (a circle when it holds only
+     the tick) on the green veil. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/widget_text" />
+    <corners android:radius="999dp" />
+</shape>

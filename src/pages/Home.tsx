@@ -1026,6 +1026,8 @@ export default function Home({
 }) {
   const [openShow, setOpenShow] = useState<number | null>(null);
   const mood = useMoodSearch();
+  // On a phone the search lives in the bottom dock beside the Shows/Movies switch.
+  const isMobile = useIsMobile();
   // Set once the user has switched Shows / Movies while Home is open. Only
   // then do the sections slide in: on arriving at Home the tab view's own
   // entrance is already playing, and the two together would be one motion
@@ -1084,6 +1086,7 @@ export default function Home({
           onSearch={(q) => mood.run(q, candidates)}
           onClear={mood.clear}
           onCancelSetup={mood.cancelSetup}
+          docked={isMobile}
         />
         {/* Wider screens only (CSS). Phones get the copy App docks above the
             bottom nav. */}

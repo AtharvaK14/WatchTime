@@ -12,7 +12,10 @@
 
 import type { Episode, Movie, Show, WatchedEpisode } from "../../db";
 import { TMDB_IMAGE_BASE } from "../../tmdb";
-import { buildUpcomingEpisodeRows, formatUpcomingDate } from "../comingUp";
+import { buildUpcomingEpisodeRows, formatUpcomingDate, releaseKindLabel, type ReleaseKind } from "../comingUp";
+import { formatRating } from "../ratings";
+import { todayIso } from "../releaseState";
+import { isOnWatchlist } from "../watchlist";
 import { getStaleDaysThreshold } from "../showStatus";
 import { buildWatchNextRows, byRecency } from "../watchNext";
 
@@ -54,6 +57,12 @@ export interface WidgetWatchNextRow {
   isNew: boolean;
   metaAfter: string;
   posterUrl: string | null;
+  /**
+   * Set only on the short-lived snapshot pushed right after this row's tick
+   * was tapped: the widget draws the app's watched veil over the row ("next":
+   * the tick, "done": "That's all folks!") until the real Up Next replaces it.
+   */
+  watchedPhase?: "next" | "done";
   stillUrl: string | null;
 }
 
@@ -69,11 +78,39 @@ export interface WidgetComingUpRow {
   posterUrl: string | null;
 }
 
+/** A Movies to Watch widget row: a watchlist movie, in Home's order. */
+export interface WidgetMovieRow {
+  tmdbId: number;
+  title: string;
+  /** "2024 · 2h 15m", either part left out when unknown. */
+  meta: string;
+  /** "7.4", or "" when TMDB has no rating. */
+  rating: string;
+  posterUrl: string | null;
+  /** As on WidgetWatchNextRow: set only on the snapshot pushed right after the row's tick. */
+  watchedPhase?: "next" | "done";
+}
+
+/** A Coming Soon widget row: a watchlist movie with a release still ahead. */
+export interface WidgetMovieReleaseRow {
+  tmdbId: number;
+  title: string;
+  releaseDate: string;
+  /** "Today" / "Tomorrow" / "Mar 4". */
+  dateLabel: string;
+  /** "In Theaters" / "Digital Release", or "" when the stored dates cannot say. */
+  releaseLabel: string;
+  posterUrl: string | null;
+}
+
 export interface WidgetSnapshot {
   version: number;
   generatedAt: string;
   watchNext: WidgetWatchNextRow[];
   comingUp: WidgetComingUpRow[];
+  /** The movie widgets. Native reads a missing field (an older snapshot) as empty. */
+  moviesToWatch: WidgetMovieRow[];
+  movieReleases: WidgetMovieReleaseRow[];
   /** True when the library itself is empty, so the widget can say "add some shows" rather than "all caught up". */
   libraryEmpty: boolean;
 }
@@ -168,6 +205,69 @@ export function buildWidgetSnapshot(
     generatedAt: now.toISOString(),
     watchNext,
     comingUp,
+    moviesToWatch: buildMovieRows(movies),
+    movieReleases: buildMovieReleaseRows(movies, now),
     libraryEmpty: followed.length === 0 && movies.length === 0,
   };
+}
+
+const MOVIE_SNAPSHOT_ROWS = 30;
+
+function runtimeLabel(minutes: number | null | undefined): string {
+  if (!minutes || minutes <= 0) return "";
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
+
+/**
+ * Movies to Watch, as Home's Movies tab lists them: watchlist movies only
+ * (isOnWatchlist, the same rule as the Movies page's Want to watch filter),
+ * most recently added first.
+ */
+export function buildMovieRows(movies: Movie[]): WidgetMovieRow[] {
+  return movies
+    .filter(isOnWatchlist)
+    .sort((a, b) => (b.addedAt ?? "").localeCompare(a.addedAt ?? ""))
+    .slice(0, MOVIE_SNAPSHOT_ROWS)
+    .map((m) => ({
+      tmdbId: m.tmdbId,
+      title: m.title,
+      meta: [m.releaseYear ? String(m.releaseYear) : "", runtimeLabel(m.runtimeMinutes)].filter(Boolean).join(" · "),
+      rating: formatRating(m.tmdbRating) ?? "",
+      posterUrl: imageUrl(m.posterPath),
+    }));
+}
+
+/**
+ * Coming Soon: watchlist movies with a release still ahead (today or later),
+ * soonest first. Each is listed under its next typed release (theatrical or
+ * digital) when the stored dates have one, otherwise under TMDB's primary
+ * date untagged - the same evidence rules as Home's Releasing this month,
+ * without the month boundary, since a widget showing nothing for the last
+ * week of every month would be no use.
+ */
+export function buildMovieReleaseRows(movies: Movie[], now = new Date()): WidgetMovieReleaseRow[] {
+  const today = todayIso(now);
+  const rows: WidgetMovieReleaseRow[] = [];
+  for (const m of movies) {
+    if (!isOnWatchlist(m)) continue;
+    const typed: { date: string; kind: ReleaseKind }[] = [];
+    if (m.theatricalReleaseDate && m.theatricalReleaseDate >= today) typed.push({ date: m.theatricalReleaseDate, kind: "theatrical" });
+    if (m.digitalReleaseDate && m.digitalReleaseDate >= today && m.digitalReleaseDate !== m.theatricalReleaseDate) {
+      typed.push({ date: m.digitalReleaseDate, kind: "digital" });
+    }
+    typed.sort((a, b) => a.date.localeCompare(b.date));
+    const next = typed[0] ?? (m.releaseDate && m.releaseDate >= today ? { date: m.releaseDate, kind: null } : null);
+    if (!next) continue;
+    rows.push({
+      tmdbId: m.tmdbId,
+      title: m.title,
+      releaseDate: next.date,
+      dateLabel: formatUpcomingDate(next.date, now),
+      releaseLabel: next.kind ? releaseKindLabel(next.kind) : "",
+      posterUrl: imageUrl(m.posterPath),
+    });
+  }
+  return rows.sort((a, b) => a.releaseDate.localeCompare(b.releaseDate)).slice(0, MOVIE_SNAPSHOT_ROWS);
 }

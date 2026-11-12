@@ -4551,7 +4551,10 @@ a:hover { text-decoration-color: var(--text); }
    it, the context line, a large title with the rating on its line, and
    full-width rounded actions.
    ============================================================ */
-.episode-detail-modal { max-width: 460px; overflow: hidden; }
+/* Scrolls rather than hiding overflow: any non-visible overflow already clips
+   the artwork to the rounded corners, and "hidden" cut off everything below
+   the fold in the stats dialog and the watch history sheet, which share it. */
+.episode-detail-modal { max-width: 460px; overflow: hidden auto; }
 .episode-hero-img { border-radius: 0; aspect-ratio: 16 / 9; }
 .episode-hero-fade {
   position: absolute;
@@ -4711,6 +4714,8 @@ a:hover { text-decoration-color: var(--text); }
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   animation: quick-watched-in 260ms cubic-bezier(0.32, 0.72, 0, 1);
 }
+/* The app's watched mark (.wn-watched-mark): white, with the tick in the
+   dark green, popping in with the same small overshoot. */
 .quick-watched-tick {
   display: grid;
   place-items: center;
@@ -4718,9 +4723,12 @@ a:hover { text-decoration-color: var(--text); }
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--watched);
-  color: #0a0a0b;
+  background: var(--text);
+  color: var(--watched-dim);
+  box-shadow: 0 0 0 4px var(--watched-tint), 0 0 0 1px var(--watched);
+  animation: watched-mark-pop 320ms cubic-bezier(0.2, 0.9, 0.2, 1) 80ms both;
 }
+.quick-watched-tick svg { stroke-width: 3; }
 .quick-watched-text { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 @keyframes quick-watched-in {
   from { opacity: 0; transform: translate(-50%, 16px); }
@@ -4831,3 +4839,497 @@ a:hover { text-decoration-color: var(--text); }
 .details-page .person-rail { margin: 0 -20px; padding: 0 20px 4px; scroll-padding-inline: 20px; }
 .is-dialog .details-page .person-rail { margin: 0 -28px; padding: 0 28px 4px; scroll-padding-inline: 28px; }
 .details-page .person-rail > .show-card { flex-basis: 124px; }
+
+/* ---- Episode page: crew --------------------------------------------------
+   "Director / Writer" as a rounded group of label-value rows, the same
+   grouped-list look as the stats dialog and Settings. */
+.episode-crew {
+  margin: 0;
+  padding: 0 16px;
+  border-radius: var(--r-lg);
+  background: var(--dp-card);
+}
+.episode-crew-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 13px 0;
+}
+.episode-crew-row + .episode-crew-row { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.episode-crew dt { flex: none; font-size: var(--fs-15); color: var(--text-2); }
+.episode-crew dd { margin: 0; min-width: 0; font-size: var(--fs-15); font-weight: 500; text-align: right; overflow-wrap: anywhere; }
+
+/* ============================================================
+   FILTER SHEET (components/FilterSheet.tsx), One UI style
+
+   A floating sheet inset from the screen edges with large corners, a
+   "Filters" title with Reset, the single-choice groups (watch status, sort)
+   as radio lists in a rounded group like Settings, genres as pills, and the
+   result count as a full-width pill. Header and button stay put while the
+   options scroll; swipe down from the top of the options closes it.
+   ============================================================ */
+@media (max-width: 640px) {
+  .filter-sheet {
+    left: 8px;
+    right: 8px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    max-height: calc(88vh - env(safe-area-inset-top));
+    padding: 0;
+    overflow: hidden;
+    border-radius: 28px;
+    background: var(--surface);
+    box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.5);
+  }
+  .filter-sheet-handle { position: static; padding: 10px 0 2px; background: none; }
+  .filter-sheet-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px 10px 22px;
+  }
+  .filter-sheet-head h2 { margin: 0; font-size: var(--fs-20); font-weight: 700; letter-spacing: -0.01em; }
+  .filter-sheet-reset {
+    min-height: 40px;
+    padding: 0 12px;
+    border: none;
+    border-radius: var(--r-pill);
+    background: none;
+    color: var(--text);
+    font-size: var(--fs-15);
+    font-weight: 600;
+  }
+  .filter-sheet-reset:disabled { color: var(--muted); opacity: 0.6; }
+  .filter-sheet-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 14px 8px;
+  }
+  .filter-sheet-body { gap: 20px; }
+  .filter-sheet-foot { padding: 10px 14px 14px; }
+  .filter-sheet .filter-sheet-apply {
+    min-height: 52px;
+    margin: 0;
+    border-radius: var(--r-pill);
+    font-size: var(--fs-15);
+    font-weight: 700;
+  }
+
+  /* Group headings in the app's sentence case, not small tracked capitals. */
+  .filter-group-title {
+    padding: 0 8px;
+    font-size: var(--fs-15);
+    font-weight: 600;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--text-2);
+  }
+  .filter-group + .filter-group { border-top: none; padding-top: 0; margin-top: 0; }
+
+  /* Single choice as a radio list in one rounded group. Row dividers are
+     inset box-shadows: the global control-outline rule recolours borders. */
+  .filter-sheet-body .segmented {
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    border-radius: var(--r-lg);
+    background: var(--surface-raised);
+    overflow: hidden;
+  }
+  .filter-sheet-body .segmented button,
+  .filter-sheet-body .segmented button.active {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    min-height: 52px;
+    padding: 0 16px;
+    border: none;
+    border-radius: 0;
+    background: none;
+    color: var(--text);
+    font-size: var(--fs-15);
+    font-weight: 400;
+    text-align: left;
+  }
+  .filter-sheet-body .segmented button + button { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+  .filter-sheet-body .segmented button::before {
+    content: "";
+    flex: none;
+    width: 22px;
+    height: 22px;
+    box-sizing: border-box;
+    border: 2px solid var(--text-2);
+    border-radius: 50%;
+    transition: border-width 140ms ease, border-color 140ms ease;
+  }
+  .filter-sheet-body .segmented button.active { font-weight: 600; }
+  .filter-sheet-body .segmented button.active::before { border: 7px solid var(--text); }
+  .filter-sheet-body .segmented button:active { background: rgba(255, 255, 255, 0.04); }
+
+  .filter-sheet-body .genre-chips { gap: 8px; padding: 0 2px; }
+  .filter-sheet-body .genre-chips .opt { min-height: 40px; padding: 8px 16px; border-radius: var(--r-pill); font-size: var(--fs-15); }
+}
+.filter-sheet.is-leaving { animation-name: filter-sheet-out; }
+@keyframes filter-sheet-out {
+  from { transform: translateY(var(--drag-y, 0px)); }
+  to { transform: translateY(calc(100% + 24px)); }
+}
+@keyframes filter-sheet-in {
+  from { transform: translateY(calc(100% + 24px)); }
+  to { transform: none; }
+}
+
+/* ============================================================
+   STATS: WATCHED BY MONTH (StatsDialog.tsx MonthChart)
+   Digital Wellbeing's chart in the app's language: the selected month's
+   number large above, rounded bars in a raised card, the selected bar solid
+   green and the rest a step back, a dashed average line, initials below.
+   ============================================================ */
+.month-chart {
+  padding: 16px 14px 12px;
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+}
+.month-chart-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 14px; }
+.month-chart-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+.month-chart-caption { font-size: var(--fs-13); color: var(--text-2); }
+.month-chart-plot {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 6px;
+  align-items: end;
+  height: 132px;
+}
+.month-chart-bar,
+.month-chart-bar:hover:not(:disabled) {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--r-xs);
+  background: none;
+  cursor: pointer;
+}
+.month-chart-fill {
+  display: block;
+  width: 100%;
+  max-width: 18px;
+  min-height: 3px;
+  border-radius: 6px;
+  background: var(--watched);
+  opacity: 0.35;
+  transition: opacity 160ms ease;
+}
+.month-chart-bar.is-selected .month-chart-fill { opacity: 1; }
+.month-chart-bar:focus-visible { outline: 2px solid var(--text); outline-offset: 2px; }
+.month-chart-avg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 1;
+  border-top: 1px dashed rgba(242, 241, 239, 0.35);
+  pointer-events: none;
+}
+.month-chart-average {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  font-size: var(--fs-12);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.month-chart-avg-key { width: 14px; border-top: 1px dashed rgba(242, 241, 239, 0.5); }
+.month-chart-axis {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 6px;
+  margin-top: 8px;
+  text-align: center;
+  font-size: var(--fs-12);
+  color: var(--muted);
+}
+.month-chart-axis .is-selected { color: var(--text); font-weight: 700; }
+.month-chart-note { margin: 12px 0 0; font-size: var(--fs-12); color: var(--muted); line-height: 1.4; }
+
+/* ============================================================
+   QUICK ACTIONS MENU (components/ActionMenu.tsx)
+
+   Both forms: the actions in rounded groups (the destructive ones in a
+   group of their own) and no red until the confirmation step, which is
+   where the app spends red. On a phone, a floating bottom sheet over a dim:
+   handle, title, groups, then the confirmation as two pill buttons. On
+   desktop, the same groups in a popover by the pointer.
+   ============================================================ */
+.action-menu { border: none; background: var(--surface); padding: 8px; border-radius: 22px; }
+.action-menu-header { border-bottom: none; margin-bottom: 2px; padding: 8px 12px 10px; }
+.action-menu-title { font-size: var(--fs-17); font-weight: 700; }
+.action-menu-subtitle { color: var(--text-2); }
+.action-menu-group {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--r-lg);
+  background: var(--surface-raised);
+}
+.action-menu-group + .action-menu-group { margin-top: 8px; }
+.action-menu .action-menu-group .action-menu-item {
+  min-height: 50px;
+  padding: 0 16px;
+  gap: 14px;
+  border-radius: 0;
+}
+.action-menu .action-menu-group .action-menu-item + .action-menu-item { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); }
+.action-menu .action-menu-group .action-menu-item:hover:not(:disabled) { background: rgba(255, 255, 255, 0.05); }
+.action-menu .action-menu-group .action-menu-item.is-danger { color: var(--text); }
+.action-menu-icon { color: var(--text-2); }
+.action-menu-item.is-danger .action-menu-icon { color: var(--text-2); }
+.action-menu-confirm { margin: 0 12px 14px; font-size: var(--fs-15); line-height: 1.45; color: var(--text-2); }
+.action-menu-confirm-row { gap: 8px; }
+.action-menu .action-menu-confirm-row .action-menu-item {
+  flex: 1;
+  min-height: 48px;
+  border-radius: var(--r-pill);
+  background: var(--surface-raised);
+  font-weight: 600;
+}
+.action-menu .action-menu-confirm-row .action-menu-item.is-danger { background: var(--danger); color: #fff; }
+
+/* ---- Phone: the bottom sheet ---- */
+.action-menu-layer.is-sheet {
+  background: rgba(0, 0, 0, 0.5);
+  animation: backdrop-in 160ms ease-out;
+}
+.action-menu-layer.is-sheet.is-leaving { animation: details-fade-out 200ms ease-in forwards; }
+.action-menu.is-sheet {
+  left: 8px;
+  right: 8px;
+  bottom: calc(8px + env(safe-area-inset-bottom));
+  top: auto;
+  min-width: 0;
+  max-width: none;
+  max-height: calc(85vh - env(safe-area-inset-top));
+  padding: 0 10px 12px;
+  border-radius: 28px;
+  box-shadow: 0 -8px 40px rgba(0, 0, 0, 0.5);
+  overscroll-behavior: contain;
+  animation: action-sheet-in 280ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.action-menu-layer.is-leaving .action-menu.is-sheet { animation: action-sheet-out 200ms cubic-bezier(0.32, 0.72, 0, 1) forwards; }
+@keyframes action-sheet-in { from { transform: translateY(calc(100% + 24px)); } to { transform: none; } }
+@keyframes action-sheet-out {
+  from { transform: translateY(var(--drag-y, 0px)); }
+  to { transform: translateY(calc(100% + 24px)); }
+}
+.action-menu-handle { display: flex; justify-content: center; padding: 10px 0 4px; }
+.action-menu.is-sheet .action-menu-header { padding: 6px 12px 12px; }
+.action-menu.is-sheet .action-menu-title { font-size: var(--fs-20); }
+.action-menu.is-sheet .action-menu-group .action-menu-item { min-height: 54px; font-size: var(--fs-15); }
+
+/* ============================================================
+   SEARCH AND FILTER DOCK (components/SearchFilterDock.tsx)
+   Shows and Movies on a phone: filters and search as two round buttons
+   floating above the bottom nav at the right, in the nav's material (search
+   in white, the primary). Search grows into a field across the dock; while
+   typing it rides above the keyboard and the nav steps aside.
+   ============================================================ */
+.search-dock { display: none; }
+@media (max-width: 640px) {
+  .search-dock {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: calc(84px + env(safe-area-inset-bottom));
+    z-index: 5; /* with the bottom nav: under every panel (z-index 10) */
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    pointer-events: none;
+    transition: bottom 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .search-dock > * { pointer-events: auto; }
+  .search-dock.is-typing { bottom: calc(var(--dock-kb, 0px) + 10px); }
+  body:has(.search-dock.is-typing) .bottom-nav { visibility: hidden; }
+
+  .search-dock .search-dock-button,
+  .search-dock .search-dock-button:hover:not(:disabled) {
+    position: relative;
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 54px;
+    height: 54px;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--nav-material);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    backdrop-filter: blur(20px) saturate(140%);
+    box-shadow: var(--nav-shadow), inset 0 0 0 1px var(--nav-outline);
+    color: var(--text);
+  }
+  .search-dock .search-dock-button.is-search,
+  .search-dock .search-dock-button.is-search:hover:not(:disabled) {
+    background: var(--text);
+    color: var(--bg);
+    box-shadow: var(--nav-shadow);
+  }
+  .search-dock .search-dock-button:active { transform: scale(0.94); }
+  .search-dock-dot {
+    position: absolute;
+    top: 11px;
+    right: 12px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text);
+    box-shadow: 0 0 0 2px rgba(46, 46, 50, 1);
+  }
+
+  .search-dock-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: calc(100% - 64px);
+    height: 54px;
+    padding: 0 7px 0 18px;
+    box-sizing: border-box;
+    border-radius: 27px;
+    background: var(--nav-material);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    backdrop-filter: blur(20px) saturate(140%);
+    box-shadow: var(--nav-shadow), inset 0 0 0 1px var(--nav-outline);
+    color: var(--text-2);
+    animation: search-dock-grow 260ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .search-dock.is-typing .search-dock-field { box-shadow: var(--nav-shadow), inset 0 0 0 1.5px rgba(242, 241, 239, 0.55); }
+  @keyframes search-dock-grow {
+    from { width: 54px; }
+    to { width: calc(100% - 64px); }
+  }
+  .search-dock-field input[type="text"],
+  .search-dock-field input[type="text"]:focus-visible {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: none;
+    outline: none;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--fs-15);
+  }
+  .search-dock .search-dock-clear,
+  .search-dock .search-dock-clear:hover:not(:disabled) {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.35);
+    color: var(--text);
+  }
+
+  /* Room for the dock below the last row, and toasts above it. */
+  .app-shell:has(.search-dock) { padding-bottom: calc(156px + env(safe-area-inset-bottom)); }
+  body:has(.search-dock) .toast-stack { bottom: calc(150px + env(safe-area-inset-bottom)); }
+}
+/* The docked phone layout leaves the old filter row with nothing to show. */
+.filters-row.is-docked { display: contents; }
+
+/* ---- Search dock: every tab ---------------------------------------------
+   The field fills the dock beside whatever else is in it (the filter button
+   on Shows and Movies, nothing on Home and Discover), growing out of the
+   search button as it opens. */
+@media (max-width: 640px) {
+  .search-dock .search-dock-field {
+    position: relative;
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    animation: search-dock-open 260ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  @keyframes search-dock-open {
+    from { max-width: 54px; }
+    to { max-width: 100%; }
+  }
+  .search-dock .search-dock-go,
+  .search-dock .search-dock-go:hover:not(:disabled),
+  .search-dock .search-dock-go:disabled {
+    display: grid;
+    place-items: center;
+    flex: none;
+    width: 40px;
+    height: 40px;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--text);
+    color: var(--bg);
+    opacity: 1;
+  }
+  .search-dock-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(10, 10, 11, 0.25);
+    border-top-color: var(--bg);
+    border-radius: 50%;
+    animation: ptr-spin 700ms linear infinite;
+  }
+
+  /* Home: the search button sits beside the centred Shows/Movies switch
+     (208px wide, 44px tall) and matches its height; the pair stays centred.
+     The open field takes a whole row; while typing the switch steps aside. */
+  .search-dock.is-home:not(.is-expanded) {
+    left: calc(50% + 87px); /* 208 + 10 + 44 = 262 wide, centred: 131 each side */
+    right: auto;
+  }
+  /* A search in force with the keyboard down: the field sits a row above the
+     switch, so Shows / Movies can still be flipped without closing it. */
+  .search-dock.is-home.is-expanded:not(.is-typing) { bottom: calc(138px + env(safe-area-inset-bottom)); }
+  .app-shell:has(.search-dock.is-home.is-expanded) { padding-bottom: calc(206px + env(safe-area-inset-bottom)); }
+  .search-dock.is-home .search-dock-button.is-search,
+  .search-dock.is-home .search-dock-button.is-search:hover:not(:disabled) {
+    width: 44px;
+    height: 44px;
+    background: var(--nav-material);
+    color: var(--text);
+    box-shadow: var(--nav-shadow), inset 0 0 0 1px var(--nav-outline);
+  }
+  body:has(.search-dock.is-home:not(.is-expanded)) .media-switch.is-docked { margin-left: -131px; }
+  body:has(.search-dock.is-home.is-typing) .media-switch.is-docked { visibility: hidden; }
+
+  /* Discover: title suggestions open upward from the docked field. */
+  .search-dock .usearch-suggestions {
+    top: auto;
+    bottom: calc(100% + 10px);
+    border: none;
+    border-radius: var(--r-lg);
+    background: var(--surface);
+    box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.5);
+    max-height: min(50vh, 380px);
+  }
+  .usearch.is-docked:not(:has(p)) { display: contents; }
+}

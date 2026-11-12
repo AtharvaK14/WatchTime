@@ -46,6 +46,8 @@ import { KebabIcon, StarIcon } from "./icons";
 import WatchMark from "./WatchMark";
 import { DetailsSkeleton } from "./Skeleton";
 import PersonPage from "./PersonPage";
+import CastRail from "./CastRail";
+import { formatRuntime } from "../lib/runtime";
 
 /** Matches the reverse of the desktop-modal-in keyframes in index.css. */
 const DESKTOP_MODAL_EXIT_MS = 180;
@@ -100,12 +102,6 @@ interface CoreDetails {
 }
 
 /** "2h 35m" from minutes; "45m" under an hour. */
-function formatRuntime(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = Math.round(minutes % 60);
-  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
-}
-
 /**
  * The line under the title: for a movie the year, its director and its
  * length ("2021 · Denis Villeneuve · 2h 35m"), for a show the year, its season
@@ -1121,26 +1117,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
 
   // Cast, as photo cards in a row that scrolls sideways. Hidden until the
   // credits arrive, and entirely when TMDB lists nobody.
-  const castContent = credits && credits.cast.length > 0 && (
-    <section className="cast-section" aria-label="Cast">
-      <h3 className="details-section-title">Cast</h3>
-      <ul className="cast-rail">
-        {credits.cast.map((person) => (
-          <li key={person.id} className="cast-card">
-            <button type="button" className="cast-open" onClick={() => setOpenPerson(person)}>
-              {person.profilePath ? (
-                <img src={`${TMDB_IMAGE_BASE}${person.profilePath}`} alt="" className="cast-photo" loading="lazy" />
-              ) : (
-                <span className="cast-photo cast-photo-empty" aria-hidden="true" />
-              )}
-              <span className="cast-name">{person.name}</span>
-              {person.character && <span className="cast-role">{person.character}</span>}
-            </button>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
+  const castContent = credits && <CastRail cast={credits.cast} onOpenPerson={setOpenPerson} />;
 
   // Clamped to a few lines with Read more / Show less: a long synopsis used to
   // push the streaming row and the season list a screen further down. The

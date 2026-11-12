@@ -7,71 +7,117 @@
      The middle column is the only flexible one (weight=1); the poster and the
      tick are fixed, so narrowing the widget shortens the text and never
      pushes the button off the edge. -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/row_root"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:gravity="center_vertical"
-    android:paddingTop="10dp"
-    android:paddingBottom="10dp">
-
-    <ImageView
-        android:id="@+id/row_poster"
-        android:layout_width="36dp"
-        android:layout_height="54dp"
-        android:scaleType="centerCrop"
-        android:background="@drawable/widget_poster_placeholder"
-        android:contentDescription="@null" />
+    android:layout_height="wrap_content">
 
     <LinearLayout
-        android:layout_width="0dp"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:layout_marginStart="10dp"
-        android:orientation="vertical">
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp">
+
+        <ImageView
+            android:id="@+id/row_poster"
+            android:layout_width="36dp"
+            android:layout_height="54dp"
+            android:scaleType="centerCrop"
+            android:background="@drawable/widget_poster_placeholder"
+            android:contentDescription="@null" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="10dp"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/row_show"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:fontFamily="sans-serif-medium"
+                android:textColor="@color/widget_text"
+                android:textSize="14sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/row_episode"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="@color/widget_text"
+                android:textSize="12sp"
+                android:maxLines="1"
+                android:ellipsize="end" />
+
+            <TextView
+                android:id="@+id/row_meta"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:textColor="@color/widget_muted"
+                android:textSize="11sp"
+                android:maxLines="1"
+                android:ellipsize="end"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- Marks this episode watched without opening the panel. 44dp touch
+             target around the 28dp tick. -->
+        <ImageView
+            android:id="@+id/row_tick"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="4dp"
+            android:padding="8dp"
+            android:src="@drawable/widget_tick"
+            android:contentDescription="@string/widget_mark_watched" />
+    </LinearLayout>
+
+    <!-- Shown for a moment after the tick is tapped, as the app's Up Next card
+         does: the green veil over the row, with the white tick, or "That's
+         all folks!" when the show has nothing left. Hidden otherwise. -->
+    <LinearLayout
+        android:id="@+id/row_watched"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginTop="3dp"
+        android:layout_marginBottom="3dp"
+        android:background="@drawable/widget_row_watched"
+        android:gravity="center"
+        android:orientation="horizontal"
+        android:visibility="gone">
 
         <TextView
-            android:id="@+id/row_show"
-            android:layout_width="match_parent"
+            android:id="@+id/row_watched_tick"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="@drawable/widget_watched_mark"
+            android:gravity="center"
+            android:text="@string/widget_watched_tick"
+            android:textColor="@color/widget_watched_dim"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/row_watched_folks"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:fontFamily="sans-serif-medium"
-            android:textColor="@color/widget_text"
+            android:background="@drawable/widget_watched_mark"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:text="@string/widget_watched_folks"
+            android:textColor="@color/widget_watched_dim"
             android:textSize="14sp"
-            android:maxLines="1"
-            android:ellipsize="end" />
-
-        <TextView
-            android:id="@+id/row_episode"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:textColor="@color/widget_text"
-            android:textSize="12sp"
-            android:maxLines="1"
-            android:ellipsize="end" />
-
-        <TextView
-            android:id="@+id/row_meta"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:textColor="@color/widget_muted"
-            android:textSize="11sp"
-            android:maxLines="1"
-            android:ellipsize="end"
+            android:textStyle="bold"
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- Marks this episode watched without opening the panel. 44dp touch
-         target around the 28dp tick. -->
-    <ImageView
-        android:id="@+id/row_tick"
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:layout_marginStart="4dp"
-        android:padding="8dp"
-        android:src="@drawable/widget_tick"
-        android:contentDescription="@string/widget_mark_watched" />
-
-</LinearLayout>
+</FrameLayout>

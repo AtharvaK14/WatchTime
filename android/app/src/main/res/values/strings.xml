@@ -6,15 +6,27 @@
     <string name="custom_url_scheme">com.indie.watchtime</string>
 
     <!-- Widgets -->
-    <string name="widget_up_next_label">WatchTime: Up Next</string>
+    <string name="widget_up_next_label">Shows: Up Next</string>
     <string name="widget_up_next_description">The episodes waiting in your Up Next list. Tap one to open its details and mark it watched.</string>
-    <string name="widget_coming_up_label">WatchTime: Coming Up</string>
-    <string name="widget_coming_up_description">Upcoming episodes for the shows you follow, with their air dates.</string>
+    <string name="widget_coming_up_label">Shows: Coming Up</string>
+    <string name="widget_coming_up_description">Upcoming episodes of the shows you follow, with their air dates.</string>
     <string name="widget_up_next_title">Up Next</string>
     <string name="widget_coming_up_title">Coming Up</string>
     <string name="widget_empty_up_next">Nothing queued up. Open WatchTime to add shows.</string>
     <string name="widget_empty_coming_up">No confirmed air dates yet.</string>
     <string name="widget_mark_watched">Mark watched</string>
+    <string name="widget_watched_tick">✓</string>
+    <string name="widget_watched_folks">That\'s all folks!</string>
+    <string name="widget_movies_label">Movies: To Watch</string>
+    <string name="widget_movies_description">The movies on your watchlist. Tap one to open it, or tick it as watched.</string>
+    <string name="widget_movies_title">Movies to Watch</string>
+    <string name="widget_empty_movies">No movies on your watchlist. Add some in WatchTime.</string>
+    <string name="widget_releases_label">Movies: Coming Soon</string>
+    <string name="widget_releases_description">Release dates for the movies on your watchlist, in cinemas and at home.</string>
+    <string name="widget_releases_title">Coming Soon</string>
+    <string name="widget_empty_releases">No upcoming releases on your watchlist.</string>
+    <string name="widget_tag_shows">Shows</string>
+    <string name="widget_tag_movies">Movies</string>
     <string name="widget_needs_app">Open WatchTime once to fill this in.</string>
 
     <!-- Widget configuration -->
