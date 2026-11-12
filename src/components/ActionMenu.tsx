@@ -2,6 +2,19 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as Rea
 import { createPortal } from "react-dom";
 import { rectAnchor, type MenuAnchor } from "../lib/contextActions";
 import { useBackHandler } from "../lib/backHandler";
+import { useIsMobile } from "../lib/useIsMobile";
+import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
+import { useSwipeDismiss } from "../lib/useSwipeDismiss";
+import { haptic } from "../lib/haptics";
+
+/**
+ * On a phone the menu is a bottom sheet (One UI's action sheet): the title,
+ * the actions in one rounded group and the destructive ones in another, in
+ * reach of the thumb wherever the long-pressed item was, and closed by a
+ * swipe down, a tap outside or back. On desktop it stays a popover beside
+ * the pointer or the control that opened it.
+ */
+const SHEET_EXIT_MS = 200;
 
 /**
  * The compact floating menu behind both the green-tick choices on an episode
@@ -129,10 +142,22 @@ export default function ActionMenu({
   const [viewportTick, setViewportTick] = useState(0);
   // See the class comment: only a press that starts on the menu may select.
   const armed = useRef(false);
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  const asSheet = useIsMobile();
+  // Dismissals (outside tap, back, Escape, swipe) play the sheet's exit;
+  // choosing an action closes at once, since the action has its own feedback.
+  const { closing, requestClose } = useAnimatedDismiss(onClose, asSheet ? SHEET_EXIT_MS : 0);
+  const onCloseRef = useRef(requestClose);
+  onCloseRef.current = requestClose;
 
-  useBackHandler(true, onClose);
+  useBackHandler(true, requestClose);
+  useSwipeDismiss(menuRef, menuRef, asSheet, requestClose);
+
+  // A long-press (a point anchor) is confirmed with a tick of feedback, as
+  // the system does for its own long-press menus.
+  useEffect(() => {
+    if (anchor.kind === "point") haptic("tick");
+    // Mount only: re-renders with a new anchor object are the same menu.
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useLayoutEffect(() => {
     const el = menuRef.current;
@@ -143,8 +168,9 @@ export default function ActionMenu({
     // Layout size, not getBoundingClientRect: the entrance animation starts
     // the menu slightly scaled down, and measuring that would place it a few
     // pixels past the edge it was supposed to clear.
-    setPos(place(live, el.offsetWidth, el.offsetHeight));
-  }, [anchor, items, confirm, viewportTick, anchorEl]);
+    // The sheet is placed by CSS; pos only marks it as ready for focus.
+    setPos(asSheet ? { left: 0, top: 0 } : place(live, el.offsetWidth, el.offsetHeight));
+  }, [anchor, items, confirm, viewportTick, anchorEl, asSheet]);
 
   // Focus moves into the menu once it is placed, and back out when it closes.
   useEffect(() => {
@@ -249,7 +275,7 @@ export default function ActionMenu({
 
   return createPortal(
     <div
-      className="action-menu-layer"
+      className={`action-menu-layer${asSheet ? " is-sheet" : ""}${closing ? " is-leaving" : ""}`}
       onPointerDown={(e) => {
         e.stopPropagation();
         if (menuRef.current?.contains(e.target as Node)) {
@@ -257,7 +283,7 @@ export default function ActionMenu({
           return;
         }
         e.preventDefault();
-        onClose();
+        requestClose();
       }}
       // Suppressed, never a dismissal: this is where Android's own report of
       // the long press that OPENED the menu lands (see the class comment).
@@ -265,7 +291,7 @@ export default function ActionMenu({
         e.stopPropagation();
         e.preventDefault();
       }}
-      onWheel={onClose}
+      onWheel={asSheet ? undefined : onClose}
       onClick={stop}
       onPointerUp={stop}
       onPointerMove={stop}
@@ -280,10 +306,15 @@ export default function ActionMenu({
         ref={menuRef}
         role="menu"
         aria-label={label}
-        className="action-menu"
-        style={pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0, visibility: "hidden" }}
+        className={`action-menu${asSheet ? " is-sheet" : ""}`}
+        style={asSheet ? undefined : pos ? { left: pos.left, top: pos.top } : { left: 0, top: 0, visibility: "hidden" }}
         onKeyDown={moveFocus}
       >
+        {asSheet && (
+          <div className="action-menu-handle" aria-hidden="true">
+            <span className="sheet-drag-handle-bar" />
+          </div>
+        )}
         {(title || subtitle) && (
           <div className="action-menu-header" aria-hidden="true">
             {title && <span className="action-menu-title">{title}</span>}
@@ -312,9 +343,12 @@ export default function ActionMenu({
           </>
         ) : (
           <>
-            {regular.map(renderItem)}
-            {regular.length > 0 && danger.length > 0 && <div className="action-menu-sep" role="separator" />}
-            {danger.map(renderItem)}
+            {regular.length > 0 && <div className="action-menu-group">{regular.map(renderItem)}</div>}
+            {danger.length > 0 && (
+              <div className="action-menu-group" role="group" aria-label="More">
+                {danger.map(renderItem)}
+              </div>
+            )}
           </>
         )}
       </div>

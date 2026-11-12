@@ -40,6 +40,8 @@ interface PanelHost {
    * web build would not have it.
    */
   openExternal?(request: string): string;
+  /** Touch feedback ("tick" | "confirm" | "toggle"). Optional: older APKs lack it. */
+  haptic?(kind: string): void;
 }
 
 declare global {

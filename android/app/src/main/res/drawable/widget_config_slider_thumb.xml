@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The slider's handle: a white ball with a dark ring, so it stays distinct
+     where it sits on the white filled part of the track. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="oval">
+    <solid android:color="@color/widget_text" />
+    <stroke android:width="4dp" android:color="@color/widget_bg" />
+    <size android:width="26dp" android:height="26dp" />
+</shape>

@@ -109,6 +109,81 @@ public final class WidgetStore {
         return Math.max(0, Math.min(100, percent)) / 100f;
     }
 
+    // ---- Appearance settings, per widget -----------------------------------
+    // Each placed widget has its own, set in WidgetConfigActivity. Every
+    // default reproduces the widget as it looked before the setting existed,
+    // so a widget placed earlier is unchanged until the user edits it.
+
+    /** Background colours: the app's background, true black, and its raised grey. */
+    public static final int BG_DARK = 0, BG_BLACK = 1, BG_GREY = 2;
+    /** Corner radii: 8dp, 16dp (the original), 28dp (One UI's widget rounding). */
+    public static final int CORNERS_SMALL = 0, CORNERS_MEDIUM = 1, CORNERS_LARGE = 2;
+    /** Text sizes: 90%, 100%, 115% of each view's own size. */
+    public static final int TEXT_SMALL = 0, TEXT_DEFAULT = 1, TEXT_LARGE = 2;
+
+    public static int getBackground(Context c, int id) { return clamp(prefs(c).getInt("bg_" + id, BG_DARK), 0, 2); }
+    public static int getCorners(Context c, int id) { return clamp(prefs(c).getInt("corners_" + id, CORNERS_MEDIUM), 0, 2); }
+    public static int getTextSize(Context c, int id) { return clamp(prefs(c).getInt("text_" + id, TEXT_DEFAULT), 0, 2); }
+    /** Compact rows everywhere, not only when the widget is too small for full ones. */
+    public static boolean getCompact(Context c, int id) { return prefs(c).getBoolean("compact_" + id, false); }
+    /** The title and count above the list. Still hidden when the widget is too short for it. */
+    public static boolean getShowHeader(Context c, int id) { return prefs(c).getBoolean("header_" + id, true); }
+    /** Posters in full rows. */
+    public static boolean getShowArtwork(Context c, int id) { return prefs(c).getBoolean("artwork_" + id, true); }
+
+    public static void saveAppearance(Context c, int id, int background, int corners, int textSize,
+                                      boolean compact, boolean showHeader, boolean showArtwork) {
+        prefs(c).edit()
+                .putInt("bg_" + id, background)
+                .putInt("corners_" + id, corners)
+                .putInt("text_" + id, textSize)
+                .putBoolean("compact_" + id, compact)
+                .putBoolean("header_" + id, showHeader)
+                .putBoolean("artwork_" + id, showArtwork)
+                .apply();
+    }
+
+    /** Everything stored for a widget, when it is removed from the home screen. */
+    public static void clearAll(Context c, int id) {
+        prefs(c).edit()
+                .remove(opacityKey(id))
+                .remove("bg_" + id)
+                .remove("corners_" + id)
+                .remove("text_" + id)
+                .remove("compact_" + id)
+                .remove("header_" + id)
+                .remove("artwork_" + id)
+                .apply();
+    }
+
+    public static int backgroundColor(int background) {
+        switch (background) {
+            case BG_BLACK: return 0xFF000000;
+            case BG_GREY: return 0xFF1D1D20;
+            default: return 0xFF0A0A0B;
+        }
+    }
+
+    public static int backgroundDrawable(int corners) {
+        switch (corners) {
+            case CORNERS_SMALL: return com.indie.watchtime.R.drawable.widget_background_small;
+            case CORNERS_LARGE: return com.indie.watchtime.R.drawable.widget_background_large;
+            default: return com.indie.watchtime.R.drawable.widget_background;
+        }
+    }
+
+    public static float textScale(int textSize) {
+        switch (textSize) {
+            case TEXT_SMALL: return 0.9f;
+            case TEXT_LARGE: return 1.15f;
+            default: return 1f;
+        }
+    }
+
+    private static int clamp(int v, int lo, int hi) {
+        return Math.max(lo, Math.min(hi, v));
+    }
+
     // ---- Deep links -------------------------------------------------------
     //
     // Stored rather than delivered as an event because a widget tap can cold-

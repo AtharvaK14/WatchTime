@@ -19,6 +19,7 @@ export default function SegmentedControl<T extends string>({
           key={opt.value}
           type="button"
           className={value === opt.value ? "active" : ""}
+          aria-pressed={value === opt.value}
           onClick={() => onChange(opt.value)}
         >
           {opt.label}

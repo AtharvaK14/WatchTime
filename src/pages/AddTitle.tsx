@@ -4,111 +4,20 @@ import {
   getPopularMovies,
   getUpcomingMovies,
   getRecentlyAvailableAtHome,
-  TMDB_IMAGE_BASE,
   hasApiKey,
   type TvSearchResult,
   type MovieSearchResult,
 } from "../tmdb";
 import DetailsPanel from "../components/DetailsPanel";
-import PosterCaption from "../components/PosterCaption";
+import TitleCard from "../components/TitleCard";
 import UniversalSearch, { type SearchResults } from "../components/UniversalSearch";
-import { BookmarkIcon } from "../components/icons";
 import { useLibraryIds } from "../lib/useLibraryIds";
-import { libraryKey, removalClass, useLibraryRemovals } from "../lib/libraryRemoval";
-import { useMovieWatchedPhases, watchedClass } from "../lib/movieWatched";
-import MovieWatchedOverlay from "../components/MovieWatchedOverlay";
-import { titleQuickActionProps } from "../lib/titleQuickActions";
-
-/**
- * "Already in your library", shown directly on the artwork so the user no
- * longer has to open a title to find out.
- *
- * A BOOKMARK, not a tick. The first version of this was a tick in a filled
- * accent circle, which was a mistake: a tick on a poster already means WATCHED
- * in this app (.watched-badge on the Movies grid, .watch-toggle on an episode
- * row), so the same mark was carrying two unrelated facts and the badge read
- * as "you have seen this". A bookmark says saved-not-consumed and cannot be
- * confused with either the watched state or the Mark as Watched control.
- *
- * A mark rather than a worded pill because at three cards per row on a phone
- * an "IN LIBRARY" label either covers the poster or is too small to read; the
- * word still reaches screen readers from the .sr-only text each caller
- * renders. Top-RIGHT, leaving the top-left to .card-kind so the two can never
- * collide.
- */
-function InLibraryBadge() {
-  return (
-    <span className="card-in-library" aria-hidden="true">
-      <BookmarkIcon size={13} />
-    </span>
-  );
-}
+import { useIsMobile } from "../lib/useIsMobile";
+import { PosterRailSkeleton } from "../components/Skeleton";
 
 /** "2026-03-14" -> 2026. Null for a missing or empty TMDB date. */
 function yearOf(date: string | null | undefined): number | null {
   return Number(date?.slice(0, 4)) || null;
-}
-
-/**
- * One Discover card. Every grid on this page — the rails and both kinds of
- * search result — renders through this, so they cannot drift apart.
- *
- * The same card the Shows and Movies grids use (artwork, and PosterCaption's
- * year-over-title in the bottom-left corner), plus the two markers only
- * Discover needs: the library bookmark, and the TV/Film tag wherever a grid
- * mixes the two. No watched control: marking something watched happens in the
- * details panel the card opens.
- */
-function TitleCard({
-  kind,
-  tmdbId,
-  name,
-  year,
-  posterPath,
-  kindTag,
-  inLibrary,
-  onOpen,
-}: {
-  kind: "show" | "movie";
-  tmdbId: number;
-  name: string;
-  year: number | null;
-  posterPath: string | null;
-  /** "TV" or "Film", only where the grid's heading does not already say which. */
-  kindTag?: "TV" | "Film";
-  inLibrary: boolean;
-  onOpen: () => void;
-}) {
-  // These grids are TMDB's, not the library's, so a removed title's card
-  // stays where it is: only the bookmark goes. The highlight is what says
-  // which card that happened to once the panel has closed. Only the highlight
-  // phase applies here - "held" and "exit" are for cards leaving a library list.
-  const removal = useLibraryRemovals().get(libraryKey(kind, tmdbId));
-  // Same reasoning for a movie marked watched in that panel: the card stays,
-  // and shows the watched tick once the panel has closed, so the user can see
-  // which card it happened to. Only ever set for movies.
-  const watched = useMovieWatchedPhases().get(libraryKey(kind, tmdbId));
-  return (
-    <button
-      className={`show-card${removal === "highlight" ? removalClass(removal) : ""}${watchedClass(watched, true)}`}
-      {...titleQuickActionProps({ kind, tmdbId, name, onViewDetails: onOpen })}
-      onClick={onOpen}
-    >
-      {posterPath ? (
-        <img src={`${TMDB_IMAGE_BASE}${posterPath}`} alt={name} />
-      ) : (
-        <div className="poster-placeholder" />
-      )}
-      {/* Sits on the artwork rather than in .show-card-body, because that
-          caption is hidden until hover on pointer:fine devices — a type
-          label there would be invisible at rest on desktop. */}
-      {kindTag && <span className="card-kind">{kindTag}</span>}
-      {inLibrary && <InLibraryBadge />}
-      <PosterCaption title={name} year={year} />
-      {inLibrary && <span className="sr-only">In your library</span>}
-      <MovieWatchedOverlay phase={watched} staying tmdbId={tmdbId} />
-    </button>
-  );
 }
 
 function ShowRow({
@@ -124,7 +33,7 @@ function ShowRow({
   showTypeTag?: boolean;
 }) {
   return (
-    <div className="show-grid">
+    <div className="card-rail">
       {items.map((r) => (
         <TitleCard
           key={r.id}
@@ -133,7 +42,8 @@ function ShowRow({
           name={r.name}
           year={yearOf(r.first_air_date)}
           posterPath={r.poster_path}
-          kindTag={showTypeTag ? "TV" : undefined}
+          rating={r.vote_average}
+          kindTag={showTypeTag ? "Series" : undefined}
           inLibrary={inLibrary.has(r.id)}
           onOpen={() => onOpen(r.id)}
         />
@@ -154,7 +64,7 @@ function MovieRow({
   showTypeTag?: boolean;
 }) {
   return (
-    <div className="show-grid">
+    <div className="card-rail">
       {items.map((r) => (
         <TitleCard
           key={r.id}
@@ -163,6 +73,7 @@ function MovieRow({
           name={r.title}
           year={yearOf(r.release_date)}
           posterPath={r.poster_path}
+          rating={r.vote_average}
           kindTag={showTypeTag ? "Film" : undefined}
           inLibrary={inLibrary.has(r.id)}
           onOpen={() => onOpen(r.id)}
@@ -186,11 +97,8 @@ function Results({
   const owned = (kind: "show" | "movie", tmdbId: number) =>
     (kind === "show" ? library.shows : library.movies).has(tmdbId);
   // Search mixes shows and films under one heading, so every result carries
-  // the type, exactly as Trending does. It used to be written into the caption
-  // ("TV · 2024"); it is the tag on the artwork now, which leaves the caption
-  // to the year and title every other card shows and keeps the type visible at
-  // rest on desktop, where the caption only appears on hover.
-  const kindTag = (kind: "show" | "movie") => (kind === "show" ? "TV" : "Film");
+  // the type in its caption ("2024 · Series"), exactly as Trending does.
+  const kindTag = (kind: "show" | "movie") => (kind === "show" ? "Series" : "Film");
   return (
     <>
       {results.titles.length > 0 && (
@@ -205,6 +113,7 @@ function Results({
                 name={t.name}
                 year={t.year}
                 posterPath={t.posterPath}
+                rating={t.rating}
                 kindTag={kindTag(t.kind)}
                 inLibrary={owned(t.kind, t.tmdbId)}
                 onOpen={() => onOpen(t.kind, t.tmdbId)}
@@ -231,6 +140,7 @@ function Results({
                   name={m.name}
                   year={m.year}
                   posterPath={m.posterPath}
+                  rating={m.rating}
                   kindTag={kindTag(m.kind)}
                   // The live sets alone, not m.inLibrary as well. That is the
                   // search index's answer from when the search ran, and OR-ing
@@ -252,6 +162,7 @@ function Results({
 
 export default function AddTitle() {
   const [results, setResults] = useState<SearchResults | null>(null);
+  const isMobile = useIsMobile();
   const [openDetails, setOpenDetails] = useState<{ kind: "show" | "movie"; tmdbId: number } | null>(null);
 
   const [popularShows, setPopularShows] = useState<TvSearchResult[] | null>(null);
@@ -298,6 +209,8 @@ export default function AddTitle() {
         onOpen={(kind, tmdbId) => setOpenDetails({ kind, tmdbId })}
         onResults={setResults}
         onClear={() => setResults(null)}
+        // Phones: the search lives in the bottom dock, in reach of the thumb.
+        docked={isMobile}
       />
 
       {!hasApiKey() && <p className="status-error">Add your TMDB API key on the Settings page to search or browse.</p>}
@@ -324,7 +237,7 @@ export default function AddTitle() {
                 repeating that on every card is clutter, not context. */}
             <h2 className="section-title">Trending this week</h2>
             {!popularShows ? (
-              <p className="muted small">Loading...</p>
+              <PosterRailSkeleton />
             ) : (
               <ShowRow
                 items={popularShows.slice(0, 10)}
@@ -335,7 +248,7 @@ export default function AddTitle() {
             )}
 
             {!popularMovies ? (
-              <p className="muted small">Loading...</p>
+              <PosterRailSkeleton />
             ) : (
               <MovieRow
                 items={popularMovies.slice(0, 10)}
@@ -347,7 +260,7 @@ export default function AddTitle() {
 
             <h2 className="section-title">Upcoming movies</h2>
             {!upcomingMovies ? (
-              <p className="muted small">Loading...</p>
+              <PosterRailSkeleton />
             ) : (
               <MovieRow
                 items={upcomingMovies.slice(0, 10)}
@@ -358,7 +271,7 @@ export default function AddTitle() {
 
             <h2 className="section-title">Recently available at home</h2>
             {!atHomeMovies ? (
-              <p className="muted small">Loading...</p>
+              <PosterRailSkeleton />
             ) : atHomeMovies.length === 0 ? (
               <p className="muted small">Nothing found in the last 45 days.</p>
             ) : (

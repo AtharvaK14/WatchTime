@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { checkTmdbKey, TMDB_API_KEY_STORAGE } from "../tmdb";
 import { checkOmdbKey, OMDB_API_KEY_STORAGE, isOmdbRateLimited, omdbQuotaResumeTime } from "../omdb";
@@ -425,7 +425,7 @@ function WatchNextPreferences() {
   function save() {
     if (!valid) return;
     setStaleDaysThreshold(parsed);
-    // The threshold decides which shows count as Haven't Watched For a While,
+    // The threshold decides which shows count as Lapsed,
     // and so which releases may be announced.
     requestNotificationSync();
     setSaved(true);
@@ -434,9 +434,9 @@ function WatchNextPreferences() {
   return (
     <div className="panel">
       <div className="settings-block">
-        <h3>"Haven't Watched For a While" threshold</h3>
+        <h3>"Lapsed" threshold</h3>
         <p className="muted small">
-          Days without watch activity before a show moves off Watch Next into "Haven't Watched For a While". The
+          Days without watch activity before a show moves off Watch next into "Lapsed". The
           two lists never overlap; watching the next episode moves the show straight back. Default:{" "}
           {DEFAULT_STALE_DAYS_THRESHOLD} days.
         </p>
@@ -626,123 +626,92 @@ function ResetData() {
   );
 }
 
+/** One row of a settings group: a collapsible section, closed by default. */
+function SettingsRow({
+  title,
+  sub,
+  danger = false,
+  children,
+}: {
+  title: string;
+  sub: string;
+  danger?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details>
+      <summary>
+        <span className={`settings-row-text${danger ? " settings-row-danger" : ""}`}>
+          <h3>{title}</h3>
+          <p className="muted small settings-row-sub">{sub}</p>
+        </span>
+      </summary>
+      <div className="settings-row-body">{children}</div>
+    </details>
+  );
+}
+
+/** A labelled group of rows in one rounded container, One UI's settings layout. */
+function SettingsGroup({ label, danger = false, children }: { label: string; danger?: boolean; children: ReactNode }) {
+  return (
+    <section className="settings-group">
+      <h2 className="settings-group-label">{label}</h2>
+      <div className={`settings-list${danger ? " is-danger" : ""}`}>{children}</div>
+    </section>
+  );
+}
+
 export default function Settings() {
   return (
-    <div className="panel">
+    <div className="panel settings-page">
       <h1>Settings</h1>
 
-      {/* Deliberately NOT `open`. Backup & Restore used to expand itself on
-          every visit to Settings, which made the page open mid-scroll into a
-          section most visits are not about and left every other section
-          looking secondary to it. All eight are collapsed now, so the page
-          opens as a list of destinations. */}
-      <details>
-        <summary>
-          <span className="settings-row-text">
-            <h2>Backup &amp; Restore</h2>
-            <p className="muted small settings-row-sub">Export your library to a file, restore it anywhere</p>
-          </span>
-        </summary>
-        <div style={{ marginTop: 14 }}>
+      {/* Every section is collapsed on arrival, so the page opens as a list
+          of destinations rather than mid-scroll into one of them (Backup &
+          Restore used to open itself on every visit). Grouped by what the
+          user is there to do; the one destructive action sits alone at the
+          end, in its own group, away from everything else. */}
+      <SettingsGroup label="Your library">
+        <SettingsRow title="Backup & Restore" sub="Export your library to a file, restore it anywhere">
           <BackupRestore />
-        </div>
-      </details>
-
-      <details>
-        <summary>
-          <span className="settings-row-text">
-            <h2>Import from TV Time</h2>
-            <p className="muted small settings-row-sub">JSON export recommended, CSV fallback available</p>
-          </span>
-        </summary>
-        <div style={{ marginTop: 14 }}>
+        </SettingsRow>
+        <SettingsRow title="Import from TV Time" sub="JSON export recommended, CSV fallback available">
           <ImportWizard />
-        </div>
-      </details>
+        </SettingsRow>
+      </SettingsGroup>
 
-      <details>
-        <summary>
-          <span className="settings-row-text">
-            <h2>Notifications</h2>
-            <p className="muted small settings-row-sub">New episodes and releases from your library only</p>
-          </span>
-        </summary>
-        <div style={{ marginTop: 14 }}>
+      <SettingsGroup label="Preferences">
+        <SettingsRow title="Notifications" sub="New episodes and releases from your library only">
           <NotificationSettings />
-        </div>
-      </details>
-
-      <details>
-        <summary>
-          <span className="settings-row-text">
-            <h2>API Keys</h2>
-            <p className="muted small settings-row-sub">TMDB required, OMDb optional for ratings</p>
-          </span>
-        </summary>
-        <div style={{ marginTop: 14 }}>
-          <ApiKeys />
-        </div>
-      </details>
-
-      <details>
-        <summary>
-          <span className="settings-row-text">
-            <h2>Watch Next</h2>
-            <p className="muted small settings-row-sub">When shows count as "haven't watched for a while"</p>
-          </span>
-        </summary>
-        <div style={{ marginTop: 14 }}>
+        </SettingsRow>
+        <SettingsRow title="Watch Next" sub="When shows count as lapsed">
           <WatchNextPreferences />
-        </div>
-      </details>
-
-      <details>
-        <summary>
-          <span className="settings-row-text">
-            <h2>Streaming</h2>
-            <p className="muted small settings-row-sub">Which region "Available on" answers for</p>
-          </span>
-        </summary>
-        <div style={{ marginTop: 14 }}>
+        </SettingsRow>
+        <SettingsRow title="Streaming" sub={'Which region "Available on" answers for'}>
           <StreamingPreferences />
-        </div>
-      </details>
+        </SettingsRow>
+      </SettingsGroup>
 
-      <details>
-        <summary>
-          <span className="settings-row-text">
-            <h2>Diagnostics</h2>
-            <p className="muted small settings-row-sub">Compare stored data against TMDB for a show</p>
-          </span>
-        </summary>
-        <div style={{ marginTop: 14 }}>
+      <SettingsGroup label="Connections">
+        <SettingsRow title="API Keys" sub="TMDB required, OMDb optional for ratings">
+          <ApiKeys />
+        </SettingsRow>
+      </SettingsGroup>
+
+      <SettingsGroup label="Help">
+        <SettingsRow title="Diagnostics" sub="Compare stored data against TMDB for a show">
           <Diagnostics />
-        </div>
-      </details>
-
-      <details>
-        <summary>
-          <span className="settings-row-text">
-            <h2>About</h2>
-            <p className="muted small settings-row-sub">Credits, data sources, and privacy</p>
-          </span>
-        </summary>
-        <div style={{ marginTop: 14 }}>
+        </SettingsRow>
+        <SettingsRow title="About" sub="Credits, data sources, and privacy">
           <About />
-        </div>
-      </details>
+        </SettingsRow>
+      </SettingsGroup>
 
-      <details>
-        <summary>
-          <span className="settings-row-text settings-row-danger">
-            <h3>Reset Data</h3>
-            <p className="small settings-row-sub">Deletes shows, movies, and watch history</p>
-          </span>
-        </summary>
-        <div style={{ marginTop: 14 }}>
+      <SettingsGroup label="Danger zone" danger>
+        <SettingsRow title="Reset Data" sub="Deletes shows, movies, and watch history" danger>
           <ResetData />
-        </div>
-      </details>
+        </SettingsRow>
+      </SettingsGroup>
     </div>
   );
 }

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The knob: dark on the white track when on, grey when off. The transparent
+     stroke insets it inside the track. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_checked="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/widget_bg" />
+            <stroke android:width="5dp" android:color="@android:color/transparent" />
+            <size android:width="28dp" android:height="28dp" />
+        </shape>
+    </item>
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/widget_muted" />
+            <stroke android:width="5dp" android:color="@android:color/transparent" />
+            <size android:width="28dp" android:height="28dp" />
+        </shape>
+    </item>
+</selector>

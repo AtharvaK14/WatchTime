@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The "Shows" / "Movies" tag in a widget's picker preview, so the four
+     previews say which kind of title each one lists at a glance. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/widget_surface_raised" />
+    <corners android:radius="999dp" />
+</shape>

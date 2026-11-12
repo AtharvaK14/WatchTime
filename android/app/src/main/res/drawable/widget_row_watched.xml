@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The app's watched veil (var watched-veil in the app), drawn over an Up Next row
+     for a moment after its tick is tapped. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="@color/widget_watched_veil" />
+    <corners android:radius="14dp" />
+</shape>

@@ -43,6 +43,11 @@ export interface Show {
   // Filled by the same backfill pass as overview, since it arrives in the
   // same details response and costs no extra request.
   originalLanguage?: string | null;
+  // TMDB's vote_average for the show, 0-10, shown as the star rating on its
+  // card. Unindexed, so no schema version. undefined means "never looked up"
+  // (rows from before this field, and imports, until lib/ratings.ts fills
+  // them); null means "looked up and TMDB has none".
+  tmdbRating?: number | null;
 }
 
 export interface Episode {
@@ -138,6 +143,8 @@ export interface Movie {
   // ever claimed from this field. Same undefined/null convention as
   // digitalReleaseDate. See lib/releaseDates.ts.
   theatricalReleaseDate?: string | null;
+  // TMDB's vote_average for the movie. See Show.tmdbRating.
+  tmdbRating?: number | null;
   // ISO timestamp of the last typed-date lookup that succeeded. Release dates
   // are not fixed - a digital date is usually announced weeks after the
   // theatrical one, and either can move - so a lookup is repeated once this

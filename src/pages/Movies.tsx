@@ -17,6 +17,9 @@ import { useFlipLayout } from "../lib/useFlipLayout";
 import DetailsPanel from "../components/DetailsPanel";
 import MovieWatchedOverlay from "../components/MovieWatchedOverlay";
 import PosterCaption from "../components/PosterCaption";
+import RatingChip from "../components/RatingChip";
+import { useRatingBackfill } from "../lib/ratings";
+import SearchFilterDock from "../components/SearchFilterDock";
 import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
@@ -26,6 +29,7 @@ import { movieWatchCount, viewingsInWords } from "../lib/watchHistory";
 import WatchMark from "../components/WatchMark";
 import { searchOrBrowse } from "../lib/librarySearch";
 import { MovieStatsDialog } from "../components/StatsDialog";
+import { PosterGridSkeleton } from "../components/Skeleton";
 
 type SortKey = "title" | "releaseYear" | "recentlyWatched" | "recentlyAdded" | "rating";
 type FilterKey = "all" | "watched" | "wantToWatch";
@@ -65,6 +69,8 @@ export default function Movies({
   const [sortKey, setSortKey] = useState<SortKey>("recentlyAdded");
   const [filterKey, setFilterKey] = useState<FilterKey>("wantToWatch");
   const [genreFilter, setGenreFilter] = useState<number | null>(null);
+  // Any filter off its default: Reset is offered, and the dock's filter button carries a dot.
+  const filtersChanged = filterKey !== "wantToWatch" || genreFilter !== null || sortKey !== "recentlyAdded";
   const [genres, setGenres] = useState<Genre[]>([]);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
   const [statsOpen, setStatsOpen] = useState(false);
@@ -136,6 +142,8 @@ export default function Movies({
   const captureGrid = useFlipLayout(gridRef);
   const watchedDisplay = useMovieWatchedExit(visible, movieKey, captureGrid, filterKey);
   const display = useRemovalExit(watchedDisplay, movieSlotKey, captureGrid);
+  // Ratings for movies stored before ratings were, top of the grid first.
+  useRatingBackfill("movie", movies ? visible : undefined);
   const [watchError, setWatchError] = useState<string | null>(null);
 
   /**
@@ -161,7 +169,7 @@ export default function Movies({
     }
   }, []);
 
-  if (!movies) return <p className="muted">Loading...</p>;
+  if (!movies) return <PosterGridSkeleton />;
 
   return (
     <div className="panel">
@@ -189,17 +197,33 @@ export default function Movies({
         <p className="muted">No movies yet. Import your TV Time export, or add one below.</p>
       ) : (
         <>
-          <div className="field-row filters-row">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search your movies..."
-            />
+          {/* On a phone the search and the filter button live in the bottom
+              dock (SearchFilterDock) instead; the sheet itself is shared. */}
+          <div className={`field-row filters-row${isMobile ? " is-docked" : ""}`}>
+            {!isMobile && (
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search your movies..."
+              />
+            )}
             {/* Same three categories, in the same order, as the Shows filter
                 menu — the two pages are the same job on different content and
                 should not need to be learned twice. */}
-            <FilterSheet resultCount={visible.length} open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
+            <FilterSheet
+              resultCount={visible.length}
+              noun="movie"
+              open={filterSheetOpen}
+              onOpenChange={setFilterSheetOpen}
+              canReset={filtersChanged}
+              showTrigger={!isMobile}
+              onReset={() => {
+                setFilterKey("wantToWatch");
+                setGenreFilter(null);
+                setSortKey("recentlyAdded");
+              }}
+            >
               <FilterGroup title="Watch status">
                 <SegmentedControl options={STATUS_OPTIONS} value={filterKey} onChange={setFilterKey} />
               </FilterGroup>
@@ -240,6 +264,15 @@ export default function Movies({
               </FilterGroup>
             </FilterSheet>
           </div>
+          {isMobile && (
+            <SearchFilterDock
+              query={query}
+              onQueryChange={setQuery}
+              placeholder="Search your movies"
+              filtersActive={filtersChanged}
+              onOpenFilters={() => setFilterSheetOpen(true)}
+            />
+          )}
 
           {filtersSetAside && (
             <p className="muted small search-scope-note">
@@ -326,24 +359,29 @@ const MovieGridCard = memo(function MovieGridCard({
         }
       }}
     >
-      {m.posterPath ? (
-        <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.title} />
-      ) : (
-        <div className="poster-placeholder" />
-      )}
-      <button
-        className={`watched-badge ${m.watched ? "on" : ""}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          void onIndicator(m, e.currentTarget);
-        }}
-        aria-haspopup={m.watched ? "menu" : undefined}
-        aria-label={m.watched ? `${viewingsInWords(count)}. Change viewing status` : `Mark ${m.title} watched`}
-      >
-        <WatchMark count={count} />
-      </button>
+      {/* The artwork and everything drawn on it: the rating top-left, the
+          watch state top-right, and the watched veil over the whole poster. */}
+      <div className="card-art">
+        {m.posterPath ? (
+          <img src={`${TMDB_IMAGE_BASE}${m.posterPath}`} alt={m.title} />
+        ) : (
+          <div className="poster-placeholder" />
+        )}
+        <RatingChip rating={m.tmdbRating} />
+        <button
+          className={`watched-badge ${m.watched ? "on" : ""}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            void onIndicator(m, e.currentTarget);
+          }}
+          aria-haspopup={m.watched ? "menu" : undefined}
+          aria-label={m.watched ? `${viewingsInWords(count)}. Change viewing status` : `Mark ${m.title} watched`}
+        >
+          <WatchMark count={count} />
+        </button>
+        <MovieWatchedOverlay phase={watched} staying={staying} tmdbId={m.tmdbId} />
+      </div>
       <PosterCaption title={m.title} year={m.releaseYear} />
-      <MovieWatchedOverlay phase={watched} staying={staying} tmdbId={m.tmdbId} />
     </div>
   );
 });

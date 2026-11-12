@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Up Next row's "mark watched" button: the app's unticked episode
+     tick (an outlined circle with a check), in the quiet secondary grey so
+     it reads as an action without competing with the show name. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="28dp"
+    android:height="28dp"
+    android:viewportWidth="28"
+    android:viewportHeight="28">
+    <path
+        android:pathData="M14,2.75a11.25,11.25 0,1 1,0 22.5a11.25,11.25 0,1 1,0 -22.5z"
+        android:strokeColor="@color/widget_text_2"
+        android:strokeWidth="1.5"
+        android:fillColor="#00000000" />
+    <path
+        android:pathData="M9.25,14.25l3.25,3.25l6.25,-6.75"
+        android:strokeColor="@color/widget_text"
+        android:strokeWidth="1.75"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:fillColor="#00000000" />
+</vector>

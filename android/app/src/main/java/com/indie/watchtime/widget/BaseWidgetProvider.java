@@ -8,6 +8,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.util.TypedValue;
 import android.view.View;
 import android.widget.RemoteViews;
 
@@ -66,7 +67,9 @@ abstract class BaseWidgetProvider extends AppWidgetProvider {
 
         Bundle options = manager.getAppWidgetOptions(appWidgetId);
         int height = options == null ? 0 : options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT, 0);
-        boolean showHeader = height == 0 || height >= HEADER_MIN_HEIGHT_DP;
+        // The user's Title bar setting, and never on a widget too short for it.
+        boolean showHeader = WidgetStore.getShowHeader(context, appWidgetId)
+                && (height == 0 || height >= HEADER_MIN_HEIGHT_DP);
         views.setViewVisibility(R.id.widget_header, showHeader ? View.VISIBLE : View.GONE);
 
         JSONArray rows = WidgetStore.readRows(context, kind.snapshotField());
@@ -92,8 +95,19 @@ abstract class BaseWidgetProvider extends AppWidgetProvider {
 
         // Background opacity for THIS widget instance, applied to the backdrop
         // layer alone. Everything drawn above it stays fully opaque.
+        // Background: its corners (one drawable per radius), its colour (a
+        // tint over that shape), and its transparency.
+        views.setImageViewResource(R.id.widget_bg,
+                WidgetStore.backgroundDrawable(WidgetStore.getCorners(context, appWidgetId)));
+        views.setInt(R.id.widget_bg, "setColorFilter",
+                WidgetStore.backgroundColor(WidgetStore.getBackground(context, appWidgetId)));
         views.setFloat(R.id.widget_bg, "setAlpha",
                 WidgetStore.opacityToAlpha(WidgetStore.getOpacity(context, appWidgetId)));
+
+        // Text size: the header here; the rows in WidgetListFactory.
+        float scale = WidgetStore.textScale(WidgetStore.getTextSize(context, appWidgetId));
+        views.setTextViewTextSize(R.id.widget_title, TypedValue.COMPLEX_UNIT_SP, 14 * scale);
+        views.setTextViewTextSize(R.id.widget_count, TypedValue.COMPLEX_UNIT_SP, 12 * scale);
 
         // One template for every row; each row supplies only its fill-in extras.
         //
@@ -137,6 +151,8 @@ abstract class BaseWidgetProvider extends AppWidgetProvider {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         refreshFamily(context, manager, WatchNextWidgetProvider.class);
         refreshFamily(context, manager, ComingUpWidgetProvider.class);
+        refreshFamily(context, manager, MoviesToWatchWidgetProvider.class);
+        refreshFamily(context, manager, MovieReleasesWidgetProvider.class);
     }
 
     private static void refreshFamily(Context context, AppWidgetManager manager, Class<?> provider) {
@@ -157,15 +173,37 @@ abstract class BaseWidgetProvider extends AppWidgetProvider {
     public void onDeleted(Context context, int[] appWidgetIds) {
         super.onDeleted(context, appWidgetIds);
         for (int appWidgetId : appWidgetIds) {
-            WidgetStore.clearOpacity(context, appWidgetId);
+            WidgetStore.clearAll(context, appWidgetId);
         }
     }
 
-    /** True when the user has at least one widget of either family on a home screen. */
+    /** True when the user has at least one widget of any family on a home screen. */
     static boolean anyPlaced(Context context) {
         AppWidgetManager manager = AppWidgetManager.getInstance(context);
         return count(manager, context, WatchNextWidgetProvider.class) > 0
-                || count(manager, context, ComingUpWidgetProvider.class) > 0;
+                || count(manager, context, ComingUpWidgetProvider.class) > 0
+                || count(manager, context, MoviesToWatchWidgetProvider.class) > 0
+                || count(manager, context, MovieReleasesWidgetProvider.class) > 0;
+    }
+
+    /** Which family a placed widget id belongs to, from its provider class. */
+    static WidgetKind kindOf(Context context, int appWidgetId) {
+        android.appwidget.AppWidgetProviderInfo info = AppWidgetManager.getInstance(context).getAppWidgetInfo(appWidgetId);
+        String cls = info == null || info.provider == null ? "" : info.provider.getClassName();
+        if (ComingUpWidgetProvider.class.getName().equals(cls)) return WidgetKind.COMING_UP;
+        if (MoviesToWatchWidgetProvider.class.getName().equals(cls)) return WidgetKind.MOVIES_TO_WATCH;
+        if (MovieReleasesWidgetProvider.class.getName().equals(cls)) return WidgetKind.MOVIE_RELEASES;
+        return WidgetKind.WATCH_NEXT;
+    }
+
+    /** A provider instance for a family, to redraw one of its widgets. */
+    static BaseWidgetProvider providerFor(WidgetKind kind) {
+        switch (kind) {
+            case COMING_UP: return new ComingUpWidgetProvider();
+            case MOVIES_TO_WATCH: return new MoviesToWatchWidgetProvider();
+            case MOVIE_RELEASES: return new MovieReleasesWidgetProvider();
+            default: return new WatchNextWidgetProvider();
+        }
     }
 
     private static int count(AppWidgetManager manager, Context context, Class<?> provider) {

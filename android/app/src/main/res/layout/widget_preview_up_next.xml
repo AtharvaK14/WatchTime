@@ -36,6 +36,7 @@
         android:padding="10dp">
 
         <LinearLayout
+            android:id="@+id/preview_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
@@ -54,9 +55,15 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="3"
-                android:textColor="@color/widget_muted"
-                android:textSize="12sp" />
+                android:background="@drawable/widget_kind_tag"
+                android:paddingStart="9dp"
+                android:paddingEnd="9dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
+                android:text="@string/widget_tag_shows"
+                android:textColor="@color/widget_text_2"
+                android:textSize="11sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <LinearLayout
@@ -71,6 +78,7 @@
                 android:layout_width="36dp"
                 android:layout_height="54dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -85,6 +93,17 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="The Lantern Line"
+                    android:fontFamily="sans-serif-medium"
+                    android:textColor="@color/widget_text"
+                    android:textSize="14sp"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="S2 E4 · Salt and Static"
                     android:textColor="@color/widget_text"
                     android:textSize="12sp"
                     android:maxLines="1"
@@ -94,23 +113,22 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="monospace"
-                    android:text="S02 | E04  +3"
-                    android:textColor="@color/widget_text"
-                    android:textStyle="bold"
-                    android:textSize="13sp"
-                    android:maxLines="1"
-                    android:ellipsize="end" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Salt and Static"
+                    android:tag="detail"
+                    android:text="+3 more"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
                     android:ellipsize="end" />
             </LinearLayout>
+
+            <ImageView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="4dp"
+                android:padding="8dp"
+                android:src="@drawable/widget_tick"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
         </LinearLayout>
 
         <ImageView
@@ -132,6 +150,7 @@
                 android:layout_width="36dp"
                 android:layout_height="54dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -146,45 +165,41 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Harrowgate"
+                    android:fontFamily="sans-serif-medium"
+                    android:textColor="@color/widget_text"
+                    android:textSize="14sp"
+                    android:maxLines="1"
+                    android:ellipsize="end" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="S1 E1 · Pilot"
                     android:textColor="@color/widget_text"
                     android:textSize="12sp"
                     android:maxLines="1"
                     android:ellipsize="end" />
-
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="monospace"
-                    android:text="S01 | E01"
-                    android:textColor="@color/widget_text"
-                    android:textStyle="bold"
-                    android:textSize="13sp"
-                    android:maxLines="1"
-                    android:ellipsize="end" />
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="2dp"
-                    android:background="@drawable/widget_premiere_tag"
-                    android:paddingStart="6dp"
-                    android:paddingEnd="6dp"
-                    android:paddingTop="1dp"
-                    android:paddingBottom="1dp"
-                    android:text="PREMIERE"
-                    android:textColor="@color/widget_accent"
-                    android:textSize="9sp"
-                    android:textStyle="bold" />
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="Pilot"
+                    android:tag="detail"
+                    android:text="Series premiere"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
                     android:ellipsize="end" />
             </LinearLayout>
+
+            <ImageView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="4dp"
+                android:padding="8dp"
+                android:src="@drawable/widget_tick"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
         </LinearLayout>
 
         <ImageView
@@ -206,6 +221,7 @@
                 android:layout_width="36dp"
                 android:layout_height="54dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -220,8 +236,9 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:text="Nightjar"
+                    android:fontFamily="sans-serif-medium"
                     android:textColor="@color/widget_text"
-                    android:textSize="12sp"
+                    android:textSize="14sp"
                     android:maxLines="1"
                     android:ellipsize="end" />
 
@@ -229,23 +246,21 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="2dp"
-                    android:fontFamily="monospace"
-                    android:text="S04 | E11"
+                    android:text="S4 E11 · What the River Kept"
                     android:textColor="@color/widget_text"
-                    android:textStyle="bold"
-                    android:textSize="13sp"
-                    android:maxLines="1"
-                    android:ellipsize="end" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="What the River Kept"
-                    android:textColor="@color/widget_muted"
-                    android:textSize="11sp"
+                    android:textSize="12sp"
                     android:maxLines="1"
                     android:ellipsize="end" />
             </LinearLayout>
+
+            <ImageView
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:layout_marginStart="4dp"
+                android:padding="8dp"
+                android:src="@drawable/widget_tick"
+                android:importantForAccessibility="no"
+                android:contentDescription="@null" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

@@ -14,7 +14,7 @@
 import type { Episode, Movie, Show, WatchedEpisode } from "../db";
 import type { ShowWatchStatus } from "./showWatchStatus";
 import { isStoppedWatching } from "./stoppedWatching";
-import { episodeWatchCount, movieWatchCount } from "./watchHistory";
+import { episodeWatchCount, movieFirstWatchedAt, movieWatchCount } from "./watchHistory";
 
 export interface RankedTitle {
   tmdbId: number;
@@ -159,9 +159,11 @@ export interface MovieLibraryStats {
   rewatchViews: number;
   /** Movies watched more than once, most viewings first. */
   mostRewatched: RankedTitle[];
+  /** First viewings per month, oldest first, ending with `now`'s month. */
+  firstWatchesByMonth: MonthCount[];
 }
 
-export function movieLibraryStats(movies: Movie[]): MovieLibraryStats {
+export function movieLibraryStats(movies: Movie[], now = new Date(), months = 6): MovieLibraryStats {
   const watchedMovies = movies.filter((m) => m.watched);
   const views = watchedMovies.reduce((sum, m) => sum + movieWatchCount(m), 0);
   return {
@@ -175,5 +177,22 @@ export function movieLibraryStats(movies: Movie[]): MovieLibraryStats {
       .filter((m) => m.views >= 2)
       .sort((a, b) => b.views - a.views || a.name.localeCompare(b.name))
       .slice(0, 5),
+    firstWatchesByMonth: countByMonth(
+      watchedMovies.map((m) => movieFirstWatchedAt(m)),
+      now,
+      months
+    ),
   };
+}
+
+/** How many of `dates` fall in each of the last `months` months (missing dates are skipped). */
+function countByMonth(dates: (string | null | undefined)[], now: Date, months: number): MonthCount[] {
+  const window = lastMonths(now, months);
+  const counts = new Map(window.map((m) => [m, 0]));
+  for (const d of dates) {
+    if (!d) continue;
+    const m = monthOf(d);
+    if (counts.has(m)) counts.set(m, (counts.get(m) ?? 0) + 1);
+  }
+  return window.map((month) => ({ month, count: counts.get(month) ?? 0 }));
 }

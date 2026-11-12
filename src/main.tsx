@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import EpisodePanelApp from './panel/EpisodePanelApp.tsx'
+import QuickMarkWatched from './panel/QuickMarkWatched.tsx'
 
 // Two entry points share one bundle and one origin.
 //
@@ -19,11 +20,24 @@ if (panel === 'episode') {
   // Marks the document for the panel-only CSS: transparent page background,
   // so the activity's window shows the home screen through it.
   document.documentElement.dataset.wtpanel = 'episode'
-  root.render(
+  const showId = Number(params.get('showId'))
+  const episodeKey = params.get('episodeKey') ?? ''
+  // quick=1 is a widget row's tick: mark watched and close, no panel. A
+  // movieId means a Movies to Watch row rather than an Up Next one.
+  const movieId = Number(params.get('movieId'))
+  if (params.get('quick') === '1') {
+    root.render(
+      <StrictMode>
+        <QuickMarkWatched
+          target={movieId > 0 ? { kind: 'movie', tmdbId: movieId } : { kind: 'episode', showId, episodeKey }}
+        />
+      </StrictMode>,
+    )
+  } else root.render(
     <StrictMode>
       <EpisodePanelApp
-        showId={Number(params.get('showId'))}
-        episodeKey={params.get('episodeKey') ?? ''}
+        showId={showId}
+        episodeKey={episodeKey}
         // Coming Up rows pass readonly=1: an episode that has not aired yet
         // has nothing to mark. EpisodeDetailsPanel already supports this.
         canToggleWatched={params.get('readonly') !== '1'}

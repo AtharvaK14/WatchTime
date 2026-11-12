@@ -92,6 +92,30 @@
                 android:resource="@xml/widget_coming_up_info" />
         </receiver>
 
+        <receiver
+            android:name=".widget.MoviesToWatchWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_movies_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_movies_info" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.MovieReleasesWidgetProvider"
+            android:exported="true"
+            android:label="@string/widget_releases_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_movie_releases_info" />
+        </receiver>
+
         <!-- BIND_REMOTEVIEWS keeps the system as the only possible binder. -->
         <service
             android:name=".widget.WidgetListService"

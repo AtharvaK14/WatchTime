@@ -21,3 +21,10 @@ export function averageRuntime(episodeRunTimes: number[]): number {
   const sum = episodeRunTimes.reduce((a, b) => a + b, 0);
   return sum / episodeRunTimes.length;
 }
+
+/** "2h 35m" / "45m" / "2h". */
+export function formatRuntime(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = Math.round(minutes % 60);
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}

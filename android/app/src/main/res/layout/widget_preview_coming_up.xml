@@ -36,6 +36,7 @@
         android:padding="10dp">
 
         <LinearLayout
+            android:id="@+id/preview_header"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
@@ -54,9 +55,15 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="3"
-                android:textColor="@color/widget_muted"
-                android:textSize="12sp" />
+                android:background="@drawable/widget_kind_tag"
+                android:paddingStart="9dp"
+                android:paddingEnd="9dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
+                android:text="@string/widget_tag_shows"
+                android:textColor="@color/widget_text_2"
+                android:textSize="11sp"
+                android:textStyle="bold" />
         </LinearLayout>
 
         <LinearLayout
@@ -71,6 +78,7 @@
                 android:layout_width="30dp"
                 android:layout_height="45dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -95,7 +103,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:fontFamily="monospace"
-                    android:text="S02 | E01"
+                    android:text="S2 E1"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
@@ -104,6 +112,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:tag="detail"
                     android:text="The Long Thaw"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
@@ -117,9 +126,8 @@
                 android:minWidth="56dp"
                 android:gravity="end"
                 android:text="Today"
-                android:textColor="@color/widget_accent"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:textColor="@color/widget_text_2"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <ImageView
@@ -141,6 +149,7 @@
                 android:layout_width="30dp"
                 android:layout_height="45dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -165,7 +174,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:fontFamily="monospace"
-                    android:text="S02 | E05"
+                    android:text="S2 E5"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
@@ -174,6 +183,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:tag="detail"
                     android:text="Ninety Seconds"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
@@ -187,9 +197,8 @@
                 android:minWidth="56dp"
                 android:gravity="end"
                 android:text="Tomorrow"
-                android:textColor="@color/widget_accent"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:textColor="@color/widget_text_2"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <ImageView
@@ -211,6 +220,7 @@
                 android:layout_width="30dp"
                 android:layout_height="45dp"
                 android:background="@drawable/widget_poster_placeholder"
+                android:tag="poster"
                 android:importantForAccessibility="no"
                 android:contentDescription="@null" />
 
@@ -235,7 +245,7 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:fontFamily="monospace"
-                    android:text="S05 | E01"
+                    android:text="S5 E1"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
                     android:maxLines="1"
@@ -244,6 +254,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
+                    android:tag="detail"
                     android:text="Reveille"
                     android:textColor="@color/widget_muted"
                     android:textSize="11sp"
@@ -257,9 +268,8 @@
                 android:minWidth="56dp"
                 android:gravity="end"
                 android:text="Mar 4"
-                android:textColor="@color/widget_accent"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:textColor="@color/widget_text_2"
+                android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

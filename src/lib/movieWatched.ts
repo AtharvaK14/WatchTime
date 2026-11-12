@@ -21,6 +21,7 @@
 // the Movies page's Watched filter, for one - shows it as before.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
+import { haptic } from "./haptics";
 import { db } from "../db";
 import { libraryKey } from "./libraryRemoval";
 import { requestNotificationSync } from "./notifications";
@@ -233,6 +234,7 @@ async function runCardSequence(tmdbId: number, write: () => Promise<MovieMark>):
 
 /** The tick on an unwatched movie's card. Green veil with the tick (or the count, if earlier viewings were kept). */
 export function markMovieWatchedFromCard(tmdbId: number): Promise<boolean> {
+  haptic("confirm");
   return runCardSequence(tmdbId, async () => ({ kind: "watched", count: await setMovieWatched(tmdbId, true) }));
 }
 

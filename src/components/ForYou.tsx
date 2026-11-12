@@ -12,7 +12,10 @@ import { libraryKey, removalClass, useRemovalExit, type RemovalPhase } from "../
 import { useMovieWatchedPhases, watchedClass } from "../lib/movieWatched";
 import { useFlipLayout } from "../lib/useFlipLayout";
 import MovieWatchedOverlay from "./MovieWatchedOverlay";
+import RatingChip from "./RatingChip";
+import { BookmarkIcon } from "./icons";
 import { titleQuickActionProps } from "../lib/titleQuickActions";
+import { PosterRailSkeleton } from "./Skeleton";
 
 const itemKey = (item: SectionItem) => libraryKey(item.kind, item.tmdbId);
 
@@ -28,17 +31,13 @@ const itemKey = (item: SectionItem) => libraryKey(item.kind, item.tmdbId);
  */
 
 /**
- * A rail card: poster, then title, and nothing else below it.
+ * A rail card: the same framed card as Discover and the library grids, with
+ * the artwork and its markers on top, then a one-line title and the year.
  *
- * Everything that used to sit under the title (year/type, season note, an
- * "In your library" badge) moved onto the poster or was dropped. The reason
- * is alignment: those lines sat AFTER a title that wraps to one or two lines
- * depending on its length, so they landed at different heights on every card
- * and the rail read as ragged. Anything that has to line up across cards
- * cannot live below a variable-height element.
- *
- * The title itself now reserves two lines whether it needs them or not, so
- * card heights are identical regardless of title length.
+ * The title is one line with an ellipsis, so the year beneath it lands at the
+ * same height on every card and the rail reads flush. The season note and the
+ * library bookmark live on the artwork; the rating is top-left, the bookmark
+ * top-right.
  */
 function Poster({
   item,
@@ -79,11 +78,21 @@ function Poster({
         ) : (
           <span className="poster-placeholder rail-poster" />
         )}
+        <RatingChip rating={item.rating} />
         {item.note && <span className="rail-pill">{item.note}</span>}
-        {showOwnedMarker && <span className="rail-owned" aria-hidden="true" />}
+        {showOwnedMarker && (
+          <span className="card-in-library" aria-hidden="true">
+            <BookmarkIcon size={13} />
+          </span>
+        )}
         <MovieWatchedOverlay phase={watched} staying tmdbId={item.tmdbId} />
       </span>
       <span className="rail-name">{item.name}</span>
+      {/* Always rendered, a non-breaking space when there is no year, so
+          every card in the rail keeps the same height. */}
+      <span className="rail-meta" aria-hidden="true">
+        {item.year ?? " "}
+      </span>
       {/* The visual markers above are decorative; the same facts go to
           assistive tech as text, since a coloured dot conveys nothing. */}
       <span className="sr-only">
@@ -238,7 +247,23 @@ export default function ForYou({ onOpen }: { onOpen: (kind: "show" | "movie", tm
   }, []);
 
   if (!hasApiKey()) return null;
-  if (loading) return <p className="muted small">Working out what you might like...</p>;
+  if (loading) {
+    return (
+      <div className="for-you" aria-busy="true">
+        <div className="for-you-head">
+          <h2>For you</h2>
+        </div>
+        {[0, 1, 2].map((i) => (
+          <section className="rail-section" key={i}>
+            <div className="rail-head">
+              <span className="skeleton skeleton-line is-title" style={{ width: 160 }} />
+            </div>
+            <PosterRailSkeleton count={5} />
+          </section>
+        ))}
+      </div>
+    );
+  }
   if (!result) return null;
 
   if (result.status === "cold-start") {

@@ -10,6 +10,9 @@ import { libraryKey, removalClass, useRemovalExit } from "../lib/libraryRemoval"
 import { useFlipLayout } from "../lib/useFlipLayout";
 import DetailsPanel from "../components/DetailsPanel";
 import PosterCaption from "../components/PosterCaption";
+import RatingChip from "../components/RatingChip";
+import { useRatingBackfill } from "../lib/ratings";
+import SearchFilterDock from "../components/SearchFilterDock";
 import FilterSheet, { FilterGroup } from "../components/FilterSheet";
 import SegmentedControl from "../components/SegmentedControl";
 import GenreChips from "../components/GenreChips";
@@ -18,6 +21,7 @@ import { titleQuickActionProps } from "../lib/titleQuickActions";
 import { episodeWatchCount } from "../lib/watchHistory";
 import { searchOrBrowse } from "../lib/librarySearch";
 import { ShowStatsDialog } from "../components/StatsDialog";
+import { PosterGridSkeleton } from "../components/Skeleton";
 
 type SortKey = "name" | "mostWatched" | "recentlyWatched" | "recentlyAdded";
 type FilterKey = "all" | "following" | "stopped" | "currentlyWatching";
@@ -67,6 +71,8 @@ export default function Library() {
   const [sortKey, setSortKey] = useState<SortKey>("recentlyWatched");
   const [filterKey, setFilterKey] = useState<FilterKey>("currentlyWatching");
   const [genreFilter, setGenreFilter] = useState<number | null>(null);
+  // Any filter off its default: Reset is offered, and the dock's filter button carries a dot.
+  const filtersChanged = filterKey !== "currentlyWatching" || genreFilter !== null || sortKey !== "recentlyWatched";
   const [genres, setGenres] = useState<Genre[]>([]);
   const [statusByShow, setStatusByShow] = useState<Map<number, ShowWatchStatus>>(new Map());
   // Currently Watching is the default status now, and it is the one filter
@@ -160,8 +166,10 @@ export default function Library() {
   const gridRef = useRef<HTMLDivElement>(null);
   const captureGrid = useFlipLayout(gridRef);
   const display = useRemovalExit(visible, showKey, captureGrid);
+  // Ratings for shows stored before ratings were, top of the grid first.
+  useRatingBackfill("show", shows ? visible : undefined);
 
-  if (!shows) return <p className="muted">Loading...</p>;
+  if (!shows) return <PosterGridSkeleton />;
 
   return (
     <div className="panel">
@@ -202,18 +210,34 @@ export default function Library() {
         <p className="muted">No shows yet. Import your TV Time export, or search TMDB from Add.</p>
       ) : (
         <>
-          <div className="field-row filters-row">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search your shows..."
-            />
+          {/* On a phone the search and the filter button live in the bottom
+              dock (SearchFilterDock) instead; the sheet itself is shared. */}
+          <div className={`field-row filters-row${isMobile ? " is-docked" : ""}`}>
+            {!isMobile && (
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search your shows..."
+              />
+            )}
             {/* Three categories, in the order the questions are actually
                 asked: which shows, narrowed how, in what order. The controls
                 inside each group are exactly the ones that were here before —
                 FilterGroup only labels and separates them. */}
-            <FilterSheet resultCount={visible.length} open={filterSheetOpen} onOpenChange={setFilterSheetOpen}>
+            <FilterSheet
+              resultCount={visible.length}
+              noun="show"
+              open={filterSheetOpen}
+              onOpenChange={setFilterSheetOpen}
+              canReset={filtersChanged}
+              showTrigger={!isMobile}
+              onReset={() => {
+                setFilterKey("currentlyWatching");
+                setGenreFilter(null);
+                setSortKey("recentlyWatched");
+              }}
+            >
               <FilterGroup title="Watch status">
                 <SegmentedControl options={STATUS_OPTIONS} value={filterKey} onChange={setFilterKey} />
               </FilterGroup>
@@ -254,6 +278,15 @@ export default function Library() {
               </FilterGroup>
             </FilterSheet>
           </div>
+          {isMobile && (
+            <SearchFilterDock
+              query={query}
+              onQueryChange={setQuery}
+              placeholder="Search your shows"
+              filtersActive={filtersChanged}
+              onOpenFilters={() => setFilterSheetOpen(true)}
+            />
+          )}
 
           {/* Said once, quietly, so a search that finds a stopped or finished
               show does not look like the filter stopped working. */}
@@ -294,25 +327,30 @@ export default function Library() {
                   }
                 }}
               >
-                {show.posterPath ? (
-                  <img src={`${TMDB_IMAGE_BASE}${show.posterPath}`} alt={show.name} />
-                ) : (
-                  <div className="poster-placeholder" />
-                )}
-                {/* The progress bar is the card's only statement of progress.
-                    The "N episodes watched" line that used to sit in the
-                    caption said the same thing again in words; the count
-                    behind both is unchanged and still drives this bar and the
-                    Most watched sort. */}
-                {show.numberOfEpisodes ? (
-                  <div className="poster-progress">
-                    <span
-                      style={{
-                        width: `${Math.min(100, ((watchedCounts?.unique.get(show.tmdbId) ?? 0) / show.numberOfEpisodes) * 100)}%`,
-                      }}
-                    />
-                  </div>
-                ) : null}
+                {/* The artwork and everything drawn on it: the rating in the
+                    top-left, and the progress bar along the bottom edge. */}
+                <div className="card-art">
+                  {show.posterPath ? (
+                    <img src={`${TMDB_IMAGE_BASE}${show.posterPath}`} alt={show.name} />
+                  ) : (
+                    <div className="poster-placeholder" />
+                  )}
+                  <RatingChip rating={show.tmdbRating} />
+                  {/* The progress bar is the card's only statement of progress.
+                      The "N episodes watched" line that used to sit in the
+                      caption said the same thing again in words; the count
+                      behind both is unchanged and still drives this bar and the
+                      Most watched sort. */}
+                  {show.numberOfEpisodes ? (
+                    <div className="poster-progress">
+                      <span
+                        style={{
+                          width: `${Math.min(100, ((watchedCounts?.unique.get(show.tmdbId) ?? 0) / show.numberOfEpisodes) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  ) : null}
+                </div>
                 <PosterCaption title={show.name} year={show.firstAirYear}>
                   {/* Kept: under "All" it is the only thing telling a stopped
                       show apart from one in progress. */}

@@ -20,6 +20,8 @@ export interface ShowRecordSource {
   episodeRuntimeMinutes?: number | null;
   numberOfEpisodes?: number;
   imdbId?: string | null;
+  /** TMDB vote_average. Left undefined when unknown, so the ratings backfill fills it later. */
+  tmdbRating?: number | null;
 }
 
 /** The fields a new movie row is built from. */
@@ -29,6 +31,8 @@ export interface MovieRecordSource {
   releaseDate: string | null;
   runtimeMinutes?: number | null;
   imdbId?: string | null;
+  /** See ShowRecordSource.tmdbRating. */
+  tmdbRating?: number | null;
 }
 
 export function showRecord(tmdbId: number, d: ShowRecordSource, now = new Date().toISOString()): Show {
@@ -45,6 +49,7 @@ export function showRecord(tmdbId: number, d: ShowRecordSource, now = new Date()
     episodeRuntimeMinutes: d.episodeRuntimeMinutes ?? null,
     numberOfEpisodes: d.numberOfEpisodes ?? null,
     imdbId: d.imdbId ?? null,
+    tmdbRating: d.tmdbRating,
   };
 }
 
@@ -65,6 +70,7 @@ export function movieRecord(tmdbId: number, watched: boolean, d: MovieRecordSour
     runtimeMinutes: d.runtimeMinutes ?? null,
     imdbId: d.imdbId ?? null,
     addedAt: now,
+    tmdbRating: d.tmdbRating,
   };
 }
 
@@ -77,6 +83,7 @@ export function showSourceFromTmdb(d: TvShowDetails): ShowRecordSource {
     episodeRuntimeMinutes: averageRuntime(d.episode_run_time),
     numberOfEpisodes: totalEpisodeCount(d.seasons),
     imdbId: d.external_ids?.imdb_id ?? null,
+    tmdbRating: d.vote_average ?? null,
   };
 }
 
@@ -87,6 +94,7 @@ export function movieSourceFromTmdb(d: MovieDetails): MovieRecordSource {
     releaseDate: d.release_date,
     runtimeMinutes: d.runtime,
     imdbId: d.external_ids?.imdb_id ?? null,
+    tmdbRating: d.vote_average ?? null,
   };
 }
 

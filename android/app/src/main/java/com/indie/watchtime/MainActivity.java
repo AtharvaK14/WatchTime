@@ -17,6 +17,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(WidgetBridgePlugin.class);
         registerPlugin(NotificationBridgePlugin.class);
         registerPlugin(StreamingLauncherPlugin.class);
+        registerPlugin(HapticsPlugin.class);
         super.onCreate(savedInstanceState);
         // A tap that cold-started the app. The target is parked now and the
         // web layer drains it as soon as it mounts.

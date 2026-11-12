@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import { haptic } from "../lib/haptics";
 import { db, type Episode, type WatchedEpisode } from "../db";
-import { getTvShowDetails, getMovieDetails, TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE } from "../tmdb";
+import { getTvShowDetails, getMovieDetails, getCredits, TMDB_IMAGE_BASE, TMDB_BACKDROP_BASE, type CastMember, type TitleCredits } from "../tmdb";
+import { formatRating } from "../lib/ratings";
 import { getOmdbRatings, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbRatings } from "../omdb";
 import { averageRuntime } from "../lib/runtime";
 import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount, unconfirmedSeasons } from "../lib/episodeSync";
@@ -31,27 +33,33 @@ import {
   type MovieMark,
 } from "../lib/movieWatched";
 import { requestNotificationSync } from "../lib/notifications";
-import { useDraggableSheet, DISMISS_ANIMATION_MS } from "../lib/useDraggableSheet";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useDismissKeyboardOnOpen } from "../lib/keyboard";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useBackHandler } from "../lib/backHandler";
 import { prefersReducedMotion, useAnimatedDismiss } from "../lib/useAnimatedDismiss";
+import { useSwipeDismiss } from "../lib/useSwipeDismiss";
 import EpisodeDetailsPanel from "./EpisodeDetailsPanel";
 import ExpandableText from "./ExpandableText";
 import StreamingCapsules from "./StreamingCapsules";
-import { KebabIcon } from "./icons";
+import { KebabIcon, StarIcon } from "./icons";
 import WatchMark from "./WatchMark";
+import { DetailsSkeleton } from "./Skeleton";
+import PersonPage from "./PersonPage";
+import CastRail from "./CastRail";
+import { formatRuntime } from "../lib/runtime";
 
 /** Matches the reverse of the desktop-modal-in keyframes in index.css. */
 const DESKTOP_MODAL_EXIT_MS = 180;
+/** The phone page's exit: it slides back down, a little faster than it came in. */
+const PAGE_EXIT_MS = 240;
 /** Matches .watch-toggle.is-confirmed in index.css. */
 const WATCH_CONFIRM_MS = 420;
 /** How long a removed viewing's "-1" stays in the tick before the new count. */
 const WATCH_MINUS_MS = 900;
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-const episodeCode = (ep: Pick<Episode, "seasonNumber" | "episodeNumber">) => `S${ep.seasonNumber} | E${ep.episodeNumber}`;
+const episodeCode = (ep: Pick<Episode, "seasonNumber" | "episodeNumber">) => `S${ep.seasonNumber} E${ep.episodeNumber}`;
 
 /** Quick-action specs to menu entries, keeping only the ones this context can run. */
 function toEntries(specs: QuickActionSpec[], runs: Partial<Record<string, QuickMenuEntry["run"]>>): QuickMenuEntry[] {
@@ -90,23 +98,27 @@ interface CoreDetails {
   runtimeMinutes?: number | null; // movies only
   imdbId?: string | null;
   genres: string[];
+  tmdbRating?: number | null; // stored on the library row when this title is added
 }
 
-/** Release year / genres / season count / status, shared by both the
- * desktop header (next to the poster) and the mobile header (below the
- * hero banner), so the two render paths never drift out of sync on what
- * they display. */
-function MetaLine({ details }: { details: CoreDetails }) {
-  return (
-    <>
-      {details.releaseDate ? details.releaseDate.slice(0, 4) : "Release date unknown"}
-      {details.genres.length > 0 ? ` \u00b7 ${details.genres.join(", ")}` : ""}
-      {details.numberOfSeasons
-        ? ` \u00b7 ${details.numberOfSeasons} season${details.numberOfSeasons === 1 ? "" : "s"}`
-        : ""}
-      {details.status ? ` \u00b7 ${details.status}` : ""}
-    </>
-  );
+/** "2h 35m" from minutes; "45m" under an hour. */
+/**
+ * The line under the title: for a movie the year, its director and its
+ * length ("2021 · Denis Villeneuve · 2h 35m"), for a show the year, its season
+ * count and its status. Genres are not here: they are the chips below.
+ * Shared by the phone sheet and the desktop dialog so the two never differ.
+ */
+function subtitleFor(kind: "show" | "movie", details: CoreDetails, director: string | null): string {
+  const year = details.releaseDate ? details.releaseDate.slice(0, 4) : "Release date unknown";
+  const parts =
+    kind === "movie"
+      ? [year, director, details.runtimeMinutes ? formatRuntime(details.runtimeMinutes) : null]
+      : [
+          year,
+          details.numberOfSeasons ? `${details.numberOfSeasons} season${details.numberOfSeasons === 1 ? "" : "s"}` : null,
+          details.status || null,
+        ];
+  return parts.filter(Boolean).join(" · ");
 }
 
 export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: Props) {
@@ -114,31 +126,18 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // use `{openDetails !== null && <DetailsPanel .../>}`), so it's safe to
   // call these unconditionally, they mount/unmount together with the panel.
   // useLockBodyScroll applies on BOTH mobile and desktop, that bug wasn't
-  // mobile-specific. useDraggableSheet's output is only wired into the
-  // JSX on the mobile render path below, it's inert otherwise.
+  // mobile-specific.
   useLockBodyScroll();
   // Opened from a search result or a filtered list, the keyboard would
   // otherwise stay up over this panel.
   useDismissKeyboardOnOpen();
-  // Aliased: this file already has an `expandedSeason` for the accordion, and
-  // two unqualified "expanded" flags meaning different things read badly.
-  const {
-    sheetStyle,
-    handleProps,
-    contentProps,
-    expanded: sheetExpanded,
-    setExpanded: setSheetExpanded,
-  } = useDraggableSheet(onClose);
   const isMobile = useIsMobile();
-  // Closing without a drag — the X, the backdrop, Escape, Android back — used
-  // to unmount the panel in the same frame, so a sheet that slides away
-  // beautifully when flicked simply blinked out when dismissed any other way.
-  // requestClose plays the matching exit first; the duration differs by form
-  // factor because the two exits are different animations (a sheet slides, a
-  // dialog fades).
+  // Every way of closing (the X, the backdrop, Escape, Android back) plays the
+  // exit first: on a phone the page slides back down, on desktop the dialog
+  // fades. The durations differ because the two exits are different motions.
   const { closing, requestClose } = useAnimatedDismiss(
     onClose,
-    isMobile ? DISMISS_ANIMATION_MS : DESKTOP_MODAL_EXIT_MS
+    isMobile ? PAGE_EXIT_MS : DESKTOP_MODAL_EXIT_MS
   );
   // Android back closes this panel instead of the app. A stacked episode
   // panel registers its own handler on top, so back closes that first.
@@ -146,6 +145,24 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
 
   const [details, setDetails] = useState<CoreDetails | null>(null);
   const [ratings, setRatings] = useState<OmdbRatings | null | "loading">("loading");
+  // Cast and director, for the Cast row and a movie's subtitle. Loaded on its
+  // own, after the panel has what it needs to draw, so a slow or failed
+  // credits request never holds up the panel: the row simply does not appear.
+  const [credits, setCredits] = useState<TitleCredits | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setCredits(null);
+    getCredits(kind, tmdbId)
+      .then((c) => {
+        if (!cancelled) setCredits(c);
+      })
+      .catch(() => {
+        if (!cancelled) setCredits({ cast: [], director: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [kind, tmdbId]);
   const [inLibrary, setInLibrary] = useState(false);
   // Shows only. The viewing state, not a library state: a stopped show is
   // still in the library with all of its history.
@@ -177,6 +194,8 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // The rows themselves, for the show-level counts (lib/watchHistory.ts).
   const [watchedRows, setWatchedRows] = useState<WatchedEpisode[]>([]);
   const [openEpisode, setOpenEpisode] = useState<Episode | null>(null);
+  // A cast member's page, opened from the Cast row.
+  const [openPerson, setOpenPerson] = useState<CastMember | null>(null);
   // Episodes with a write in flight. A second tap on the same tick (or a menu
   // choice for it) while the first is still saving is ignored, so a double tap
   // can never record two viewings or race a "Not watched" against a rewatch.
@@ -194,16 +213,11 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     []
   );
 
-  // Collapsing returns the sheet to the top of its content.
-  //
-  // Load-bearing, not tidiness: the collapsed state turns the inner scroller
-  // off, and scrollTop survives that. Without this, collapsing after reading
-  // partway down the episode list would leave the half-open sheet showing the
-  // middle of a list with no way to scroll back to the title.
+  // The page's scroller, for bringing the Remove confirmation into view.
   const scrollAreaRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!sheetExpanded && scrollAreaRef.current) scrollAreaRef.current.scrollTop = 0;
-  }, [sheetExpanded]);
+  const pageRef = useRef<HTMLDivElement>(null);
+  // On a phone the page closes with a swipe down from the top, as well as the X.
+  useSwipeDismiss(pageRef, scrollAreaRef, isMobile, requestClose);
 
   // The removed card's highlight and exit play when this panel goes away, not
   // when the delete lands: until then the card is underneath the panel, and
@@ -230,13 +244,9 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     };
   }, [kind, tmdbId]);
 
-  // Brings the removal confirmation into view. It replaces the action row in
-  // place, so it normally appears right under the finger; this is for when
-  // that row sat at the very edge of what is visible. The half-open sheet does
-  // not scroll by design (see .sheet-scroll-area.is-collapsed), so there the
-  // sheet expands first - otherwise Remove would appear to do nothing, which
-  // is exactly how this bug presented: the confirmation rendered below the
-  // fold of a sheet that cannot be scrolled, and nothing was ever removed.
+  // Brings the removal confirmation into view. Remove is chosen from the ⋯
+  // menu at the top of the page, and the confirmation appears with the
+  // page's other actions, which may be scrolled out of view.
   const removeConfirmRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!removeConfirming) return;
@@ -246,15 +256,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     // the safe default for a step that deletes history.
     el.querySelector<HTMLButtonElement>("[data-remove-cancel]")?.focus({ preventScroll: true });
     const behavior: ScrollBehavior = prefersReducedMotion() ? "auto" : "smooth";
-    if (isMobile && !sheetExpanded && el.getBoundingClientRect().bottom > window.innerHeight - 8) {
-      setSheetExpanded(true);
-      // After the sheet's own snap transition, so the scroller exists to scroll.
-      const timer = window.setTimeout(() => el.scrollIntoView({ block: "nearest", behavior }), DISMISS_ANIMATION_MS);
-      return () => window.clearTimeout(timer);
-    }
-    el.scrollIntoView({ block: "nearest", behavior });
-    // Only on entering the confirmation; sheet state changing after that is the user's.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    el.scrollIntoView({ block: "center", behavior });
   }, [removeConfirming]);
 
   // Escape closes this panel, unless the episode panel is stacked on top
@@ -263,11 +265,11 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // just that top layer first, not both at once.
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && !openEpisode) requestClose();
+      if (e.key === "Escape" && !openEpisode && !openPerson) requestClose();
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [requestClose, openEpisode]);
+  }, [requestClose, openEpisode, openPerson]);
 
   useEffect(() => {
     let cancelled = false;
@@ -288,6 +290,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
             episodeRuntimeMinutes: averageRuntime(d.episode_run_time),
             imdbId: d.external_ids?.imdb_id ?? null,
             genres: d.genres.map((g) => g.name),
+            tmdbRating: d.vote_average ?? null,
           });
           setSeasonNames(new Map(d.seasons.map((season) => [season.season_number, season.name])));
           // Checked after every await, not just the first: a load superseded by
@@ -325,6 +328,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
             runtimeMinutes: d.runtime,
             imdbId: d.external_ids?.imdb_id ?? null,
             genres: d.genres.map((g) => g.name),
+            tmdbRating: d.vote_average ?? null,
           });
           const existing = await db.movies.get(tmdbId);
           setInLibrary(!!existing);
@@ -502,6 +506,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     if (watchedKeys.has(ep.key)) {
       return (await unmarkEpisodes([ep])) !== undefined;
     }
+    haptic("confirm");
     if ((await markEpisodesWatched([ep])) === undefined) return false;
 
     const seasonEps = episodesBySeason.get(ep.seasonNumber) ?? [];
@@ -519,6 +524,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   async function toggleSeasonWatched(seasonEpisodes: Episode[], markWatched: boolean): Promise<boolean> {
     if (!inLibrary) return false;
     if (markWatched) {
+      haptic("confirm");
       if ((await markEpisodesWatched(seasonEpisodes)) === undefined) return false;
       const thisSeason = seasonEpisodes[0]?.seasonNumber;
       const earlierSeasonNumbers = thisSeason === undefined ? [] : earlierSeasonsNeedingCatchUp(thisSeason);
@@ -701,6 +707,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   async function toggleMovieWatched() {
     if (kind !== "movie" || !details) return;
     const marking = !inLibrary || !movieWatched;
+    if (marking) haptic("confirm");
     const wasInLibrary = inLibrary;
     const done = await moviePanelWrite(async () => {
       if (!wasInLibrary) {
@@ -872,6 +879,44 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     setRemoveError(null);
   }
 
+  // The ⋯ menu in the panel's top bar. Removing a title is the one action
+  // here that discards history, so it lives behind the menu rather than in
+  // the row of everyday actions; choosing it opens the same confirmation the
+  // Remove button used to, in the same place, so the removal itself (the
+  // write, its error, the card's exit) is unchanged.
+  function openTitleMenu(el: HTMLElement) {
+    if (!details) return;
+    openQuickMenu({
+      anchor: rectAnchor(el),
+      target: el,
+      label: `${details.name}: more actions`,
+      title: details.name,
+      entries: [
+        {
+          id: "remove",
+          label: `Remove from ${kind === "show" ? "Shows" : "Movies"}`,
+          danger: true,
+          run: () => {
+            setRemoveError(null);
+            setRemoveConfirming(true);
+          },
+        },
+      ],
+    });
+  }
+  const titleMenuButton = (className: string) =>
+    details && inLibrary ? (
+      <button
+        type="button"
+        className={className}
+        aria-label={`More actions for ${details.name}`}
+        aria-haspopup="menu"
+        onClick={(e) => openTitleMenu(e.currentTarget)}
+      >
+        <KebabIcon size={20} />
+      </button>
+    ) : null;
+
   const episodesBySeason = new Map<number, Episode[]>();
   for (const ep of episodesInDb) {
     const list = episodesBySeason.get(ep.seasonNumber);
@@ -934,125 +979,145 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     </div>
   );
 
-  const addRemoveContent = details && (
-    <>
-      {inLibrary ? (
-        <>
-          <p className="status-ok">
-            {added ? `Added to your ${kind === "show" ? "Shows" : "Movies"}.` : `Already in your ${kind === "show" ? "Shows" : "Movies"}.`}
-            {kind === "movie" && movieWatched
-              ? movieRewatchCount > 0
-                ? ` Watched ${movieRewatchCount + 1} times.`
-                : " Marked as watched."
-              : ""}
+  // What the panel says about the title's place in the library: plain
+  // statements, in the body.
+  const statusContent =
+    details &&
+    (inLibrary ? (
+      <>
+        <p className="library-status">
+          {added ? `Added to your ${kind === "show" ? "Shows" : "Movies"}.` : `Already in your ${kind === "show" ? "Shows" : "Movies"}.`}
+          {kind === "movie" && movieWatched
+            ? movieRewatchCount > 0
+              ? ` Watched ${movieRewatchCount + 1} times.`
+              : " Marked as watched."
+            : ""}
+        </p>
+        {showWatchLine && <p className="muted small watch-summary">{showWatchLine}</p>}
+        {/* Says what the state actually does, because "stopped" could
+            otherwise be read as something that removed or hid the show. */}
+        {kind === "show" && stopped && (
+          <p className="muted small">
+            Stopped watching. It stays in your library with all of its history, and new episodes won't bring it
+            back to Watch Next until you resume.
           </p>
-          {showWatchLine && <p className="muted small watch-summary">{showWatchLine}</p>}
-          {/* Says what the state actually does, because "stopped" could
-              otherwise be read as something that removed or hid the show. */}
-          {kind === "show" && stopped && (
-            <p className="muted small">
-              Stopped watching. It stays in your library with all of its history, and new episodes won't bring it
-              back to Watch Next until you resume.
-            </p>
-          )}
-          {/* The confirmation takes the action row's place rather than
-              appearing under it, with its buttons first: they land where the
-              finger already is. It used to render as a second row below,
-              which on a phone sat past the bottom of the half-open sheet,
-              where it could be neither seen nor scrolled to. */}
-          {removeConfirming ? (
-            <div className="remove-confirm" ref={removeConfirmRef}>
-              <div className="field-row">
-                <button className="danger-button" onClick={handleRemove} disabled={removing}>
-                  {removing ? "Removing..." : "Confirm remove"}
-                </button>
-                <button data-remove-cancel onClick={cancelRemove} disabled={removing}>
-                  Cancel
-                </button>
-              </div>
-              <span className="muted small">
-                Also deletes {kind === "show" ? "its watch history" : "its watched status"}. No undo.
-              </span>
-              {removeError && (
-                <p className="status-error small" role="alert">
-                  Couldn't remove it, so nothing in your library has changed. ({removeError})
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="field-row">
-              {/* Watched: the green indicator - the tick, or the number of
-                  viewings - opens the same viewing-status choices as the
-                  movie's poster and an episode's tick. Unwatched: the plain
-                  Mark watched it always was. */}
-              {kind === "movie" &&
-                (movieWatched ? (
-                  <button
-                    className="movie-watched-status"
-                    onClick={(e) => openMovieStatusMenu(e.currentTarget)}
-                    aria-haspopup="menu"
-                    aria-label={`${viewingsInWords(movieRewatchCount + 1)}. Change viewing status`}
-                    aria-disabled={savingWatched}
-                  >
-                    <span className="watch-indicator on" aria-hidden="true">
-                      <WatchMark count={movieRewatchCount + 1} />
-                    </span>
-                    Watched
-                  </button>
-                ) : (
-                  <button onClick={toggleMovieWatched} disabled={savingWatched}>
-                    Mark watched
-                  </button>
-                ))}
-              {/* Beside Remove rather than among the season controls: both are
-                  decisions about the show as a whole, and this is the gentler of
-                  the two — which is the point of it sitting there, next to the
-                  one that deletes history. */}
-              {kind === "show" && (
-                <button onClick={toggleStopped}>{stopped ? "Resume watching" : "Stop watching"}</button>
-              )}
-              {kind === "movie" && movieWatched && (
-                <button onClick={movieWatchAgain} disabled={savingWatched}>
-                  Watch again
-                </button>
-              )}
-              <button className="danger-button" onClick={() => setRemoveConfirming(true)}>
-                Remove from {kind === "show" ? "Shows" : "Movies"}
-              </button>
-            </div>
-          )}
-          {watchError && (
-            <p className="status-error small" role="alert">
-              Couldn't save that, so nothing has changed. ({watchError})
-            </p>
-          )}
-        </>
+        )}
+      </>
+    ) : (
+      // Said in words as well as by the Add button reappearing, since the
+      // list the card is leaving is still behind this panel.
+      justRemoved && (
+        <p className="muted small" role="status">
+          Removed from your {kind === "show" ? "Shows" : "Movies"}.
+        </p>
+      )
+    ));
+
+  // The one main action, as the floating button at the bottom of the page
+  // (the reference's "Watch now"): adding the title, or for a movie in the
+  // library, marking it watched or watching it again. A show already in the
+  // library has none; its everyday actions are the season list.
+  const primaryAction: { label: string; onClick: () => void; disabled?: boolean } | null = !details
+    ? null
+    : !inLibrary
+      ? { label: kind === "show" ? "Add to Shows" : "Add to Movies", onClick: handleAdd }
+      : kind === "movie"
+        ? movieWatched
+          ? { label: "Watch again", onClick: movieWatchAgain, disabled: savingWatched }
+          : { label: "Mark as watched", onClick: toggleMovieWatched, disabled: savingWatched }
+        : null;
+
+  // Everything else you can do, quieter, in the body under the status line;
+  // and the Remove confirmation, which takes this row's place when it is open
+  // (Remove itself is in the ⋯ menu).
+  const secondaryContent = details && (
+    <>
+      {removeConfirming ? (
+      <div className="remove-confirm" ref={removeConfirmRef}>
+        <div className="field-row">
+          <button className="danger-button" onClick={handleRemove} disabled={removing}>
+            {removing ? "Removing..." : "Confirm remove"}
+          </button>
+          <button data-remove-cancel onClick={cancelRemove} disabled={removing}>
+            Cancel
+          </button>
+        </div>
+        <span className="muted small">
+          Also deletes {kind === "show" ? "its watch history" : "its watched status"}. No undo.
+        </span>
+        {removeError && (
+          <p className="status-error small" role="alert">
+            Couldn't remove it, so nothing in your library has changed. ({removeError})
+          </p>
+        )}
+      </div>
       ) : (
-        <>
-          {/* Said in words as well as by the Add button reappearing, since the
-              list the card is leaving is still behind this panel. */}
-          {justRemoved && (
-            <p className="muted small" role="status">
-              Removed from your {kind === "show" ? "Shows" : "Movies"}.
-            </p>
-          )}
-          <div className="field-row">
-            <button onClick={handleAdd}>{kind === "show" ? "Add to Shows" : "Add to Movies"}</button>
-            {kind === "movie" && (
+        (kind === "show" ? inLibrary : true) && (
+          <div className="field-row details-secondary">
+            {kind === "movie" && !inLibrary && (
               <button onClick={toggleMovieWatched} disabled={savingWatched}>
-                Add &amp; mark watched
+                Add as watched
               </button>
             )}
+            {kind === "movie" && inLibrary && movieWatched && (
+              <button
+                className="movie-watched-status"
+                onClick={(e) => openMovieStatusMenu(e.currentTarget)}
+                aria-haspopup="menu"
+                aria-label={`${viewingsInWords(movieRewatchCount + 1)}. Change viewing status`}
+                aria-disabled={savingWatched}
+              >
+                <span className="watch-indicator on" aria-hidden="true">
+                  <WatchMark count={movieRewatchCount + 1} />
+                </span>
+                Watched
+              </button>
+            )}
+            {kind === "show" && inLibrary && (
+              <button onClick={toggleStopped}>{stopped ? "Resume watching" : "Stop watching"}</button>
+            )}
           </div>
-          {watchError && (
-            <p className="status-error small" role="alert">
-              Couldn't save that, so nothing has changed. ({watchError})
-            </p>
-          )}
-        </>
+        )
+      )}
+      {watchError && (
+        <p className="status-error small" role="alert">
+          Couldn't save that, so nothing has changed. ({watchError})
+        </p>
       )}
     </>
   );
+
+  // The header, as in the reference: a large title with the rating on the
+  // same line, one subtitle line, and the genres as chips.
+  const ratingText = details ? formatRating(details.tmdbRating) : null;
+  const titleBlock = details && (
+    <>
+      <div className="details-title-row">
+        <h2 className="details-title">{details.name}</h2>
+        {ratingText && (
+          <span className="details-rating">
+            <span className="sr-only">TMDB rating </span>
+            {ratingText}
+            <StarIcon size={16} />
+          </span>
+        )}
+      </div>
+      <p className="details-subtitle">{subtitleFor(kind, details, credits?.director ?? null)}</p>
+    </>
+  );
+  const genreChips = details && details.genres.length > 0 && (
+    <ul className="genre-chip-row" aria-label="Genres">
+      {details.genres.map((g) => (
+        <li key={g} className="genre-chip">
+          {g}
+        </li>
+      ))}
+    </ul>
+  );
+
+  // Cast, as photo cards in a row that scrolls sideways. Hidden until the
+  // credits arrive, and entirely when TMDB lists nobody.
+  const castContent = credits && <CastRail cast={credits.cast} onOpenPerson={setOpenPerson} />;
 
   // Clamped to a few lines with Read more / Show less: a long synopsis used to
   // push the streaming row and the season list a screen further down. The
@@ -1060,6 +1125,8 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   const overviewContent = details && (
     <ExpandableText
       className="overview"
+      lines={3}
+      inlineToggle
       text={details.overview || (ratings !== "loading" && ratings?.plot) || "No summary available."}
     />
   );
@@ -1070,18 +1137,6 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
   // renders the identical component from the show's id.
   const streamingContent = details && <StreamingCapsules kind={kind} tmdbId={tmdbId} title={details.name} />;
 
-  // Mobile keeps the original single-column composition: ratings, then the
-  // add/remove action, then overview. Desktop (below) recomposes the same
-  // three pieces into its own header/sidebar/main-column layout instead of
-  // duplicating this JSX.
-  const bodyContent = details && (
-    <>
-      {ratingsRowContent}
-      {addRemoveContent}
-      {overviewContent}
-      {streamingContent}
-    </>
-  );
 
   const seasonBrowserBlock = showsSeasonBrowser && (
     <div className="season-browser">
@@ -1235,7 +1290,7 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
                           }}
                         >
                           <span className="ep-number">
-                            S{ep.seasonNumber} | E{ep.episodeNumber}
+                            S{ep.seasonNumber} E{ep.episodeNumber}
                           </span>
                           <span className="ep-name">{ep.name}</span>
                         </div>
@@ -1299,166 +1354,92 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
     />
   );
 
-  if (isMobile) {
-    return (
-      <div className={`modal-backdrop ${closing ? "is-leaving" : ""}`} onClick={requestClose}>
-        <div
-          className={`details-sheet ${showsSeasonBrowser ? "details-modal-wide" : ""}`}
-          // Overriding only the transform reuses the drag hook's own snap
-          // transition, so a tapped dismiss slides away on exactly the same
-          // curve and duration as a flicked one.
-          style={closing ? { ...sheetStyle, transform: "translateY(100%)" } : sheetStyle}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* A real header row, not a floating button.
-              Close used to be absolutely positioned over the top of the
-              sheet, which meant every episode row's watched tick slid
-              directly underneath it as the season list scrolled — two
-              different controls sharing one patch of screen. The bar is a
-              flex sibling of the scroll area now, so the content physically
-              cannot reach it. */}
-          <div className="sheet-top-bar">
-            {/* Fills the bar except for the close button, so the whole strip
-                is grabbable rather than just the 40x4px grabber. Close is a
-                sibling, so pressing it never reaches these handlers. */}
-            <div
-              className="sheet-grab-area"
-              role="button"
-              tabIndex={0}
-              aria-label={sheetExpanded ? "Collapse panel" : "Expand panel"}
-              aria-expanded={sheetExpanded}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") {
-                  e.preventDefault();
-                  setSheetExpanded(!sheetExpanded);
-                }
-              }}
-              {...handleProps}
-            >
-              <div className="sheet-drag-handle-bar" />
-            </div>
+  // The artwork at the top. On a phone, the portrait poster, as in the
+  // reference: it is the title's own key art and fills a phone's width far
+  // better than a letterboxed backdrop. In the wider desktop dialog, the
+  // backdrop. Each falls back to the other.
+  const heroPath = details ? (isMobile ? details.posterPath ?? details.backdropPath : details.backdropPath ?? details.posterPath) : null;
+  const heroIsPoster = !!details && heroPath === details.posterPath;
 
-            <button className="close-x sheet-close-x" onClick={requestClose} aria-label="Close">
-              &times;
-            </button>
+  return (
+    <div
+      className={`details-page-root${isMobile ? " is-page" : " is-dialog"}${closing ? " is-leaving" : ""}`}
+      onClick={isMobile ? undefined : requestClose}
+    >
+      <div
+        ref={pageRef}
+        className={`details-page${primaryAction && !removeConfirming ? " has-cta" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={details?.name ?? "Details"}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="details-page-scroll" ref={scrollAreaRef}>
+          <div className={`details-page-hero${heroIsPoster ? " is-poster" : ""}`}>
+            {heroPath ? (
+              <img src={`${TMDB_BACKDROP_BASE}${heroPath}`} alt="" className="details-page-hero-img" />
+            ) : (
+              <div className="details-page-hero-img details-page-hero-empty" />
+            )}
+            <div className="details-page-hero-fade" />
           </div>
 
-          {/* is-collapsed turns off inner scrolling at the half-open size, so
-              every vertical swipe there moves the SHEET. That is what makes
-              "swipe up to reach the episodes" the obvious gesture instead of
-              a hidden inner scroll that reveals the list without ever
-              expanding the panel. */}
-          <div
-            ref={scrollAreaRef}
-            className={`sheet-scroll-area ${sheetExpanded ? "" : "is-collapsed"}`}
-            {...contentProps}
-          >
+          <div className="details-page-body">
             {error && <p className="status-error">{error}</p>}
-            {!details && !error && <p className="muted">Loading...</p>}
-
+            {!details && !error && <DetailsSkeleton />}
             {details && (
               <>
-                <div className={`details-hero ${details.backdropPath ? "centered" : ""}`}>
-                  {details.backdropPath ? (
-                    // Real horizontal image from TMDB, shown sharp, no blur needed.
-                    <img
-                      src={`${TMDB_BACKDROP_BASE}${details.backdropPath}`}
-                      alt=""
-                      className="details-hero-bg-sharp"
-                    />
-                  ) : (
-                    // No backdrop for this title (uncommon but happens), fall back to
-                    // the vertical poster, blurred since it's the wrong aspect ratio
-                    // to show sharp as a wide banner.
-                    details.posterPath && (
-                      <div
-                        className="details-hero-bg-blurred"
-                        style={{ backgroundImage: `url(${TMDB_IMAGE_BASE}${details.posterPath})` }}
-                      />
-                    )
-                  )}
-                  <div className="details-hero-scrim" />
-                  <h2 className="details-hero-title">{details.name}</h2>
+                <div className="details-page-head">
+                  {titleBlock}
+                  {genreChips}
                 </div>
-
-                <p className="muted small details-meta-line">
-                  <MetaLine details={details} />
-                </p>
-
-                <div className="details-body">{bodyContent}</div>
-
+                {ratingsRowContent}
+                {statusContent}
+                {overviewContent}
+                {secondaryContent}
+                {castContent}
+                {streamingContent}
                 {seasonBrowserBlock}
               </>
             )}
           </div>
         </div>
 
-        {episodeDetailsModal}
-      </div>
-    );
-  }
+        {/* Floating over the artwork, out of the content's way: close on
+            the left, the ⋯ menu (Remove) on the right. */}
+        <div className="details-page-topbar">
+          <button className="details-page-icon" onClick={requestClose} aria-label="Close">
+            &times;
+          </button>
+          {titleMenuButton("details-page-icon")}
+        </div>
 
-  return (
-    <div className={`modal-backdrop ${closing ? "is-leaving" : ""}`} onClick={requestClose}>
-      <div
-        className={`modal details-modal-desktop ${showsSeasonBrowser ? "details-modal-desktop-wide" : ""} ${
-          closing ? "is-leaving" : ""
-        }`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {error && <p className="status-error">{error}</p>}
-        {!details && !error && <p className="muted">Loading...</p>}
-
-        {details && (
-          <>
-            <div className="desktop-hero">
-              {details.backdropPath ? (
-                <img
-                  src={`${TMDB_BACKDROP_BASE}${details.backdropPath}`}
-                  alt=""
-                  className="details-hero-bg-sharp"
-                />
-              ) : (
-                details.posterPath && (
-                  <div
-                    className="details-hero-bg-blurred"
-                    style={{ backgroundImage: `url(${TMDB_IMAGE_BASE}${details.posterPath})` }}
-                  />
-                )
-              )}
-              <div className="details-hero-scrim" />
-              <button className="desktop-hero-close-x" onClick={requestClose} aria-label="Close">
-                &times;
-              </button>
-            </div>
-
-            <div className="desktop-header-row">
-              {details.posterPath ? (
-                <img src={`${TMDB_IMAGE_BASE}${details.posterPath}`} alt={details.name} className="desktop-poster-card" />
-              ) : (
-                <div className="poster-placeholder desktop-poster-card" />
-              )}
-              <div className="desktop-header-text">
-                <h2>{details.name}</h2>
-                <p className="muted small">
-                  <MetaLine details={details} />
-                </p>
-              </div>
-            </div>
-
-            <div className="desktop-body">
-              {ratingsRowContent}
-              {addRemoveContent}
-              {overviewContent}
-              {streamingContent}
-            </div>
-
-            {seasonBrowserBlock}
-          </>
+        {/* The main action, floating over the bottom of the page, always in
+            reach however far down it has been scrolled. */}
+        {primaryAction && !removeConfirming && (
+          <div className="details-page-cta">
+            <button
+              type="button"
+              className="details-page-cta-button"
+              onClick={primaryAction.onClick}
+              disabled={primaryAction.disabled}
+            >
+              {primaryAction.label}
+            </button>
+          </div>
         )}
       </div>
 
       {episodeDetailsModal}
+      {openPerson && (
+        <PersonPage
+          key={openPerson.id}
+          personId={openPerson.id}
+          name={openPerson.name}
+          profilePath={openPerson.profilePath}
+          onClose={() => setOpenPerson(null)}
+        />
+      )}
     </div>
   );
 }

@@ -1,16 +1,27 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useIsMobile } from "../lib/useIsMobile";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
 import { useBackHandler } from "../lib/backHandler";
 import { useAnimatedDismiss } from "../lib/useAnimatedDismiss";
+import { useSwipeDismiss } from "../lib/useSwipeDismiss";
 
 /** Matches the .filter-sheet.is-leaving animation duration in index.css. */
 const FILTER_SHEET_EXIT_MS = 220;
 
 interface Props {
   resultCount: number;
+  /** What the results are, singular ("show", "movie"), for "Show 12 shows". */
+  noun: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Puts every filter back to the page's default. Disabled while they already are. */
+  onReset: () => void;
+  canReset: boolean;
+  /**
+   * The phone's "Filters" button. Off where the page opens the sheet from
+   * somewhere else (the Shows and Movies bottom dock).
+   */
+  showTrigger?: boolean;
   children: ReactNode;
 }
 
@@ -44,7 +55,16 @@ export function FilterGroup({ title, children }: { title: string; children: Reac
  * scan) with a single "Filters" trigger that opens a bottom sheet
  * containing the same, unmodified controls, now full-width and easy to tap.
  */
-export default function FilterSheet({ resultCount, open, onOpenChange, children }: Props) {
+export default function FilterSheet({
+  resultCount,
+  noun,
+  open,
+  onOpenChange,
+  onReset,
+  canReset,
+  showTrigger = true,
+  children,
+}: Props) {
   const isMobile = useIsMobile();
 
   if (!isMobile) {
@@ -53,12 +73,20 @@ export default function FilterSheet({ resultCount, open, onOpenChange, children 
 
   return (
     <>
-      <button type="button" className="filter-sheet-trigger" onClick={() => onOpenChange(true)}>
-        <span className="filter-sheet-trigger-dot" />
-        Filters
-      </button>
+      {showTrigger && (
+        <button type="button" className="filter-sheet-trigger" onClick={() => onOpenChange(true)}>
+          <span className="filter-sheet-trigger-dot" />
+          Filters
+        </button>
+      )}
       {open && (
-        <FilterSheetOverlay resultCount={resultCount} onClose={() => onOpenChange(false)}>
+        <FilterSheetOverlay
+          resultCount={resultCount}
+          noun={noun}
+          onReset={onReset}
+          canReset={canReset}
+          onClose={() => onOpenChange(false)}
+        >
           {children}
         </FilterSheetOverlay>
       )}
@@ -68,10 +96,16 @@ export default function FilterSheet({ resultCount, open, onOpenChange, children 
 
 function FilterSheetOverlay({
   resultCount,
+  noun,
+  onReset,
+  canReset,
   onClose,
   children,
 }: {
   resultCount: number;
+  noun: string;
+  onReset: () => void;
+  canReset: boolean;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -80,6 +114,11 @@ function FilterSheetOverlay({
   // Every dismissal route goes through requestClose so they animate alike.
   const { closing, requestClose } = useAnimatedDismiss(onClose, FILTER_SHEET_EXIT_MS);
   useBackHandler(true, requestClose); // Android back closes the filter sheet
+  // Swipe down closes it too, as its handle promises. Only from the top of
+  // the options, so scrolling a long list back up is never a close.
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useSwipeDismiss(sheetRef, scrollRef, true, requestClose);
 
   useEffect(() => {
     function handleKeyDown(e: KeyboardEvent) {
@@ -91,14 +130,32 @@ function FilterSheetOverlay({
 
   return (
     <div className={`modal-backdrop ${closing ? "is-leaving" : ""}`} onClick={requestClose}>
-      <div className={`filter-sheet ${closing ? "is-leaving" : ""}`} onClick={(e) => e.stopPropagation()}>
-        <div className="filter-sheet-handle">
+      <div
+        ref={sheetRef}
+        className={`filter-sheet ${closing ? "is-leaving" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="filter-sheet-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="filter-sheet-handle" aria-hidden="true">
           <div className="sheet-drag-handle-bar" />
         </div>
-        <div className="filter-sheet-body">{children}</div>
-        <button type="button" className="filter-sheet-apply" onClick={requestClose}>
-          Show {resultCount} result{resultCount === 1 ? "" : "s"}
-        </button>
+        <div className="filter-sheet-head">
+          <h2 id="filter-sheet-title">Filters</h2>
+          <button type="button" className="filter-sheet-reset" onClick={onReset} disabled={!canReset}>
+            Reset
+          </button>
+        </div>
+        <div className="filter-sheet-scroll" ref={scrollRef}>
+          <div className="filter-sheet-body">{children}</div>
+        </div>
+        <div className="filter-sheet-foot">
+          <button type="button" className="filter-sheet-apply" onClick={requestClose}>
+            Show {resultCount} {noun}
+            {resultCount === 1 ? "" : "s"}
+          </button>
+        </div>
       </div>
     </div>
   );
