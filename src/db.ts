@@ -48,6 +48,11 @@ export interface Show {
   // (rows from before this field, and imports, until lib/ratings.ts fills
   // them); null means "looked up and TMDB has none".
   tmdbRating?: number | null;
+  // TVmaze's own id for this show, resolved from tvdbId the first time its
+  // episode runtimes are wanted and kept, so that lookup is one request ever
+  // rather than one per launch. undefined means "never looked up"; null means
+  // "looked up and TVmaze has no such show". Unindexed, so no schema version.
+  tvmazeId?: number | null;
 }
 
 export interface Episode {
@@ -230,8 +235,21 @@ export interface WatchProviderCacheEntry {
   kind: "show" | "movie";
   tmdbId: number;
   fetchedAt: string; // ISO
-  /** The whole TmdbWatchProviderResponse.results map, every region TMDB returned. */
+  /**
+   * TMDB's per-region availability, keyed by country code: only the entry for
+   * `region` below (or nothing, when TMDB has none for it). Rows written
+   * before `region` existed hold every region TMDB returned.
+   */
   regions: unknown;
+  /**
+   * The region this row answers for. TMDB's response covers every country and
+   * runs to tens of kilobytes a title, of which one entry is ever read, so
+   * only that one is kept. Undefined on rows from before this field, which
+   * hold the whole response and so answer for any region.
+   */
+  region?: string;
+  /** TMDB had availability for the title in other regions, but not in `region`. */
+  availableElsewhere?: boolean;
 }
 
 // ---- Database -----------------------------------------------------------

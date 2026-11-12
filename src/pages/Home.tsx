@@ -1,10 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type AnimationEvent } from "react";
 import { haptic } from "../lib/haptics";
-import { useLiveQuery } from "dexie-react-hooks";
+import { useAllEpisodes, useAllMovies, useAllShows, useAllWatchedEpisodes } from "../lib/libraryStore";
 import { App as CapacitorApp } from "@capacitor/app";
-import { db, type Episode, type Movie } from "../db";
+import { type Episode, type Movie } from "../db";
 import { TMDB_IMAGE_BASE } from "../tmdb";
-import { ensureEpisodesCached, IN_FLIGHT_REFRESH_MS } from "../lib/episodeSync";
+import {
+  ensureEpisodesCached,
+  IN_FLIGHT_REFRESH_MS,
+  readShowSyncStamps,
+  showIdsWithCachedEpisodes,
+  showSyncIsDue,
+  writeShowSyncStamps,
+} from "../lib/episodeSync";
 import {
   buildReleasingThisMonth,
   buildUpcomingEpisodeRows,
@@ -307,15 +314,20 @@ function ShowsHome({
   // and undo; filtering them out of the query was what made stopping a show a
   // one-way door. categorize() puts them in their own category before any
   // other rule runs, so they cannot leak into the other three lists.
-  const shows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed).toArray(), []);
+  const allShows = useAllShows();
+  const shows = useMemo(() => allShows?.filter((s) => s.isFollowed), [allShows]);
   // Deliberately simple, single-table, whole-table live queries. Each one is
   // independently and unambiguously reactive to writes on its own table.
   // Combining them in a plain synchronous useMemo below (no async, no
   // Dexie calls inside the memo) removes any uncertainty about how a
   // multi-step async query loop interacts with Dexie's change tracking,
   // which is the more failure-prone pattern the previous version used.
-  const allEpisodes = useLiveQuery(() => db.episodes.toArray(), []);
-  const allWatched = useLiveQuery(() => db.watchedEpisodes.toArray(), []);
+  //
+  // They are read through lib/libraryStore.ts, which keeps one such query per
+  // table alive across tab switches: Home is rebuilt every time it is
+  // returned to, and used to re-read all three tables before it could draw.
+  const allEpisodes = useAllEpisodes();
+  const allWatched = useAllWatchedEpisodes();
   const [syncing, setSyncing] = useState(false);
   const [syncErrors, setSyncErrors] = useState<string[]>([]);
   const [tab, setTab] = useState<UpNextTab>("next");
@@ -386,23 +398,56 @@ function ShowsHome({
     const force = forceNextSync.current;
     forceNextSync.current = false;
     async function sync() {
-      setSyncing(true);
-      setSyncErrors([]);
-      const failures: string[] = [];
-      for (const show of toSync!) {
-        if (cancelled) return;
-        try {
-          await ensureEpisodesCached(show.tmdbId, new Date(), { force });
-        } catch (e) {
-          failures.push(`${show.name}: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-      if (!cancelled) {
-        setSyncing(false);
+      // Only the shows that are due. Home is rebuilt on every tab switch, and
+      // this used to sync every followed show each time, one request apiece;
+      // a show synced recently is now left alone until its interval is up
+      // (see showSyncIsDue). A pull to refresh still syncs all of them.
+      const stamps = readShowSyncStamps();
+      const cachedShowIds = await showIdsWithCachedEpisodes();
+      if (cancelled) return;
+      const due = force
+        ? toSync!
+        : toSync!.filter((show) =>
+            showSyncIsDue(show, stamps.get(show.tmdbId), cachedShowIds.has(show.tmdbId), Date.now())
+          );
+      const endPull = () => {
         // The spinner stays long enough to be seen even when nothing needed
         // fetching, so a pull never looks like it did nothing.
         const shown = Date.now() - pullStartedAt.current;
         window.setTimeout(() => setPullRefreshing(false), Math.max(0, 600 - shown));
+      };
+      if (due.length === 0) {
+        // Nothing to fetch: no "Syncing..." line to appear and vanish, and
+        // nothing new for the notification schedule to pick up. Cleared in
+        // case a pass this one replaced was cut short while it was showing.
+        setSyncing(false);
+        endPull();
+        return;
+      }
+      setSyncing(true);
+      setSyncErrors([]);
+      const failures: string[] = [];
+      const keep = toSync!.map((show) => show.tmdbId);
+      try {
+        for (const show of due) {
+          if (cancelled) return;
+          try {
+            await ensureEpisodesCached(show.tmdbId, new Date(), { force });
+            // Only a sync that worked counts: a failed show is tried again on
+            // the next visit rather than after a whole interval.
+            stamps.set(show.tmdbId, Date.now());
+          } catch (e) {
+            failures.push(`${show.name}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      } finally {
+        // Also when the pass is cut short by leaving Home, so the shows it
+        // got through are not walked again on the way back.
+        writeShowSyncStamps(stamps, keep);
+      }
+      if (!cancelled) {
+        setSyncing(false);
+        endPull();
         setSyncErrors(failures);
         // The schedule was built at launch from the cache as it was then. A
         // season this sync just fetched has to reach it now, not at the next
@@ -614,12 +659,13 @@ function ShowsHome({
  * ShowsHome's sync effect already keeps populated for every followed show.
  */
 function ComingUp({ section }: { section: "episodes" | "releases" }) {
-  const shows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed && !s.isArchived).toArray(), []);
-  const allEpisodes = useLiveQuery(() => db.episodes.toArray(), []);
+  const everyShow = useAllShows();
+  const shows = useMemo(() => everyShow?.filter((s) => s.isFollowed && !s.isArchived), [everyShow]);
+  const allEpisodes = useAllEpisodes();
   // Watch history decides which shows are actively followed: Upcoming
   // episodes uses the same viewing state as the Up Next tabs above it.
-  const allWatched = useLiveQuery(() => db.watchedEpisodes.toArray(), []);
-  const movies = useLiveQuery(() => db.movies.toArray(), []);
+  const allWatched = useAllWatchedEpisodes();
+  const movies = useAllMovies();
   const [openMovie, setOpenMovie] = useState<number | null>(null);
   // Tapping an upcoming episode opens THAT episode, matching the Coming Up
   // widget. It used to open the show's panel, which made the user hunt for the
@@ -820,7 +866,8 @@ function MoviesHome({
   filter: MoodFilter | null;
   onOpenDiscover: () => void;
 }) {
-  const wantToWatch = useLiveQuery(() => db.movies.filter(isOnWatchlist).toArray(), []);
+  const allMovies = useAllMovies();
+  const wantToWatch = useMemo(() => allMovies?.filter(isOnWatchlist), [allMovies]);
   const [openDetails, setOpenDetails] = useState<number | null>(null);
   const [watchError, setWatchError] = useState<string | null>(null);
   const railRef = useRef<HTMLDivElement>(null);
@@ -1044,8 +1091,10 @@ export default function Home({
   // Matches what ShowsHome actually renders, stopped shows included: they are
   // a visible tab now, so excluding them here would make the "N results" line
   // undercount rows the user can see.
-  const searchableShows = useLiveQuery(() => db.shows.filter((s) => s.isFollowed).toArray(), []);
-  const searchableMovies = useLiveQuery(() => db.movies.filter(isOnWatchlist).toArray(), []);
+  const libraryShows = useAllShows();
+  const libraryMovies = useAllMovies();
+  const searchableShows = useMemo(() => libraryShows?.filter((s) => s.isFollowed), [libraryShows]);
+  const searchableMovies = useMemo(() => libraryMovies?.filter(isOnWatchlist), [libraryMovies]);
 
   const candidates = useMemo<MoodCandidate[]>(
     () => [

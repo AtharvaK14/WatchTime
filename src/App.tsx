@@ -31,6 +31,7 @@ import { notificationChoiceMade } from "./lib/notifications/prefs";
 import NotificationPrompt from "./components/NotificationPrompt";
 import { useWidgetSync } from "./lib/widget/sync";
 import { useOnline } from "./lib/useOnline";
+import { pruneCachesIfDue } from "./lib/cacheMaintenance";
 import { HomeIcon, ShowsIcon, MoviesIcon, DiscoverIcon, ForYouIcon, SettingsIcon, type IconProps } from "./components/icons";
 import "./index.css";
 
@@ -50,6 +51,9 @@ const FirstRunWizard = lazy(() => import("./components/FirstRunWizard"));
 function preloadScreens(): void {
   const run = () => {
     for (const load of [loadAddTitle, loadForYou, loadSettings]) load().catch(() => {});
+    // Housekeeping rides along with the idle work: expired cache entries are
+    // deleted here, at most once a day, never while the app is starting.
+    void pruneCachesIfDue();
   };
   if ("requestIdleCallback" in window) window.requestIdleCallback(run, { timeout: 3000 });
   else setTimeout(run, 1500);

@@ -30,6 +30,9 @@ export const WATCH_REGION_STORAGE = "watch_region";
  */
 const CACHE_TTL_HOURS = 24 * 7;
 
+/** The same TTL in millis, for lib/cacheMaintenance.ts to delete entries past it. */
+export const STREAMING_CACHE_TTL_MS = CACHE_TTL_HOURS * 3600_000;
+
 /**
  * How a title is available, in the order a viewer cares about.
  *
@@ -136,7 +139,7 @@ function cacheKey(kind: "show" | "movie", tmdbId: number): string {
 
 function isFresh(entry: WatchProviderCacheEntry, now: Date): boolean {
   const age = now.getTime() - new Date(entry.fetchedAt).getTime();
-  return Number.isFinite(age) && age >= 0 && age < CACHE_TTL_HOURS * 3600_000;
+  return Number.isFinite(age) && age >= 0 && age < STREAMING_CACHE_TTL_MS;
 }
 
 function logoUrl(path: string | null | undefined): string | null {
@@ -211,31 +214,51 @@ function toOptions(region: TmdbWatchProviderRegion, accessTypes: StreamingAccess
   return options;
 }
 
-/** Reads the stored region map for a title, fetching and caching it when needed. */
-async function loadRegions(
-  kind: "show" | "movie",
-  tmdbId: number,
-  now: Date
-): Promise<Record<string, TmdbWatchProviderRegion>> {
+/** What the cache holds for a title in one region. */
+interface RegionAnswer {
+  /** TMDB's entry for the region, or undefined when it has none. */
+  entry: TmdbWatchProviderRegion | undefined;
+  /** TMDB has the title somewhere, just not in this region. */
+  availableElsewhere: boolean;
+}
+
+/** Reads the stored answer for a title and region, fetching and caching it when needed. */
+async function loadRegion(kind: "show" | "movie", tmdbId: number, region: string, now: Date): Promise<RegionAnswer> {
   const key = cacheKey(kind, tmdbId);
   const cached = await db.watchProviders.get(key);
   if (cached && isFresh(cached, now)) {
-    return (cached.regions ?? {}) as Record<string, TmdbWatchProviderRegion>;
+    const regions = (cached.regions ?? {}) as Record<string, TmdbWatchProviderRegion>;
+    // A row from before `region` existed holds TMDB's whole response, so it
+    // answers for any region until it expires and is replaced by a slim one.
+    if (cached.region === undefined) {
+      return { entry: regions[region], availableElsewhere: !regions[region] && Object.keys(regions).length > 0 };
+    }
+    if (cached.region === region) {
+      return { entry: regions[region], availableElsewhere: cached.availableElsewhere ?? false };
+    }
+    // Cached for a different region: fall through and ask again.
   }
 
   const response = await getWatchProviders(kind, tmdbId);
-  const regions = response.results ?? {};
-  // Stored whole rather than per region: it is one document either way, so
-  // keeping all of it means changing region in Settings costs no new requests
-  // for titles already looked at.
+  const all = response.results ?? {};
+  const entry = all[region];
+  const availableElsewhere = !entry && Object.keys(all).length > 0;
+  // Only this region's entry is kept. TMDB answers for every country at once,
+  // tens of kilobytes a title, and all but one entry was dead weight on the
+  // device: Settings already clears this cache when the region changes, so
+  // the other regions were never read. Whether the title is available
+  // SOMEWHERE is the one thing the rest of the response was used for, and
+  // that is a single flag.
   await db.watchProviders.put({
     cacheKey: key,
     kind,
     tmdbId,
     fetchedAt: now.toISOString(),
-    regions,
+    regions: entry ? { [region]: entry } : {},
+    region,
+    availableElsewhere,
   });
-  return regions;
+  return { entry, availableElsewhere };
 }
 
 /**
@@ -252,8 +275,7 @@ export async function getStreamingAvailability(
   region = getWatchRegion(),
   now = new Date()
 ): Promise<StreamingAvailability> {
-  const regions = await loadRegions(kind, tmdbId, now);
-  const entry = regions[region];
+  const { entry, availableElsewhere } = await loadRegion(kind, tmdbId, region, now);
   if (!entry) {
     return {
       region,
@@ -263,7 +285,7 @@ export async function getStreamingAvailability(
       // distinguishing from "nobody streams this": the two deserve different
       // wording, and conflating them would tell a user in one country that a
       // title has no home at all.
-      availableElsewhere: Object.keys(regions).length > 0,
+      availableElsewhere,
     };
   }
 
