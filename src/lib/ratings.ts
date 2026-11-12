@@ -6,8 +6,8 @@
 // each, the same way Home fills typed release dates for Releasing this month.
 
 import { useEffect, useRef } from "react";
-import { db, type Movie } from "../db";
-import { getMovieDetails, getTvShowDetails } from "../tmdb";
+import { db, type Movie, type Show } from "../db";
+import { fetchMetadataPatch, fillTitleMetadata } from "./titleMetadata";
 
 /** The rating as a card shows it ("7.4"), or null when there is nothing worth showing. */
 export function formatRating(rating: number | null | undefined): string | null {
@@ -34,15 +34,13 @@ export function moviesNeedingRating(movies: Movie[]): Movie[] {
 export async function backfillMovieRatings(movies: Movie[], shouldStop: () => boolean): Promise<void> {
   for (const movie of movies) {
     if (shouldStop()) return;
-    let rating: number | null;
     try {
-      const details = await getMovieDetails(movie.tmdbId);
-      rating = details.vote_average ?? null;
+      // The rating, and whatever else the row is missing from the same
+      // response (see lib/titleMetadata.ts).
+      await fillTitleMetadata("movie", movie.tmdbId);
     } catch {
       return;
     }
-    if (shouldStop()) return;
-    await db.movies.update(movie.tmdbId, { tmdbRating: rating });
   }
 }
 
@@ -77,14 +75,19 @@ export function useRatingBackfill(
     // it, and the grid re-renders with it. One write per title meant several
     // hundred re-renders of a large library in a row; one per batch is a
     // handful. Whatever was fetched is still saved when the pass stops early.
-    const toSave: { tmdbId: number; rating: number | null }[] = [];
+    const toSave: { tmdbId: number; patch: Partial<Show> | Partial<Movie> }[] = [];
     const flush = async () => {
       if (toSave.length === 0) return;
       const batch = toSave.splice(0);
-      const table = kind === "show" ? db.shows : db.movies;
-      await db.transaction("rw", table, async () => {
-        for (const { tmdbId, rating } of batch) await table.update(tmdbId, { tmdbRating: rating });
-      });
+      if (kind === "show") {
+        await db.transaction("rw", db.shows, async () => {
+          for (const { tmdbId, patch } of batch) await db.shows.update(tmdbId, patch as Partial<Show>);
+        });
+      } else {
+        await db.transaction("rw", db.movies, async () => {
+          for (const { tmdbId, patch } of batch) await db.movies.update(tmdbId, patch as Partial<Movie>);
+        });
+      }
     };
     (async () => {
       try {
@@ -92,14 +95,16 @@ export function useRatingBackfill(
           const next = itemsRef.current?.find((i) => i.tmdbRating === undefined && !tried.has(i.tmdbId));
           if (!next) return;
           tried.add(next.tmdbId);
-          let rating: number | null;
+          // The rating, plus anything else the row is missing that arrived in
+          // the same response, so no other backfill asks for it again.
+          let patch: Partial<Show> | Partial<Movie> | null;
           try {
-            const details = kind === "show" ? await getTvShowDetails(next.tmdbId) : await getMovieDetails(next.tmdbId);
-            rating = details.vote_average ?? null;
+            patch = await fetchMetadataPatch(kind, next.tmdbId);
           } catch {
             return;
           }
-          toSave.push({ tmdbId: next.tmdbId, rating });
+          if (!patch || Object.keys(patch).length === 0) continue;
+          toSave.push({ tmdbId: next.tmdbId, patch });
           if (toSave.length >= RATING_BATCH) await flush();
         }
       } finally {

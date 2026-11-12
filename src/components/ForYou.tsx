@@ -219,9 +219,24 @@ function Insights({ profile }: { profile: TasteProfile }) {
   );
 }
 
+/**
+ * The page as it was last built, kept for the life of the app.
+ *
+ * This component is rebuilt every time the tab is opened, and building the
+ * page means reading the whole library and asking TMDB for six shelves, so
+ * every visit used to start on skeletons and fill in a moment later - for a
+ * page whose content had not changed since the last look. The last result is
+ * now shown at once, and rebuilt behind it only when it is old enough that
+ * the library may have moved on.
+ */
+let lastBuilt: { result: ForYouResult; at: number } | null = null;
+
+/** How long a built page is shown as-is before a visit rebuilds it in the background. */
+const REBUILD_AFTER_MS = 5 * 60 * 1000;
+
 export default function ForYou({ onOpen }: { onOpen: (kind: "show" | "movie", tmdbId: number) => void }) {
-  const [result, setResult] = useState<ForYouResult | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [result, setResult] = useState<ForYouResult | null>(() => lastBuilt?.result ?? null);
+  const [loading, setLoading] = useState(() => lastBuilt === null);
   const [showInsights, setShowInsights] = useState(false);
   const library = useLibraryIds();
   const mounted = useRef(true);
@@ -238,10 +253,17 @@ export default function ForYou({ onOpen }: { onOpen: (kind: "show" | "movie", tm
       setLoading(false);
       return;
     }
+    // Recent enough: what is on screen is the page. Nothing to fetch or read.
+    if (lastBuilt && Date.now() - lastBuilt.at < REBUILD_AFTER_MS) return;
     (async () => {
       const built = await buildForYouSections();
+      // A build that could not reach TMDB never replaces one that could: the
+      // shelves already on screen are better than an offline notice.
+      if (!(built.retrievalFailed && lastBuilt && !lastBuilt.result.retrievalFailed)) {
+        lastBuilt = { result: built, at: Date.now() };
+      }
       if (!mounted.current) return;
-      setResult(built);
+      setResult(lastBuilt?.result ?? built);
       setLoading(false);
     })();
   }, []);

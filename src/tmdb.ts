@@ -49,17 +49,172 @@ export function hasApiKey(): boolean {
   return !!localStorage.getItem(TMDB_API_KEY_STORAGE);
 }
 
-async function tmdbGet<T>(path: string, params: Record<string, string> = {}): Promise<T> {
-  const url = new URL(TMDB_BASE + path);
-  url.searchParams.set("api_key", getApiKey());
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+// ---- Request layer ----------------------------------------------------------
+//
+// Every TMDB read goes through tmdbGet, so the rules that keep the app from
+// asking for the same thing twice live in one place rather than in each
+// caller:
+//
+//  - Identical requests that overlap share one fetch. A details panel and a
+//    library backfill asking about the same title at the same moment used to
+//    cost two requests.
+//  - A response can be kept in memory for a while (ttlMs), for data that does
+//    not change at the pace the UI re-asks for it: reopening a panel, or
+//    coming back to Discover, is then served without a request.
+//  - A 429 is waited out and retried rather than surfaced. Backfills treat a
+//    thrown error as "TMDB has nothing for this title", so a rate limit part
+//    way through a large library used to be recorded as missing data.
+//  - A request that never answers is abandoned, so a sync walking the library
+//    one show at a time cannot hang on one of them.
 
-  const res = await fetch(url.toString());
-  if (!res.ok) {
+const REQUEST_TIMEOUT_MS = 15_000;
+const MAX_RATE_LIMIT_RETRIES = 2;
+/** Upper bound on one Retry-After wait; TMDB normally asks for a second or two. */
+const MAX_RETRY_WAIT_MS = 10_000;
+/** Responses kept in memory at once. Least recently used goes first. */
+const MEMORY_CACHE_ENTRIES = 200;
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+/** A title's details: long enough to cover a panel and a backfill reading the same title. */
+const DETAILS_TTL_MS = 5 * MINUTE_MS;
+/** Cast lists and people: effectively fixed for as long as anyone is looking at them. */
+const CREDITS_TTL_MS = 6 * HOUR_MS;
+/** Trending, upcoming and discover shelves, which TMDB itself recomputes daily at most. */
+const SHELF_TTL_MS = 3 * HOUR_MS;
+const SEARCH_TTL_MS = 5 * MINUTE_MS;
+/** Genre and region lists change a few times a decade. */
+const STATIC_LIST_TTL_MS = 30 * DAY_MS;
+
+export interface TmdbReadOptions {
+  /** Skip the in-memory copy and ask TMDB now. For a pull to refresh. */
+  fresh?: boolean;
+}
+
+interface TmdbGetOptions extends TmdbReadOptions {
+  /** Keep the response in memory this long. Omitted: never kept. */
+  ttlMs?: number;
+}
+
+const inFlight = new Map<string, Promise<unknown>>();
+const memoryCache = new Map<string, { at: number; data: unknown }>();
+
+/**
+ * Callers get their own copy, never the cached object: several of them sort
+ * or trim what they are handed, and that must not reach the next reader.
+ */
+function copyOf<T>(data: T): T {
+  return typeof structuredClone === "function" ? structuredClone(data) : (JSON.parse(JSON.stringify(data)) as T);
+}
+
+function remember(key: string, data: unknown): void {
+  memoryCache.delete(key);
+  memoryCache.set(key, { at: Date.now(), data });
+  while (memoryCache.size > MEMORY_CACHE_ENTRIES) {
+    const oldest = memoryCache.keys().next().value;
+    if (oldest === undefined) break;
+    memoryCache.delete(oldest);
+  }
+}
+
+/** Drops every response held in memory. For a changed API key, and for tests. */
+export function clearTmdbMemoryCache(): void {
+  memoryCache.clear();
+}
+
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+async function fetchWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } catch (e) {
+    if (controller.signal.aborted) throw new Error("TMDB took too long to respond.");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function requestJson<T>(url: string): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetchWithTimeout(url);
+    if (res.ok) return res.json() as Promise<T>;
+    if (res.status === 429 && attempt < MAX_RATE_LIMIT_RETRIES) {
+      const retryAfter = Number(res.headers.get("Retry-After"));
+      const seconds = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : attempt + 1;
+      await wait(Math.min(seconds * 1000, MAX_RETRY_WAIT_MS));
+      continue;
+    }
     if (res.status === 401) throw new Error("TMDB rejected the API key. Check it on the Settings page.");
+    if (res.status === 429) throw new Error("TMDB is rate limiting requests. Try again in a moment.");
     throw new Error(`TMDB request failed: ${res.status} ${res.statusText}`);
   }
-  return res.json() as Promise<T>;
+}
+
+async function tmdbGet<T>(
+  path: string,
+  params: Record<string, string> = {},
+  options: TmdbGetOptions = {}
+): Promise<T> {
+  const url = new URL(TMDB_BASE + path);
+  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+  // The request's identity: the URL before the key goes on it, so the key is
+  // never held anywhere but the outgoing request.
+  url.searchParams.sort();
+  const key = url.pathname + url.search;
+  url.searchParams.set("api_key", getApiKey());
+
+  if (options.ttlMs && !options.fresh) {
+    const hit = memoryCache.get(key);
+    if (hit && Date.now() - hit.at < options.ttlMs) {
+      // Moved to most recently used, keeping its age.
+      memoryCache.delete(key);
+      memoryCache.set(key, hit);
+      return copyOf(hit.data as T);
+    }
+  }
+
+  let pending = inFlight.get(key) as Promise<T> | undefined;
+  if (!pending) {
+    pending = requestJson<T>(url.toString()).finally(() => inFlight.delete(key));
+    inFlight.set(key, pending);
+    if (options.ttlMs) {
+      // Only answers are kept. A failure is asked again next time.
+      pending.then((data) => remember(key, data)).catch(() => {});
+    }
+  }
+  return copyOf(await pending);
+}
+
+/**
+ * A small list kept in localStorage, for the few TMDB answers that are the
+ * same for months and are asked for on every visit to a page. A failed read
+ * or write of the stored copy only ever costs the request it would have saved.
+ */
+async function storedList<T>(name: string, load: () => Promise<T>): Promise<T> {
+  const storageKey = `tmdb_list:${name}`;
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (raw) {
+      const stored = JSON.parse(raw) as { at: number; data: T };
+      if (Date.now() - stored.at < STATIC_LIST_TTL_MS && Array.isArray(stored.data) && stored.data.length > 0) {
+        return stored.data;
+      }
+    }
+  } catch {
+    // Unreadable copy: fetch it again.
+  }
+  const data = await load();
+  try {
+    localStorage.setItem(storageKey, JSON.stringify({ at: Date.now(), data }));
+  } catch {
+    // Storage full or unavailable: the list still came back.
+  }
+  return data;
 }
 
 // Distinguishes "TMDB said no" from "couldn't reach TMDB" so the first-run
@@ -115,12 +270,12 @@ export interface MovieSearchResult {
 }
 
 export async function searchTvShow(query: string): Promise<TvSearchResult[]> {
-  const data = await tmdbGet<{ results: TvSearchResult[] }>("/search/tv", { query });
+  const data = await tmdbGet<{ results: TvSearchResult[] }>("/search/tv", { query }, { ttlMs: SEARCH_TTL_MS });
   return data.results;
 }
 
 export async function searchMovie(query: string): Promise<MovieSearchResult[]> {
-  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/search/movie", { query });
+  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/search/movie", { query }, { ttlMs: SEARCH_TTL_MS });
   return data.results;
 }
 
@@ -148,8 +303,12 @@ export interface TvShowDetails {
   vote_average?: number;
 }
 
-export async function getTvShowDetails(tmdbId: number): Promise<TvShowDetails> {
-  return tmdbGet<TvShowDetails>(`/tv/${tmdbId}`, { append_to_response: "external_ids" });
+export async function getTvShowDetails(tmdbId: number, options: TmdbReadOptions = {}): Promise<TvShowDetails> {
+  return tmdbGet<TvShowDetails>(
+    `/tv/${tmdbId}`,
+    { append_to_response: "external_ids" },
+    { ttlMs: DETAILS_TTL_MS, fresh: options.fresh }
+  );
 }
 
 export interface SeasonEpisode {
@@ -213,7 +372,7 @@ export async function getCredits(kind: "show" | "movie", tmdbId: number): Promis
   const data = await tmdbGet<{
     cast?: { id: number; name: string; character?: string; roles?: { character: string }[]; profile_path: string | null }[];
     crew?: { job?: string; name: string }[];
-  }>(kind === "show" ? `/tv/${tmdbId}/aggregate_credits` : `/movie/${tmdbId}/credits`);
+  }>(kind === "show" ? `/tv/${tmdbId}/aggregate_credits` : `/movie/${tmdbId}/credits`, {}, { ttlMs: CREDITS_TTL_MS });
   return {
     cast: (data.cast ?? []).slice(0, CAST_LIMIT).map((c) => ({
       id: c.id,
@@ -246,7 +405,7 @@ export async function getEpisodeCredits(showId: number, season: number, episode:
     crew?: { job?: string; name: string }[];
     guest_stars?: RawPerson[];
     credits?: { cast?: RawPerson[] };
-  }>(`/tv/${showId}/season/${season}/episode/${episode}`, { append_to_response: "credits" });
+  }>(`/tv/${showId}/season/${season}/episode/${episode}`, { append_to_response: "credits" }, { ttlMs: CREDITS_TTL_MS });
 
   const names = (jobs: (job: string) => boolean) => [
     ...new Set((data.crew ?? []).filter((c) => c.job && jobs(c.job)).map((c) => c.name)),
@@ -336,7 +495,7 @@ export async function getPerson(personId: number): Promise<PersonDetails> {
     place_of_birth?: string | null;
     profile_path: string | null;
     combined_credits?: { cast?: RawPersonCredit[]; crew?: RawPersonCredit[] };
-  }>(`/person/${personId}`, { append_to_response: "combined_credits" });
+  }>(`/person/${personId}`, { append_to_response: "combined_credits" }, { ttlMs: CREDITS_TTL_MS });
 
   const knownFor = data.known_for_department ?? null;
   const raw = [
@@ -381,7 +540,7 @@ export async function getPerson(personId: number): Promise<PersonDetails> {
 }
 
 export async function getMovieDetails(tmdbId: number): Promise<MovieDetails> {
-  return tmdbGet<MovieDetails>(`/movie/${tmdbId}`, { append_to_response: "external_ids" });
+  return tmdbGet<MovieDetails>(`/movie/${tmdbId}`, { append_to_response: "external_ids" }, { ttlMs: DETAILS_TTL_MS });
 }
 
 // ---- Genres -----------------------------------------------------------------
@@ -391,30 +550,30 @@ export interface Genre {
   name: string;
 }
 
+// Stored for a month rather than fetched on every visit to Shows, Movies and
+// For You: the lists are a couple of dozen fixed entries.
 export async function getTvGenres(): Promise<Genre[]> {
-  const data = await tmdbGet<{ genres: Genre[] }>("/genre/tv/list");
-  return data.genres;
+  return storedList("tv-genres", async () => (await tmdbGet<{ genres: Genre[] }>("/genre/tv/list")).genres);
 }
 
 export async function getMovieGenres(): Promise<Genre[]> {
-  const data = await tmdbGet<{ genres: Genre[] }>("/genre/movie/list");
-  return data.genres;
+  return storedList("movie-genres", async () => (await tmdbGet<{ genres: Genre[] }>("/genre/movie/list")).genres);
 }
 
 // ---- Discovery (Add page suggestions) ----------------------------------------
 
 export async function getPopularTvShows(): Promise<TvSearchResult[]> {
-  const data = await tmdbGet<{ results: TvSearchResult[] }>("/trending/tv/week");
+  const data = await tmdbGet<{ results: TvSearchResult[] }>("/trending/tv/week", {}, { ttlMs: SHELF_TTL_MS });
   return data.results;
 }
 
 export async function getPopularMovies(): Promise<MovieSearchResult[]> {
-  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/trending/movie/week");
+  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/trending/movie/week", {}, { ttlMs: SHELF_TTL_MS });
   return data.results;
 }
 
 export async function getUpcomingMovies(): Promise<MovieSearchResult[]> {
-  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/movie/upcoming", { region: "US" });
+  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/movie/upcoming", { region: "US" }, { ttlMs: SHELF_TTL_MS });
   return data.results;
 }
 
@@ -422,13 +581,17 @@ export async function getRecentlyAvailableAtHome(): Promise<MovieSearchResult[]>
   const today = new Date();
   const past = new Date(today.getTime() - 45 * 24 * 60 * 60 * 1000);
   const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/discover/movie", {
-    region: "US",
-    with_release_type: "4",
-    "release_date.gte": fmt(past),
-    "release_date.lte": fmt(today),
-    sort_by: "release_date.desc",
-  });
+  const data = await tmdbGet<{ results: MovieSearchResult[] }>(
+    "/discover/movie",
+    {
+      region: "US",
+      with_release_type: "4",
+      "release_date.gte": fmt(past),
+      "release_date.lte": fmt(today),
+      sort_by: "release_date.desc",
+    },
+    { ttlMs: SHELF_TTL_MS }
+  );
   return data.results;
 }
 
@@ -441,7 +604,7 @@ export async function discoverMovies(filters: DiscoverFilters): Promise<MovieSea
   const params: Record<string, string> = { sort_by: "popularity.desc" };
   if (filters.genreId) params.with_genres = String(filters.genreId);
   if (filters.minRating) params["vote_average.gte"] = String(filters.minRating);
-  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/discover/movie", params);
+  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/discover/movie", params, { ttlMs: SHELF_TTL_MS });
   return data.results;
 }
 
@@ -529,12 +692,16 @@ function toDiscoverParams(q: DiscoverQuery, media: "movie" | "tv"): Record<strin
 }
 
 export async function discoverMoviesBy(q: DiscoverQuery): Promise<MovieSearchResult[]> {
-  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/discover/movie", toDiscoverParams(q, "movie"));
+  const data = await tmdbGet<{ results: MovieSearchResult[] }>("/discover/movie", toDiscoverParams(q, "movie"), {
+    ttlMs: SHELF_TTL_MS,
+  });
   return data.results ?? [];
 }
 
 export async function discoverTvBy(q: DiscoverQuery): Promise<TvSearchResult[]> {
-  const data = await tmdbGet<{ results: TvSearchResult[] }>("/discover/tv", toDiscoverParams(q, "tv"));
+  const data = await tmdbGet<{ results: TvSearchResult[] }>("/discover/tv", toDiscoverParams(q, "tv"), {
+    ttlMs: SHELF_TTL_MS,
+  });
   return data.results ?? [];
 }
 
@@ -552,12 +719,14 @@ export async function discoverTvBy(q: DiscoverQuery): Promise<TvSearchResult[]> 
 // already covers), while "recommendations" is behavioural.
 
 export async function getTvRecommendations(tmdbId: number): Promise<TvSearchResult[]> {
-  const data = await tmdbGet<{ results: TvSearchResult[] }>(`/tv/${tmdbId}/recommendations`);
+  const data = await tmdbGet<{ results: TvSearchResult[] }>(`/tv/${tmdbId}/recommendations`, {}, { ttlMs: SHELF_TTL_MS });
   return data.results ?? [];
 }
 
 export async function getMovieRecommendations(tmdbId: number): Promise<MovieSearchResult[]> {
-  const data = await tmdbGet<{ results: MovieSearchResult[] }>(`/movie/${tmdbId}/recommendations`);
+  const data = await tmdbGet<{ results: MovieSearchResult[] }>(`/movie/${tmdbId}/recommendations`, {}, {
+    ttlMs: SHELF_TTL_MS,
+  });
   return data.results ?? [];
 }
 
@@ -615,10 +784,8 @@ export interface TmdbWatchProviderResponse {
 /**
  * Raw availability for one title, every region TMDB has.
  *
- * Returns every region rather than one because the response is a single
- * document either way: filtering here would mean re-requesting the same
- * document when the user changes region, and the cache in
- * lib/streaming/providers.ts stores it whole for that reason.
+ * Returns every region because that is what TMDB sends; the cache in
+ * lib/streaming/providers.ts keeps only the one the user is in.
  */
 export async function getWatchProviders(
   kind: "show" | "movie",
@@ -644,8 +811,10 @@ export interface TmdbWatchRegion {
  * stop someone typing "GB".
  */
 export async function getWatchProviderRegions(): Promise<TmdbWatchRegion[]> {
-  const data = await tmdbGet<{ results: TmdbWatchRegion[] }>("/watch/providers/regions");
-  return data.results ?? [];
+  return storedList(
+    "watch-regions",
+    async () => (await tmdbGet<{ results: TmdbWatchRegion[] }>("/watch/providers/regions")).results ?? []
+  );
 }
 
 export async function findByExternalId(
