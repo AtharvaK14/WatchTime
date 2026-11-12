@@ -12,7 +12,7 @@ const OMDB_QUOTA_EXHAUSTED_UNTIL = "omdb_quota_exhausted_until";
 
 // Ratings barely change, so a month-long cache slashes the quota cost of
 // re-opening the same details panel while still refreshing eventually.
-const OMDB_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+export const OMDB_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export const OMDB_RATE_LIMIT_MESSAGE =
   "Daily ratings lookup limit reached. Ratings will resume automatically tomorrow.";
@@ -67,6 +67,37 @@ function isRateLimitError(errorMessage: unknown): boolean {
 }
 
 // ---- TTL cache (Dexie omdbCache) -------------------------------------------
+
+// The cache keys, in one place: the lookups below write under them and
+// lib/cacheMaintenance.ts deletes under them when a title leaves the library,
+// and the two must never disagree about what a title's entries are called.
+
+function ratingsCacheKey(identifier: { imdbId?: string | null; title: string; year: number | null }): string {
+  return `ratings:${identifier.imdbId ?? `${identifier.title}:${identifier.year ?? ""}`}`;
+}
+
+function episodeCachePrefix(show: { imdbId?: string | null; title: string }): string {
+  return `episode:${show.imdbId ?? show.title}:S`;
+}
+
+/**
+ * Every key a title's lookups can have been cached under: by IMDb id, and by
+ * title for a lookup made before the id was known. `exact` are whole keys,
+ * `prefixes` match that title's per-episode entries.
+ */
+export function omdbCacheKeysFor(title: { name: string; year: number | null; imdbId?: string | null }): {
+  exact: string[];
+  prefixes: string[];
+} {
+  const byTitle = { title: title.name, year: title.year, imdbId: null };
+  const exact = [ratingsCacheKey(byTitle)];
+  const prefixes = [episodeCachePrefix(byTitle)];
+  if (title.imdbId) {
+    exact.push(ratingsCacheKey({ ...byTitle, imdbId: title.imdbId }));
+    prefixes.push(episodeCachePrefix({ ...byTitle, imdbId: title.imdbId }));
+  }
+  return { exact, prefixes };
+}
 
 async function readCache<T>(cacheKey: string): Promise<T | null> {
   try {
@@ -150,7 +181,7 @@ export async function getOmdbRatings(identifier: {
   const key = getOmdbKey();
   if (!key) return null;
 
-  const cacheKey = `ratings:${identifier.imdbId ?? `${identifier.title}:${identifier.year ?? ""}`}`;
+  const cacheKey = ratingsCacheKey(identifier);
   const cached = await readCache<OmdbRatings>(cacheKey);
   if (cached) return { ...cached, rateLimited: false };
 
@@ -230,7 +261,7 @@ export async function getOmdbEpisodeRating(
   const key = getOmdbKey();
   if (!key) return null;
 
-  const cacheKey = `episode:${show.imdbId ?? show.title}:S${seasonNumber}E${episodeNumber}`;
+  const cacheKey = `${episodeCachePrefix(show)}${seasonNumber}E${episodeNumber}`;
   const cached = await readCache<OmdbEpisodeRating>(cacheKey);
   if (cached) return { ...cached, rateLimited: false };
 

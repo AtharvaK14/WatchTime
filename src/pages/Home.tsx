@@ -4,7 +4,14 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { App as CapacitorApp } from "@capacitor/app";
 import { db, type Episode, type Movie } from "../db";
 import { TMDB_IMAGE_BASE } from "../tmdb";
-import { ensureEpisodesCached, IN_FLIGHT_REFRESH_MS } from "../lib/episodeSync";
+import {
+  ensureEpisodesCached,
+  IN_FLIGHT_REFRESH_MS,
+  readShowSyncStamps,
+  showIdsWithCachedEpisodes,
+  showSyncIsDue,
+  writeShowSyncStamps,
+} from "../lib/episodeSync";
 import {
   buildReleasingThisMonth,
   buildUpcomingEpisodeRows,
@@ -386,23 +393,56 @@ function ShowsHome({
     const force = forceNextSync.current;
     forceNextSync.current = false;
     async function sync() {
-      setSyncing(true);
-      setSyncErrors([]);
-      const failures: string[] = [];
-      for (const show of toSync!) {
-        if (cancelled) return;
-        try {
-          await ensureEpisodesCached(show.tmdbId, new Date(), { force });
-        } catch (e) {
-          failures.push(`${show.name}: ${e instanceof Error ? e.message : String(e)}`);
-        }
-      }
-      if (!cancelled) {
-        setSyncing(false);
+      // Only the shows that are due. Home is rebuilt on every tab switch, and
+      // this used to sync every followed show each time, one request apiece;
+      // a show synced recently is now left alone until its interval is up
+      // (see showSyncIsDue). A pull to refresh still syncs all of them.
+      const stamps = readShowSyncStamps();
+      const cachedShowIds = await showIdsWithCachedEpisodes();
+      if (cancelled) return;
+      const due = force
+        ? toSync!
+        : toSync!.filter((show) =>
+            showSyncIsDue(show, stamps.get(show.tmdbId), cachedShowIds.has(show.tmdbId), Date.now())
+          );
+      const endPull = () => {
         // The spinner stays long enough to be seen even when nothing needed
         // fetching, so a pull never looks like it did nothing.
         const shown = Date.now() - pullStartedAt.current;
         window.setTimeout(() => setPullRefreshing(false), Math.max(0, 600 - shown));
+      };
+      if (due.length === 0) {
+        // Nothing to fetch: no "Syncing..." line to appear and vanish, and
+        // nothing new for the notification schedule to pick up. Cleared in
+        // case a pass this one replaced was cut short while it was showing.
+        setSyncing(false);
+        endPull();
+        return;
+      }
+      setSyncing(true);
+      setSyncErrors([]);
+      const failures: string[] = [];
+      const keep = toSync!.map((show) => show.tmdbId);
+      try {
+        for (const show of due) {
+          if (cancelled) return;
+          try {
+            await ensureEpisodesCached(show.tmdbId, new Date(), { force });
+            // Only a sync that worked counts: a failed show is tried again on
+            // the next visit rather than after a whole interval.
+            stamps.set(show.tmdbId, Date.now());
+          } catch (e) {
+            failures.push(`${show.name}: ${e instanceof Error ? e.message : String(e)}`);
+          }
+        }
+      } finally {
+        // Also when the pass is cut short by leaving Home, so the shows it
+        // got through are not walked again on the way back.
+        writeShowSyncStamps(stamps, keep);
+      }
+      if (!cancelled) {
+        setSyncing(false);
+        endPull();
         setSyncErrors(failures);
         // The schedule was built at launch from the cache as it was then. A
         // season this sync just fetched has to reach it now, not at the next

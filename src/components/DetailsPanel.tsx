@@ -5,7 +5,7 @@ import { getTvShowDetails, getMovieDetails, getCredits, TMDB_IMAGE_BASE, TMDB_BA
 import { formatRating } from "../lib/ratings";
 import { getOmdbRatings, hasOmdbKey, OMDB_RATE_LIMIT_MESSAGE, type OmdbRatings } from "../omdb";
 import { averageRuntime } from "../lib/runtime";
-import { getSeasonNumbers, ensureSeasonCached, totalEpisodeCount, unconfirmedSeasons } from "../lib/episodeSync";
+import { ensureSeasonCached, totalEpisodeCount, unconfirmedSeasons } from "../lib/episodeSync";
 import {
   ensureEpisodesWatched,
   markEpisodesUnwatched,
@@ -300,9 +300,9 @@ export default function DetailsPanel({ kind, tmdbId, initialSeason, onClose }: P
           if (cancelled) return;
           setInLibrary(!!existing);
           setStopped(!!existing && isStoppedWatching(existing));
-          const nums = await getSeasonNumbers(tmdbId);
-          if (cancelled) return;
-          setSeasonNumbers(nums);
+          // From the details already in hand. This used to ask TMDB for the
+          // same show a second time just to read its season numbers.
+          setSeasonNumbers(d.seasons.map((season) => season.season_number).filter((n) => n > 0));
           if (existing) {
             await refreshWatchedAndEpisodes();
           }

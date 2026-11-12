@@ -1,6 +1,6 @@
-import { db, episodeKey, type Episode } from "../db";
+import { db, episodeKey, type Episode, type Show } from "../db";
 import { getTvShowDetails, getSeasonDetails, type TvShowDetails } from "../tmdb";
-import { getTvmazeRuntimesByTvdbId } from "../tvmaze";
+import { getTvmazeRuntimes, lookupTvmazeId } from "../tvmaze";
 import { daysAgoIso, hasConfirmedAirDate, todayIso } from "./releaseState";
 
 /**
@@ -80,7 +80,16 @@ async function getTvmazeRuntimesForShow(tmdbId: number): Promise<Map<string, num
   const promise = (async () => {
     const show = await db.shows.get(tmdbId);
     if (!show?.tvdbId) return new Map<string, number>();
-    return getTvmazeRuntimesByTvdbId(show.tvdbId);
+    // TVmaze's id for the show is resolved once and kept on the row: it never
+    // changes, and looking it up again after every launch was half of the
+    // requests this made.
+    let tvmazeId = show.tvmazeId;
+    if (tvmazeId === undefined) {
+      tvmazeId = await lookupTvmazeId(show.tvdbId);
+      if (tvmazeId !== undefined) await db.shows.update(tmdbId, { tvmazeId });
+    }
+    if (tvmazeId == null) return new Map<string, number>();
+    return getTvmazeRuntimes(tvmazeId);
   })();
   tvmazeRuntimeCache.set(tmdbId, promise);
   return promise;
@@ -256,7 +265,45 @@ export function episodeTotalToStore(
   return total === stored ? null : total;
 }
 
-/** Replaces one season's cached episodes with a freshly fetched list. */
+const EPISODE_FIELDS: (keyof Episode)[] = [
+  "name",
+  "overview",
+  "airDate",
+  "tmdbRating",
+  "stillPath",
+  "runtimeMinutes",
+  "showId",
+  "seasonNumber",
+  "episodeNumber",
+];
+
+/**
+ * The fetched episodes that differ from what is cached, which are the only
+ * ones worth writing.
+ *
+ * A live season is re-read several times a day and almost always comes back
+ * identical. Writing it anyway cost nothing in requests but a great deal
+ * locally: every write to the episodes table re-runs every live query on it,
+ * and Home, Coming Up, the widgets and the notification scheduler each read
+ * the whole table. Pure, so the scenario scripts can run it.
+ *
+ * A runtime already held is kept when the fresh read has none. Runtimes come
+ * from TVmaze, a best-effort second source, and a re-read made while it was
+ * unreachable used to blank every runtime in the season.
+ */
+export function changedEpisodes(fresh: Episode[], cached: Episode[]): Episode[] {
+  const cachedByKey = new Map(cached.map((ep) => [ep.key, ep]));
+  const changed: Episode[] = [];
+  for (const record of fresh) {
+    const old = cachedByKey.get(record.key);
+    const next =
+      old && record.runtimeMinutes === null ? { ...record, runtimeMinutes: old.runtimeMinutes ?? null } : record;
+    if (!old || EPISODE_FIELDS.some((field) => (old[field] ?? null) !== (next[field] ?? null))) changed.push(next);
+  }
+  return changed;
+}
+
+/** Brings one season's cached episodes in line with a freshly fetched list. */
 async function fetchSeasonInto(tmdbId: number, seasonNumber: number, cached: Episode[]): Promise<void> {
   const season = await getSeasonDetails(tmdbId, seasonNumber);
   const records = await toEpisodeRecords(tmdbId, seasonNumber, season.episodes);
@@ -266,7 +313,88 @@ async function fetchSeasonInto(tmdbId: number, seasonNumber: number, cached: Epi
   // would fail the count check on every single sync and re-fetch forever.
   const removed = cached.filter((ep) => !fresh.has(ep.key)).map((ep) => ep.key);
   if (removed.length > 0) await db.episodes.bulkDelete(removed);
-  await db.episodes.bulkPut(records);
+  const changed = changedEpisodes(records, cached);
+  if (changed.length > 0) await db.episodes.bulkPut(changed);
+}
+
+// ---- When a show is due a sync ----------------------------------------------
+//
+// Syncing a show costs at least one request (its details), so Home must not
+// do it for every followed show every time it is opened. It used to: the
+// "synced recently" note lived in a component that is rebuilt on every tab
+// switch, so each return to Home walked the whole library again, one request
+// per show, ended and stopped shows included.
+//
+// The time of each show's last successful sync is kept in localStorage, so
+// it also survives the app being closed: opening the app a few times a day
+// costs a library's worth of requests a few times a day, not every time.
+
+const SHOW_SYNC_STAMPS_STORAGE = "episode_sync_at";
+
+/** A show that can still gain episodes: the interval a live season is re-read at. */
+export const ACTIVE_SHOW_SYNC_MS = IN_FLIGHT_REFRESH_MS;
+
+/**
+ * A show TMDB lists as over, or one the user stopped watching. Still checked,
+ * because TMDB often leaves a show "Ended" for a while after a new season is
+ * announced, but there is nothing about it that changes by the hour.
+ */
+export const SETTLED_SHOW_SYNC_MS = 3 * 24 * 60 * 60 * 1000;
+
+const SETTLED_STATUSES = new Set(["Ended", "Canceled"]);
+
+/**
+ * Whether a show should be synced now. Pure, so the scenario scripts can run
+ * the exact decision Home makes.
+ *
+ * A show with nothing cached is always due, whatever its stamp says: a
+ * restored backup or a cleared cache must not wait out an interval that was
+ * recorded against data which is no longer there.
+ */
+export function showSyncIsDue(
+  show: Pick<Show, "status" | "isArchived">,
+  lastSyncedAt: number | undefined,
+  hasCachedEpisodes: boolean,
+  now: number
+): boolean {
+  if (!hasCachedEpisodes || lastSyncedAt === undefined) return true;
+  const age = now - lastSyncedAt;
+  if (age < 0) return true; // a stamp from the future: the clock moved, trust nothing
+  const settled = show.isArchived || SETTLED_STATUSES.has(show.status);
+  return age >= (settled ? SETTLED_SHOW_SYNC_MS : ACTIVE_SHOW_SYNC_MS);
+}
+
+/** When each show was last synced successfully, as epoch millis by TMDB id. */
+export function readShowSyncStamps(): Map<number, number> {
+  const stamps = new Map<number, number>();
+  try {
+    const raw = JSON.parse(localStorage.getItem(SHOW_SYNC_STAMPS_STORAGE) ?? "{}") as Record<string, unknown>;
+    for (const [id, at] of Object.entries(raw)) {
+      if (typeof at === "number" && Number.isFinite(at)) stamps.set(Number(id), at);
+    }
+  } catch {
+    // Unreadable: every show is simply due.
+  }
+  return stamps;
+}
+
+/** Stores the stamps, keeping only shows still being synced so the note never outgrows the library. */
+export function writeShowSyncStamps(stamps: ReadonlyMap<number, number>, keep: Iterable<number>): void {
+  const kept: Record<string, number> = {};
+  for (const id of keep) {
+    const at = stamps.get(id);
+    if (at !== undefined) kept[id] = at;
+  }
+  try {
+    localStorage.setItem(SHOW_SYNC_STAMPS_STORAGE, JSON.stringify(kept));
+  } catch {
+    // Not stored: the next visit syncs again, which is only what used to happen.
+  }
+}
+
+/** The shows that have at least one episode cached. One index walk, no rows read. */
+export async function showIdsWithCachedEpisodes(): Promise<Set<number>> {
+  return new Set((await db.episodes.orderBy("showId").uniqueKeys()) as number[]);
 }
 
 /**
@@ -302,7 +430,7 @@ export async function ensureEpisodesCached(
    */
   options: { force?: boolean } = {}
 ): Promise<number[]> {
-  const details = await getTvShowDetails(tmdbId);
+  const details = await getTvShowDetails(tmdbId, { fresh: options.force });
   const seasonNumbers = details.seasons.filter((s) => s.season_number > 0).map((s) => s.season_number);
 
   // Written only when it changed, so a sync with nothing new costs no write.
@@ -310,7 +438,16 @@ export async function ensureEpisodesCached(
   const show = await db.shows.get(tmdbId);
   if (show) {
     const total = episodeTotalToStore(show.numberOfEpisodes, details);
-    if (total !== null) await db.shows.update(tmdbId, { numberOfEpisodes: total });
+    // The status is kept current too: it decides how often the show is synced
+    // (see showSyncIsDue), and one stored when the show was added goes stale
+    // the day a series ends or is brought back.
+    const status = details.status && details.status !== show.status ? details.status : null;
+    if (total !== null || status !== null) {
+      await db.shows.update(tmdbId, {
+        ...(total !== null ? { numberOfEpisodes: total } : {}),
+        ...(status !== null ? { status } : {}),
+      });
+    }
   }
 
   const existing = await db.episodes.where("showId").equals(tmdbId).toArray();

@@ -19,6 +19,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useSyncExternalStore } from "react";
 import { db } from "../db";
+import { dropCachesForTitle } from "./cacheMaintenance";
 import { prefersReducedMotion } from "./useAnimatedDismiss";
 
 export type LibraryKind = "show" | "movie";
@@ -45,6 +46,9 @@ export function libraryKey(kind: LibraryKind, tmdbId: number): string {
  * afterwards, so the caller can never announce a removal that did not happen.
  */
 export async function removeFromLibrary(kind: LibraryKind, tmdbId: number): Promise<void> {
+  // Read before the delete: what was cached about the title is keyed by its
+  // name and IMDb id, which are gone once the row is.
+  const row = kind === "show" ? await db.shows.get(tmdbId) : await db.movies.get(tmdbId);
   if (kind === "show") {
     await db.transaction("rw", db.shows, db.episodes, db.watchedEpisodes, async () => {
       await db.watchedEpisodes.where("showId").equals(tmdbId).delete();
@@ -56,6 +60,16 @@ export async function removeFromLibrary(kind: LibraryKind, tmdbId: number): Prom
   }
   const remaining = kind === "show" ? await db.shows.get(tmdbId) : await db.movies.get(tmdbId);
   if (remaining) throw new Error("The title is still in your library.");
+  // Its cached ratings and streaming availability go with it. They used to
+  // stay on the device for good, for a title the library no longer had.
+  if (row) {
+    await dropCachesForTitle(kind, {
+      tmdbId,
+      name: "name" in row ? row.name : row.title,
+      year: "firstAirYear" in row ? row.firstAirYear : row.releaseYear,
+      imdbId: row.imdbId,
+    });
+  }
 }
 
 // ---- The exit -------------------------------------------------------------
