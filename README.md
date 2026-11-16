@@ -166,6 +166,42 @@ npm run dev
 
 Open the URL Vite prints. A short first-run wizard asks for the keys, which are stored only on your device.
 
+### Getting the API keys
+
+The wizard and Settings → API keys show these same steps, with copy buttons for the form answers.
+
+**TMDB (required)**
+
+1. Create a free account at [themoviedb.org/signup](https://www.themoviedb.org/signup) and click the link in the verification email.
+2. Log in at [themoviedb.org/login](https://www.themoviedb.org/login). The API page shows "You don't have permission to access this page" if you aren't logged in.
+3. Open [themoviedb.org/settings/api](https://www.themoviedb.org/settings/api) (profile icon → Settings → API). Under "Request an API Key" follow the link, choose **Developer**, and accept the terms of use.
+4. Fill in the application form. Every field is required:
+
+   | Field | What to enter |
+   | --- | --- |
+   | Type of Use | Personal |
+   | Application Name | WatchTime |
+   | Application URL | `https://localhost` (or a web page of your own) |
+   | Application Summary | Personal, non-commercial use. I use the WatchTime app to keep track of the TV shows and movies I watch. It looks up titles, posters and episode lists from TMDB with my own key. |
+   | Contact details (name, email, phone, address) | Your own |
+
+5. Submit. The key appears right away on the same page. Copy the 32-character **API Key**, not the longer "API Read Access Token".
+
+TMDB's form isn't built for phones; use a computer or your browser's "Desktop site" mode.
+
+**OMDb (optional)**
+
+1. Open [omdbapi.com/apikey.aspx](https://www.omdbapi.com/apikey.aspx) and select **FREE! (1,000 daily limit)**. No account is needed.
+2. Fill in the four required fields:
+
+   | Field | What to enter |
+   | --- | --- |
+   | Email | Your own; the key is sent there |
+   | First Name / Last Name | Your own |
+   | Use | Personal, non-commercial use: showing IMDb and Rotten Tomatoes ratings in WatchTime, an app I use to track the TV shows and movies I watch. |
+
+3. Submit, then click the activation link in the email OMDb sends. The key doesn't work until you do. Outlook, Hotmail and Yahoo addresses can take up to an hour.
+
 ### Android
 
 Requires Android Studio and JDK 21. The app targets Android 16 (API 36) and runs on Android 7.0 (API 24) and up.
