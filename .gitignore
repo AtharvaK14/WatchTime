@@ -6,6 +6,8 @@ dist
 android/app/src/main/assets/public
 android/app/src/main/assets/capacitor.config.json
 android/app/src/main/assets/capacitor.plugins.json
+android/keystore.properties
+*.jks
 
 # JetBrains / Android Studio IDE files (matches .idea at any depth)
 .idea/
