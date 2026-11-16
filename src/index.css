@@ -1261,6 +1261,33 @@ details[open] > summary::after { transform: rotate(90deg); }
 
 .wizard-howto { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 
+/* Key setup guide (KeySetupGuide.tsx): the sign-up form answers inside a
+   how-to step, each one a label, the value to enter, and a Copy button. */
+.key-guide-fields {
+  margin: 8px 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-raised);
+}
+.key-guide-field { padding: 8px 12px; }
+.key-guide-field + .key-guide-field { border-top: 1px solid var(--border); }
+.key-guide-field dt { font-size: 0.75rem; }
+.key-guide-field dd {
+  margin: 2px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.key-guide-value { color: var(--text); overflow-wrap: anywhere; user-select: all; }
+/* Keeps .link-button's 44px touch height; the row centres around it. */
+.key-guide-copy { flex-shrink: 0; }
+.wizard-howto .key-guide-tip { list-style: none; margin-left: -20px; font-style: italic; }
+/* In Settings the guide is a nested disclosure: no divider, compact summary. */
+details.key-guide { border-bottom: none; padding: 0 0 10px; }
+details.key-guide > summary { justify-content: flex-start; font-size: 0.85rem; font-weight: 600; }
+details.key-guide > .wizard-howto { margin-top: 8px; }
+
 .wizard-summary { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 
 .wizard-actions {

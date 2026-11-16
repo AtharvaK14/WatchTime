@@ -33,6 +33,7 @@ import {
 import ImportWizard from "./ImportWizard";
 import Diagnostics from "./Diagnostics";
 import About from "../components/About";
+import { OmdbKeySteps, TmdbKeySteps } from "../components/KeySetupGuide";
 import NotificationSettings from "../components/NotificationSettings";
 import { requestNotificationSync } from "../lib/notifications";
 
@@ -118,12 +119,13 @@ function ApiKeys() {
       <div className="settings-block">
         <h3>TMDB (required)</h3>
         <p className="muted small">
-          Powers show/movie search, posters, plots, and episode lists. Free key at{" "}
-          <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noreferrer">
-            themoviedb.org/settings/api
-          </a>{" "}
-          under non-commercial terms.
+          Powers show/movie search, posters, plots, and episode lists. The key is free under TMDB's non-commercial
+          terms.
         </p>
+        <details className="key-guide">
+          <summary>How to get a TMDB key</summary>
+          <TmdbKeySteps />
+        </details>
         <div className="field-row">
           <input
             type={tmdbVisible ? "text" : "password"}
@@ -147,13 +149,13 @@ function ApiKeys() {
         <h3>OMDb (optional, for IMDb / Rotten Tomatoes ratings)</h3>
         <p className="muted small">
           There is no free official IMDb or Rotten Tomatoes API. OMDb is the legitimate free aggregator, 1,000
-          requests/day, non-commercial license. Get a key at{" "}
-          <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" rel="noreferrer">
-            omdbapi.com/apikey.aspx
-          </a>
-          . Rotten Tomatoes scores are typically only available for movies, not TV shows, that's an OMDb data
-          limitation, not a bug here.
+          requests/day, non-commercial license. Rotten Tomatoes scores are typically only available for movies, not
+          TV shows, that's an OMDb data limitation, not a bug here.
         </p>
+        <details className="key-guide">
+          <summary>How to get an OMDb key</summary>
+          <OmdbKeySteps />
+        </details>
         <div className="field-row">
           <input
             type={omdbVisible ? "text" : "password"}

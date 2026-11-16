@@ -6,6 +6,7 @@ import { useBackHandler } from "../lib/backHandler";
 import { notificationsSupported } from "../lib/notifications";
 import { notificationChoiceMade } from "../lib/notifications/prefs";
 import NotificationChoice from "./NotificationChoice";
+import { OmdbKeySteps, TmdbKeySteps } from "./KeySetupGuide";
 
 /**
  * First-run onboarding (Play Store prep, Phase 1). A stranger installing
@@ -146,7 +147,8 @@ export default function FirstRunWizard({ onComplete }: { onComplete: () => void 
               nowhere else.
             </p>
             <p className="muted small">
-              Takes about 3 minutes total, mostly waiting for a signup email. Both steps can be skipped and done
+              Takes about 5 minutes total, mostly filling in two short signup forms; the answers to give are
+              spelled out for you. Both steps can be skipped and done
               later in Settings.
             </p>
             <div className="wizard-actions">
@@ -184,22 +186,7 @@ export default function FirstRunWizard({ onComplete }: { onComplete: () => void 
               Provides search, posters, plots, and episode lists. Without it, the app can't look up any show or
               movie.
             </p>
-            <ol className="wizard-howto muted small">
-              <li>
-                Create a free account at{" "}
-                <a href="https://www.themoviedb.org/signup" target="_blank" rel="noreferrer">
-                  themoviedb.org/signup
-                </a>
-              </li>
-              <li>
-                Open{" "}
-                <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noreferrer">
-                  themoviedb.org/settings/api
-                </a>{" "}
-                and request a key (choose "Developer", personal use)
-              </li>
-              <li>Copy the value labeled "API Key" and paste it here</li>
-            </ol>
+            <TmdbKeySteps />
             <input
               type="text"
               value={tmdbKey}
@@ -233,17 +220,7 @@ export default function FirstRunWizard({ onComplete }: { onComplete: () => void 
               for TV episodes through any free service — that's an upstream limitation, not this app). Free tier:
               1,000 lookups a day, plenty for normal use.
             </p>
-            <ol className="wizard-howto muted small">
-              <li>
-                Request a free key at{" "}
-                <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" rel="noreferrer">
-                  omdbapi.com/apikey.aspx
-                </a>{" "}
-                (pick the FREE tier)
-              </li>
-              <li>Click the activation link in the email they send you — the key doesn't work until you do</li>
-              <li>Paste the key here</li>
-            </ol>
+            <OmdbKeySteps />
             <input
               type="text"
               value={omdbKey}
