@@ -190,7 +190,7 @@ None of these can be run without a device. They remain to be done:
 - Scheduled backup runs after the cadence elapses; no new file when nothing changed.
 - "Back up now" writes a file; the eighth backup removes the oldest.
 - Restore from a listed local backup, merge and replace.
-- Reinstall with Android backup on, using the `adb` script on the testing page (`bmgr backupnow com.indie.watchtime`, uninstall, reinstall): the "Restoring your library" screen appears, the library returns, and with a screen lock set the API keys return too so setup is skipped.
+- Reinstall with Android backup on, using the `adb` script on the testing page (`bmgr backupnow com.indie.watchtime`, uninstall, reinstall): the "Restoring your library" screen appears, the library returns, and with a screen lock set the API keys return too so setup is skipped. **Done 17 November 2026 on a Galaxy S24 (Android 17), local transport:** Android restored the files at install (`restoreAtInstall`, signatures matched), and the library and keys came back. The first run hung on the restoring screen (the wait timer fired at once and the restore drew over the app); fixed in `startup.ts`, then a replayed first launch showed the app after about a second and the scheduled backup ran.
 - The same with no screen lock: the library returns, setup asks for the TMDB key.
 - Reinstall from the GitHub APK through the phone's installer, after a real overnight backup: does Android restore at all? This decides whether sideloaded users get this before the Play release.
 - Reset Data, then reopen the app: the library stays empty and is not restored.
