@@ -40,7 +40,7 @@ function describeRun(result: BackupRunResult): { ok: boolean; text: string } {
 }
 
 function entryLabel(entry: LocalBackupEntry): string {
-  if (entry.target === SYSTEM_TARGET) return "Copy for Android backup (no API keys)";
+  if (entry.target === SYSTEM_TARGET) return "Snapshot for Android backup";
   return backupTimeFromFilename(entry.filename)?.toLocaleString() ?? entry.filename;
 }
 
@@ -115,14 +115,51 @@ export default function AutoBackupSettings({ onRestoreText }: { onRestoreText: (
 
   const local = targetState(state, LOCAL_TARGET);
   const system = targetState(state, SYSTEM_TARGET);
+  const snapshot = state.snapshot;
 
   return (
     <>
       <div className="settings-block">
+        <h3>If you reinstall or change phones</h3>
+        <p className="muted small">
+          Your library is kept up to date in a snapshot that Android's own backup saves to your Google account,
+          usually overnight. Reinstall the app on a phone signed in to the same account and the library comes
+          back on its own the first time you open it.
+        </p>
+        <p className="muted small">
+          This needs backup turned on in Android's settings (Settings, then Google or System, then Backup).
+          Changes from the last day or so may not have been backed up yet. Your API keys go along only when the
+          phone has a screen lock, because only then does Android encrypt the backup so that only your devices
+          can read it; otherwise you enter them again after reinstalling.
+        </p>
+        {snapshot ? (
+          <p className="muted small">
+            Snapshot updated {when(snapshot.at)}, {(snapshot.bytes / (1024 * 1024)).toFixed(1)} MB. API keys{" "}
+            {snapshot.keysIncluded ? "included" : "not included"}.
+            {snapshot.droppedEpisodeCache &&
+              " Episode details were left out to fit Android's size limit; they are fetched again after a restore."}
+          </p>
+        ) : (
+          <p className="muted small">No snapshot yet. One is saved the next time you leave the app.</p>
+        )}
+        {snapshot?.overBudget && (
+          <p className="status-error">
+            Your library is larger than Android's backup allows (25 MB), so Android will not save it. Export a
+            backup file below and keep it somewhere safe.
+          </p>
+        )}
+        {system.lastError && (
+          <p className="status-error">
+            Last snapshot failed ({when(system.lastErrorAt)}): {system.lastError}
+          </p>
+        )}
+      </div>
+
+      <div className="settings-block">
         <h3>Automatic backups</h3>
         <p className="muted small">
-          Saves your library and API keys to a folder on this device and keeps the newest {BACKUP_RETENTION}. It
-          runs when you open or leave the app, once the time below has passed, and only writes a new file when
+          Also saves your library and API keys to a folder on this device and keeps the newest {BACKUP_RETENTION}.
+          It runs when you open or leave the app, once the time below has passed, and only writes a new file when
           something has changed.
         </p>
         <div className="field-row">
@@ -151,22 +188,12 @@ export default function AutoBackupSettings({ onRestoreText }: { onRestoreText: (
             Last attempt failed ({when(local.lastErrorAt)}): {local.lastError}
           </p>
         )}
-        <p className="muted small">Copy for Android backup: last updated {when(system.lastSuccessAt)}.</p>
-        {system.lastError && (
-          <p className="status-error">
-            Last attempt failed ({when(system.lastErrorAt)}): {system.lastError}
-          </p>
-        )}
 
         <p className="muted small">
           {folder ? `Folder: ${folder}. ` : ""}
           Android removes this folder when the app is uninstalled, so these backups protect you from a cleared or
-          damaged library, not from losing or resetting the phone.
-        </p>
-        <p className="muted small">
-          The copy for Android backup holds your library without your API keys. If backup is turned on in the
-          phone's own settings, Android can bring that copy back after a reinstall; you then enter your keys again.
-          For a copy you control, use the export below and keep the file somewhere else.
+          damaged library; the snapshot above is what covers a reinstall. For a copy you control, use the export
+          below and keep the file somewhere else.
         </p>
       </div>
 

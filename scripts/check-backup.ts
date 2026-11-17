@@ -8,8 +8,12 @@
  * IndexedDB, using the app's own buildBackup / validateBackup /
  * restoreBackup.
  *
+ * It also covers the snapshot Android's own backup carries: no keys in it, the
+ * keys file beside it, the size budget, when the launch-time restore runs,
+ * and restoring from those files into a fresh install.
+ *
  * What it cannot show: the Capacitor filesystem calls, Android's Auto Backup
- * picking the keyless file up, or the scheduler's app-state triggers. Those
+ * taking the files and restoring them on reinstall, or the scheduler's app-state triggers. Those
  * need a device; docs/backup-and-updates.md lists them.
  */
 
@@ -35,6 +39,13 @@ import {
   newestFirst,
 } from "../src/lib/autoBackup/retention";
 import { isBackupDue, parseCadence, RETRY_AFTER_FAILURE_MS } from "../src/lib/autoBackup/schedule";
+import {
+  hasLibraryData,
+  parseKeysFile,
+  prepareSnapshot,
+  shouldAutoRestore,
+  SNAPSHOT_BUDGET_BYTES,
+} from "../src/lib/autoBackup/snapshot";
 
 let checks = 0;
 const failures: string[] = [];
@@ -338,6 +349,82 @@ console.log("Round trip: local format");
   expect("Restores every table", await snapshot(), original);
   expect("Restores both keys", result.keys, { tmdb: "restored", omdb: "restored" });
   expect("...into storage", storedKeys(), [TMDB_KEY, OMDB_KEY]);
+}
+
+console.log("The snapshot for Android backup");
+{
+  const prepared = prepareSnapshot(backup);
+  expect("Holds no API key anywhere in its text", [prepared.data.includes(TMDB_KEY), prepared.data.includes(OMDB_KEY)], [false, false]);
+  expect("Keeps the episode cache while it fits", JSON.parse(prepared.data).tables.episodes.length, 1);
+  expect("...and says so", [prepared.droppedEpisodeCache, prepared.overBudget], [false, false]);
+  expect("Measures its size in bytes", prepared.bytes, new TextEncoder().encode(prepared.data).length);
+  expect("The keys go in their own file", parseKeysFile(prepared.keys!), { tmdb: TMDB_KEY, omdb: OMDB_KEY });
+
+  const withoutCache = JSON.parse(prepared.data);
+  withoutCache.tables.episodes = [];
+  const fitsWithoutCache = new TextEncoder().encode(JSON.stringify(withoutCache)).length + 1;
+  const squeezed = prepareSnapshot(backup, fitsWithoutCache);
+  expect("Over the budget, the episode cache is dropped", JSON.parse(squeezed.data).tables.episodes, []);
+  expect("...and nothing the user made", JSON.parse(squeezed.data).tables.watchedEpisodes.length, 1);
+  expect("...which then fits", [squeezed.droppedEpisodeCache, squeezed.overBudget], [true, false]);
+  expect("Still over even without it: flagged for Settings", prepareSnapshot(backup, 10).overBudget, true);
+  expect("The budget leaves room under Android's 25 MB", SNAPSHOT_BUDGET_BYTES <= 25 * 1024 * 1024 - 1024 * 1024, true);
+
+  expect("No keys set: no keys file", prepareSnapshot(withoutApiKeys(backup)).keys, null);
+  expect("A keys file from elsewhere is ignored", parseKeysFile('{"app":"other","tmdb":"x"}'), null);
+  expect("A keys file holding no key is ignored", parseKeysFile('{"app":"tv-tracker-backup-keys","tmdb":null}'), null);
+  expect("A damaged keys file is ignored", parseKeysFile('{"app":"tv-tracker'), null);
+  expect("One key alone is kept", parseKeysFile('{"app":"tv-tracker-backup-keys","tmdb":"k"}'), { tmdb: "k", omdb: null });
+}
+
+console.log("Restoring automatically at launch");
+{
+  const decide = (libraryEmpty: boolean, checkedBefore: boolean, snapshotFound: boolean) =>
+    shouldAutoRestore({ libraryEmpty, checkedBefore, snapshotFound });
+  expect("Fresh install with a snapshot from Android: restore", decide(true, false, true), true);
+  expect("Fresh install with no snapshot: nothing to do", decide(true, false, false), false);
+  expect("A library already here is never overwritten", decide(false, false, true), false);
+  expect("Emptied by Reset Data on this install: not undone", decide(true, true, true), false);
+  expect("Only a watched-episode row still counts as a library", hasLibraryData({ shows: 0, movies: 0, watchedEpisodes: 1 }), true);
+  expect("An empty library is empty", hasLibraryData({ shows: 0, movies: 0, watchedEpisodes: 0 }), false);
+}
+
+console.log("Round trip: snapshot and keys file into a fresh install");
+{
+  // What firstLaunch.ts does with the two files Android restored.
+  const prepared = prepareSnapshot(backup);
+  await wipe();
+  localStorage.removeItem(TMDB_API_KEY_STORAGE);
+  localStorage.removeItem(OMDB_API_KEY_STORAGE);
+  const restored = parseBackupText(prepared.data).backup;
+  const keys = parseKeysFile(prepared.keys!);
+  if (keys) restored.apiKeys = keys;
+  const result = await restoreBackup(restored, "merge");
+  expect("Restores every table", await snapshot(), original);
+  expect("Restores both keys from the keys file", [result.keys, storedKeys()], [{ tmdb: "restored", omdb: "restored" }, [TMDB_KEY, OMDB_KEY]]);
+}
+
+console.log("Round trip: snapshot without its keys file");
+{
+  const prepared = prepareSnapshot(backup);
+  await wipe();
+  localStorage.removeItem(TMDB_API_KEY_STORAGE);
+  localStorage.removeItem(OMDB_API_KEY_STORAGE);
+  const result = await restoreBackup(parseBackupText(prepared.data).backup, "merge");
+  expect("Restores every table", await snapshot(), original);
+  expect("Leaves the keys to be entered again", [result.keys.tmdb, storedKeys()], ["absent", [null, null]]);
+}
+
+console.log("Round trip: snapshot that dropped the episode cache");
+{
+  const withoutCache = JSON.parse(prepareSnapshot(backup).data);
+  withoutCache.tables.episodes = [];
+  const fits = new TextEncoder().encode(JSON.stringify(withoutCache)).length + 1;
+  await wipe();
+  await restoreBackup(parseBackupText(prepareSnapshot(backup, fits).data).backup, "merge");
+  const after = await snapshot();
+  expect("Everything but the cache comes back", { ...after, episodes: null }, { ...original, episodes: null });
+  expect("...and the cache is empty, to be fetched again", after.episodes, []);
 }
 
 console.log("Rejecting what is not a backup");

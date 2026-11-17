@@ -29,11 +29,15 @@ export function dismissToast(id: number): void {
   emit(toasts.filter((t) => t.id !== id));
 }
 
-/** Shows a toast. At most two at once: a third replaces the oldest rather than stacking up the screen. */
-export function showToast(message: string, tone: Toast["tone"] = "ok"): void {
+/**
+ * Shows a toast. At most two at once: a third replaces the oldest rather than
+ * stacking up the screen. `durationMs` overrides the usual time on screen,
+ * for a message longer than a one-line confirmation.
+ */
+export function showToast(message: string, tone: Toast["tone"] = "ok", durationMs?: number): void {
   const toast = { id: nextId++, message, tone };
   emit([...toasts.slice(-1), toast]);
-  window.setTimeout(() => dismissToast(toast.id), tone === "error" ? ERROR_MS : OK_MS);
+  window.setTimeout(() => dismissToast(toast.id), durationMs ?? (tone === "error" ? ERROR_MS : OK_MS));
 }
 
 /** "Couldn't save that, nothing changed (reason)", the wording every failed write in the app uses. */

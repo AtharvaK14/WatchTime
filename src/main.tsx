@@ -4,6 +4,9 @@ import './index.css'
 import App from './App.tsx'
 import EpisodePanelApp from './panel/EpisodePanelApp.tsx'
 import QuickMarkWatched from './panel/QuickMarkWatched.tsx'
+import { restoreOnFirstLaunch, type FirstLaunchRestore } from './lib/autoBackup/firstLaunch'
+import { showToast } from './lib/toast'
+import RestoringScreen from './components/RestoringScreen.tsx'
 
 // Two entry points share one bundle and one origin.
 //
@@ -45,9 +48,44 @@ if (panel === 'episode') {
     </StrictMode>,
   )
 } else {
+  void startApp()
+}
+
+/**
+ * If the restore has not finished by now, the app is shown anyway. The
+ * restore carries on, and the screens fill in as it lands (they read the
+ * database live), which beats a frozen screen if something is stuck.
+ */
+const RESTORE_WAIT_MS = 30_000
+
+async function startApp() {
+  // On the first launch after a reinstall, the library Android's backup
+  // brought back is loaded before the app renders, so neither an empty Home
+  // nor the setup screens flash up for a library that is about to appear.
+  // Everywhere else this resolves to null almost at once.
+  let outcome: FirstLaunchRestore | null = null
+  try {
+    outcome = await Promise.race([
+      restoreOnFirstLaunch(() => root.render(<RestoringScreen />)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), RESTORE_WAIT_MS)),
+    ])
+  } catch {
+    // restoreOnFirstLaunch reports its own failures; this is belt and braces.
+  }
   root.render(
     <StrictMode>
       <App />
     </StrictMode>,
   )
+  if (outcome?.status === 'restored') {
+    const titles = outcome.shows + outcome.movies
+    showToast(
+      `Restored ${titles.toLocaleString()} ${titles === 1 ? 'title' : 'titles'} from your Android backup.` +
+        (outcome.keysRestored ? '' : ' Enter your TMDB key to finish setting up.'),
+      'ok',
+      6000,
+    )
+  } else if (outcome?.status === 'failed') {
+    showToast(`Couldn't restore your Android backup: ${outcome.message}`, 'error', 8000)
+  }
 }

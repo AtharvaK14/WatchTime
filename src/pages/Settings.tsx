@@ -37,6 +37,7 @@ import { OmdbKeySteps, TmdbKeySteps } from "../components/KeySetupGuide";
 import NotificationSettings from "../components/NotificationSettings";
 import AutoBackupSettings from "../components/AutoBackupSettings";
 import UpdateSettings from "../components/UpdateSettings";
+import { forgetSnapshot } from "../lib/autoBackup";
 import { requestNotificationSync } from "../lib/notifications";
 
 type KeyStatus = "idle" | "checking" | "valid" | "invalid";
@@ -610,6 +611,10 @@ function ResetData() {
       db.movies.clear(),
       db.titleMatches.clear(),
     ]);
+    // The copy Android's backup carries would otherwise bring the library
+    // back after a reinstall. Dated backups on the device are kept: they are
+    // listed under Backup & Restore and can be deleted with the app.
+    await forgetSnapshot().catch(() => {});
     setConfirming(false);
     setDone(true);
   }
@@ -630,7 +635,8 @@ function ResetData() {
         <div className="settings-block">
           <p className="status-error">
             This permanently deletes everything in Shows, Movies, and watch history from this browser. There is no
-            undo. Re-import afterward to rebuild it.
+            undo. On Android it also removes the copy kept for Android's backup, so reinstalling won't bring it
+            back. Re-import afterward to rebuild it.
           </p>
           <div className="field-row">
             <button className="danger-button" onClick={handleReset}>

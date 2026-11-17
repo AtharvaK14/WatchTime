@@ -18,6 +18,8 @@ import { recordBackupCompleted, API_KEYS_CHANGED_EVENT } from "./persistence";
 // the app's display name ends up being. They deliberately match the equally
 // frozen IndexedDB database name ("tv-tracker") rather than a brand name.
 const BACKUP_APP_MARKER = "tv-tracker-backup";
+/** Marks the separate API-keys file kept beside the Android backup snapshot (lib/autoBackup/snapshot.ts). */
+export const BACKUP_APP_MARKER_FOR_KEYS = "tv-tracker-backup-keys";
 export const BACKUP_FORMAT_VERSION = 1;
 
 export const BACKUP_TABLE_NAMES = [

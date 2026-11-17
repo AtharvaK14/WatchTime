@@ -96,12 +96,14 @@
         contain your library and your API keys, are not sent anywhere, and are removed if you uninstall the app.
       </p>
       <p>
-        Alongside them the app keeps one copy of your library <strong>without</strong> your API keys. That copy is
-        the only thing the app makes available to Android's built-in backup. If you have backup turned on in your
-        phone's settings, Android may store that copy in your Google account and bring it back when you reinstall
-        the app or set up a new phone. That is Android's service, controlled in your phone's settings and covered
-        by Google's privacy policy; the app does not send the copy anywhere itself, and the developer never
-        receives it.
+        Alongside them the app keeps a snapshot of your library, which is the only thing it makes available to
+        Android's built-in backup. Your API keys are included only when your phone has a screen lock, because
+        Android then encrypts the backup end to end so that only your devices can read it. If you have backup
+        turned on in your phone's settings, Android may store the snapshot in your Google account and bring it
+        back when you reinstall the app or set up a new phone, and the app restores your library from it the
+        first time it opens. That is Android's service, controlled in your phone's settings and covered by
+        Google's privacy policy; the app does not send the snapshot anywhere itself, and the developer never
+        receives it. <code>Settings → Reset Data</code> deletes the snapshot too.
       </p>
 
       <h2>Permissions</h2>

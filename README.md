@@ -60,6 +60,7 @@ There is no server and no account. Your library lives in the device's IndexedDB,
 | 🧩 | **Home-screen widgets**: Up Next and Coming Up, marking episodes watched from the widget | ✅ | — |
 | 📥 | **TV Time import**: JSON or GDPR CSV export, with title matching you can confirm | ✅ | ✅ |
 | 💾 | **Backup & restore**: the whole library in one file | ✅ | ✅ |
+| ♻️ | **Survives a reinstall**: Android's own backup carries a snapshot of the library, restored automatically on first launch | ✅ | — |
 | 🗄️ | **Automatic backups**: daily or weekly to a folder on the device, newest 7 kept, restorable from Settings | ✅ | — |
 | ⬆️ | **Update notices**: a weekly check for a newer release, with a banner; the Android app can download and install it | ✅ | ✅ |
 
@@ -240,7 +241,7 @@ The [release workflow](.github/workflows/release.yml) then builds the web bundle
 | `npm run check:notification-eligibility` | Scenario checks for which shows may be announced |
 | `npm run check:season-association` | Scenario checks that seasons stay with their own show |
 | `npm run check:streaming` | Provider-name normalisation checks |
-| `npm run check:backup` | Scenario checks for automatic backups: retention, scheduling, failed writes, the keyless copy, and an export and restore round trip |
+| `npm run check:backup` | Scenario checks for automatic backups: retention, scheduling, failed writes, the reinstall snapshot and its keys file, and export and restore round trips |
 | `npm run check:updates` | Scenario checks for version comparison and reading GitHub's release response |
 | `npm run build:mood-vocabulary` | Rebuild the precomputed mood-tag embeddings |
 | `npm run cap:sync` / `cap:open` | Sync and open the Android project |
@@ -276,7 +277,7 @@ docs/                 Privacy policy, README screenshots, and notes on backups a
 
 WatchTime collects nothing. Your library, watch history and API keys stay on your device. Network requests go straight from the device to TMDB, OMDb and TVmaze using your own keys. Two more requests carry nothing about you: a one-time model download from the Hugging Face Hub if you use mood search, and a weekly check of this repository's latest release on GitHub. No accounts, analytics or ads.
 
-Automatic backups are written to a folder on the device. On Android, one copy of the library without your API keys is also left where Android's own backup can take it, if you have that turned on in the phone's settings; the app itself sends it nowhere. Full policy: [`docs/privacy.html`](docs/privacy.html).
+Automatic backups are written to a folder on the device. On Android, a snapshot of the library is also left where Android's own backup can take it, if you have that turned on in the phone's settings; your API keys go with it only when the phone has a screen lock, so the backup is end-to-end encrypted. The app itself sends it nowhere. Full policy: [`docs/privacy.html`](docs/privacy.html).
 
 ## Acknowledgements
 

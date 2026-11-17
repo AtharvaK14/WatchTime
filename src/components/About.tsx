@@ -95,8 +95,10 @@ export default function About() {
           version asks GitHub for the latest release and sends nothing about you or your library.
         </p>
         <p className="muted small">
-          On Android, one copy of your library without your API keys is kept where the phone's own backup can take
-          it, if you have that turned on in Android's settings. {APP_NAME} does not send it anywhere itself.
+          On Android, a snapshot of your library is kept where the phone's own backup can take it, if you have that
+          turned on in Android's settings, so a reinstall brings your library back. Your API keys go with it only
+          when the phone has a screen lock, which is when Android encrypts the backup end to end. {APP_NAME} does
+          not send it anywhere itself.
         </p>
         <p>
           <a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">

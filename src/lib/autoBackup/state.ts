@@ -13,15 +13,25 @@ const STATE_KEY = "auto_backup_state";
 /** Fired on window whenever the stored state or cadence changes, so Settings can re-read it. */
 export const AUTO_BACKUP_CHANGED_EVENT = "auto-backup-changed";
 
+/** What the last snapshot write found, for Settings. */
+export interface SnapshotInfo {
+  at: string;
+  bytes: number;
+  droppedEpisodeCache: boolean;
+  overBudget: boolean;
+  keysIncluded: boolean;
+}
+
 export interface AutoBackupState {
   /** When a run last started, whether or not it worked. */
   lastAttemptAt: string | null;
   /** When a run last ended with at least one destination holding the data. */
   lastOkAt: string | null;
   targets: Record<string, TargetState>;
+  snapshot: SnapshotInfo | null;
 }
 
-const EMPTY_STATE: AutoBackupState = { lastAttemptAt: null, lastOkAt: null, targets: {} };
+const EMPTY_STATE: AutoBackupState = { lastAttemptAt: null, lastOkAt: null, targets: {}, snapshot: null };
 
 export function getBackupCadence(): BackupCadence {
   return parseCadence(localStorage.getItem(CADENCE_KEY));
@@ -41,6 +51,7 @@ export function readAutoBackupState(): AutoBackupState {
       lastAttemptAt: typeof stored.lastAttemptAt === "string" ? stored.lastAttemptAt : null,
       lastOkAt: typeof stored.lastOkAt === "string" ? stored.lastOkAt : null,
       targets: typeof stored.targets === "object" && stored.targets !== null ? stored.targets : {},
+      snapshot: typeof stored.snapshot === "object" && stored.snapshot !== null ? stored.snapshot : null,
     };
   } catch {
     // Unreadable state is the same as no state: the next run is simply due.

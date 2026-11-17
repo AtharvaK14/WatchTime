@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.os.Bundle;
 
 import com.getcapacitor.BridgeActivity;
+import com.indie.watchtime.backup.BackupSupportPlugin;
 import com.indie.watchtime.notify.NotificationBridgePlugin;
 import com.indie.watchtime.notify.ReleaseNotifier;
 import com.indie.watchtime.stream.StreamingLauncherPlugin;
@@ -20,6 +21,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StreamingLauncherPlugin.class);
         registerPlugin(HapticsPlugin.class);
         registerPlugin(UpdateInstallerPlugin.class);
+        registerPlugin(BackupSupportPlugin.class);
         super.onCreate(savedInstanceState);
         // A tap that cold-started the app. The target is parked now and the
         // web layer drains it as soon as it mounts.

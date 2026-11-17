@@ -13,7 +13,7 @@ Checked on 2026-11-17 against the sources linked below. This file records what w
 | 5 | Writing to the app-owned folder | No permission needed. Already available through `@capacitor/filesystem`. |
 | 6 | Installing a downloaded APK | Needs `REQUEST_INSTALL_PACKAGES` and the "install unknown apps" flow. Must be removed for a Play build. |
 | 7 | GitHub latest-release check | Endpoint and fields confirmed. ETag does not save quota for unauthenticated requests. |
-| 8 | Android Auto Backup | Kept on, restricted by rules to one keyless backup file. |
+| 8 | Android Auto Backup | Kept on, restricted to a library snapshot (plus the API keys where the backup is end-to-end encrypted). This is what restores the library after a reinstall. |
 
 ## 1. Drive scope and the backup restriction (blocker)
 
@@ -103,12 +103,27 @@ From [Back up user data with Auto Backup](https://developer.android.com/identity
 - The limit is 25 MB per app. Over it, the system "doesn't back up data to the cloud" at all.
 - The backup goes to a private folder in the user's Google account, keeps only the most recent copy, does not count against Drive quota, and is end-to-end encrypted on Android 9 and later when a screen lock is set.
 - Apps targeting API 31 or later use `android:dataExtractionRules`; `android:fullBackupContent` is still needed for Android 11 and earlier.
+- "Data is restored whenever the app is installed, whether from the Play Store, during device setup ... or by running `adb` install. The restore operation occurs after the APK is installed but before the app is available to be launched by the user." Neither this page nor [Test backup and restore](https://developer.android.com/identity/data/testingbackup) says anything about an APK installed by hand from a file, which is how GitHub releases are installed.
+- `domain="file"` is `getFilesDir()`. A `path` naming a directory applies to everything under it.
+- `requireFlags="clientSideEncryption"` on an `<include>` keeps a file out of any backup that is not end-to-end encrypted. It exists only in the Android 9 to 11 format (`full-backup-content`), from API 28; the page says to "provide alternate resources" for older versions. The Android 12+ format has no per-file condition, only `disableIfNoEncryptionCapabilities` on the whole `<cloud-backup>`, which would stop the library snapshot too on a phone without a screen lock.
 
 **What that meant before this work.** The WebView's data directory was in scope. It holds localStorage, which contains the TMDB and OMDb keys, so the keys were eligible to leave the device. It also holds the on-device mood-search model, which is far larger than 25 MB once downloaded, at which point the whole backup silently stops. Either outcome is wrong.
 
-**Decision.** Keep `allowBackup` on, with explicit rules that include exactly one file: `system-backup/watchtime-latest.json` in the app's external files directory. The backup pipeline writes it on every run as a copy of the library with the API keys removed. Everything else is excluded: the WebView data, the dated local backups (which do contain keys), and the widget and notification preferences.
+**Decision.** Keep `allowBackup` on. Android's own backup is the copy that survives a reinstall, and the app never talks to a Google API itself. The rules include exactly two files in internal storage (`getFilesDir()`), and nothing else:
 
-This makes Android's own backup the one copy that can survive a reinstall, without the app talking to any Google API itself. It only works if the user has Android backup turned on, it stops if the file exceeds 25 MB, and Android decides when it runs. After a reinstall the restored file appears in Settings under the local backups. This has not been tested on a device.
+- `backup/watchtime-snapshot.json`: the library without API keys, in the same format as an exported backup.
+- `backup/watchtime-keys.json`: the TMDB and OMDb keys. It is written only while Android can encrypt the backup end to end (Android 9+ with a screen lock, checked by `BackupSupportPlugin` through `KeyguardManager.isDeviceSecure()`) and deleted when it cannot. On Android 9 to 11 the rules also put `requireFlags="clientSideEncryption"` on it (`res/xml-v28/backup_rules.xml`); on Android 7 and 8 it is not in the rules at all.
+
+Excluded: the WebView data (IndexedDB copied file by file can restore corrupt, and localStorage holds the keys), the dated local backups, and the widget and notification preferences.
+
+How it works:
+
+- **Kept current.** The snapshot is rewritten whenever the app goes to the background after a library write (table hooks on shows, movies, watch history, import matches and settings), and on every scheduled backup. Identical content is not rewritten. Android uploads only when a file changed, roughly nightly.
+- **Never emptied by accident.** An empty library is not written over the snapshot. If Android clears the WebView storage, the snapshot keeps the library until the restore below puts it back. Reset Data deletes the snapshot and keys file on purpose.
+- **Size.** The snapshot is kept under 20 MB. Over that, the episode cache (metadata fetched from TMDB) is left out, and Home's sync fetches it again. If it is still over, Settings says Android will not back it up.
+- **Restored at first launch.** `firstLaunch.ts` runs before the app renders. If the library is empty, the snapshot is present, and this install has never run the check (a localStorage marker, which a reinstall or WebView eviction wipes and Reset Data does not), it restores the snapshot with the keys file merged in, shows "Restoring your library..." meanwhile, then a toast with the count. With the keys restored, first-run setup is skipped.
+
+Limits that remain: the user must have Android backup on and be signed in to the same Google account; changes since Android's last backup are lost; Android keeps only the latest backup; and restore for an APK installed by hand from GitHub is unconfirmed until tested on a device. Settings explains the first two. Settings preferences kept in localStorage (backup cadence, region, notification choice) are not in the snapshot and return to their defaults.
 
 ## Decisions
 
@@ -142,7 +157,7 @@ The workflow has not run yet. It first runs when a `v*` tag is pushed.
 ## What was checked in this session
 
 - `npm run build` and `npm run lint` pass.
-- `npm run check:backup` (68 checks) and `npm run check:updates` (44 checks) pass. The backup check includes an export, validate and restore round trip against an in-memory IndexedDB, for both the keyless copy and the local format.
+- `npm run check:backup` (95 checks) and `npm run check:updates` (44 checks) pass. The backup check includes an export, validate and restore round trip against an in-memory IndexedDB, for both the keyless copy and the local format.
 - A release APK built locally from this branch reports `versionName` 1.2.0 and `versionCode` 10200, is signed, declares `REQUEST_INSTALL_PACKAGES`, and its manifest references both backup rule files.
 - The production web build was opened in a browser. The update check reached GitHub and read the real latest release (`1.01`), correctly reporting no update for 1.2.0. With a newer release placed in the stored state, the banner appeared with "View release" and no install button, dismissal hid it for that version only, and a later version brought it back. The backup section showed the "Android only" message.
 
@@ -160,7 +175,7 @@ Nothing was run on an Android device or emulator. See the manual test matrix at 
 ## Open questions for the owner
 
 1. **Drive.** Choose one:
-   - Drop Drive. Rely on the Android Auto Backup copy for reinstalls and the manual export for everything else.
+   - Drop Drive. Rely on Android Auto Backup for reinstalls and the manual export for everything else. (This is what the code now does.)
    - Ask Google for consent. There is no published route; the forum threads above are the only known place to ask, and nobody has had an answer.
    - Use a different mechanism for an off-device copy that needs no Drive API, such as letting the user pick a folder through Android's Storage Access Framework. The app would then write through whichever storage app owns that folder instead of calling a cloud API itself. Not investigated: which cloud apps offer their folders to that picker (the Drive app may not), and it contradicts the "no folder picker" decision in the brief.
 
@@ -175,7 +190,11 @@ None of these can be run without a device. They remain to be done:
 - Scheduled backup runs after the cadence elapses; no new file when nothing changed.
 - "Back up now" writes a file; the eighth backup removes the oldest.
 - Restore from a listed local backup, merge and replace.
-- Reinstall with Android backup on: `watchtime-latest.json` returns and restores without API keys.
+- Reinstall with Android backup on, using the `adb` script on the testing page (`bmgr backupnow com.indie.watchtime`, uninstall, reinstall): the "Restoring your library" screen appears, the library returns, and with a screen lock set the API keys return too so setup is skipped.
+- The same with no screen lock: the library returns, setup asks for the TMDB key.
+- Reinstall from the GitHub APK through the phone's installer, after a real overnight backup: does Android restore at all? This decides whether sideloaded users get this before the Play release.
+- Reset Data, then reopen the app: the library stays empty and is not restored.
+- Settings shows the snapshot size and whether keys are included; removing the screen lock and leaving the app changes "included" to "not included".
 - Update banner appears for an older installed version; dismissal hides it for that version only.
 - Update notification is posted once per version and respects the notification setting.
 - APK download and install with "install unknown apps" off, then on.
