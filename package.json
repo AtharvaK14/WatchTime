@@ -2,7 +2,7 @@
   "name": "tv-tracker",
   "private": true,
   "license": "UNLICENSED",
-  "version": "0.0.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,6 +17,7 @@
     "check:notification-eligibility": "tsx scripts/check-notification-eligibility.ts",
     "check:watch-history": "tsx scripts/check-watch-history.ts",
     "check:backup": "tsx scripts/check-backup.ts",
+    "check:updates": "tsx scripts/check-updates.ts",
     "preview": "vite preview",
     "cap:sync": "npm run build && npx cap sync android",
     "cap:open": "npx cap open android"

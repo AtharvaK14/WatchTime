@@ -36,6 +36,7 @@ import About from "../components/About";
 import { OmdbKeySteps, TmdbKeySteps } from "../components/KeySetupGuide";
 import NotificationSettings from "../components/NotificationSettings";
 import AutoBackupSettings from "../components/AutoBackupSettings";
+import UpdateSettings from "../components/UpdateSettings";
 import { requestNotificationSync } from "../lib/notifications";
 
 type KeyStatus = "idle" | "checking" | "valid" | "invalid";
@@ -719,6 +720,9 @@ export default function Settings() {
       <SettingsGroup label="Help">
         <SettingsRow title="Diagnostics" sub="Compare stored data against TMDB for a show">
           <Diagnostics />
+        </SettingsRow>
+        <SettingsRow title="App updates" sub="Installed version, check for a newer release">
+          <UpdateSettings />
         </SettingsRow>
         <SettingsRow title="About" sub="Credits, data sources, and privacy">
           <About />

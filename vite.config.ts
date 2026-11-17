@@ -1,9 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { readFileSync } from 'node:fs'
+
+// package.json's version is the single source of truth for the app version.
+// It is inlined here for the web layer (src/lib/updates/appVersion.ts) and
+// read again by android/app/build.gradle for versionName, so the two cannot
+// drift apart.
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string }
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  define: {
+    __APP_VERSION__: JSON.stringify(version),
+  },
   build: {
     // The one chunk over Vite's default 500 kB is Transformers.js (mood
     // search), which is only ever fetched by a dynamic import when the

@@ -205,4 +205,13 @@
     <!-- Lets a scheduled release notification survive a reboot; without it
          every pending alarm is silently dropped when the device restarts. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Lets the app hand a downloaded release APK to the system installer
+         (UpdateInstallerPlugin). Declaring it grants nothing by itself: the
+         user still has to switch on "Install unknown apps" for WatchTime, and
+         Android still asks before every install.
+
+         GitHub Releases builds only. Google Play does not allow an app to
+         update itself outside Play, so this line and the plugin must come out
+         before a Play submission (docs/backup-and-updates.md, item 6). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

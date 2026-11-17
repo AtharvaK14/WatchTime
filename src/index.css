@@ -1236,6 +1236,14 @@ details[open] > summary::after { transform: rotate(90deg); }
   font-size: 0.85rem;
 }
 
+/* "View release" in the update banner: a link beside the banner's buttons. */
+.update-banner-link {
+  font-size: 0.85rem;
+  color: var(--text);
+  text-decoration: underline;
+  padding: 6px 4px;
+}
+
 .backup-nudge-dismiss {
   background: none;
   border: none;
