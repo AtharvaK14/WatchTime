@@ -120,6 +120,34 @@ This makes Android's own backup the one copy that can survive a reinstall, witho
 
 **Tokens.** No OAuth token exists, because Drive was not built. Nothing new is stored that needs a secure store.
 
+## Release pipeline
+
+`.github/workflows/release.yml` runs on tags matching `v*`. To release, set `"version"` in `package.json`, commit, tag that commit `v` plus the version, and push the tag. The existing tags `1.0` and `1.01` do not match the pattern and are not rebuilt.
+
+Repository secrets it needs:
+
+| Secret | Contents |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | The release keystore file, base64-encoded |
+| `ANDROID_KEYSTORE_PASSWORD` | The keystore password |
+| `ANDROID_KEY_ALIAS` | The key's alias |
+| `ANDROID_KEY_PASSWORD` | The key password |
+
+The keystore has to be the one releases 1.0 and 1.01 were signed with. Android refuses to install an update signed with a different key, so a new key would strand every existing install. To guard against that, set the repository variable `ANDROID_CERT_SHA256` to the release certificate's SHA-256 digest (`apksigner verify --print-certs` prints it); the workflow then fails if the APK is signed by anything else.
+
+The workflow fails, and publishes nothing, when the tag does not equal `v` plus the `package.json` version, when no signed APK is produced, when the APK's `versionName` differs from the tag, or when the signature does not verify. The APK is attached as `WatchTime-release.apk`, the same name as the earlier releases.
+
+The workflow has not run yet. It first runs when a `v*` tag is pushed.
+
+## What was checked in this session
+
+- `npm run build` and `npm run lint` pass.
+- `npm run check:backup` (68 checks) and `npm run check:updates` (44 checks) pass. The backup check includes an export, validate and restore round trip against an in-memory IndexedDB, for both the keyless copy and the local format.
+- A release APK built locally from this branch reports `versionName` 1.2.0 and `versionCode` 10200, is signed, declares `REQUEST_INSTALL_PACKAGES`, and its manifest references both backup rule files.
+- The production web build was opened in a browser. The update check reached GitHub and read the real latest release (`1.01`), correctly reporting no update for 1.2.0. With a newer release placed in the stored state, the banner appeared with "View release" and no install button, dismissal hid it for that version only, and a later version brought it back. The backup section showed the "Android only" message.
+
+Nothing was run on an Android device or emulator. See the manual test matrix at the end.
+
 ## Assumptions that turned out to be wrong
 
 1. A `drive.appdata` backup only needed a scope check. The scope is non-sensitive, but the Drive API terms prohibit the use case itself.
@@ -134,7 +162,9 @@ This makes Android's own backup the one copy that can survive a reinstall, witho
 1. **Drive.** Choose one:
    - Drop Drive. Rely on the Android Auto Backup copy for reinstalls and the manual export for everything else.
    - Ask Google for consent. There is no published route; the forum threads above are the only known place to ask, and nobody has had an answer.
-   - Use a different mechanism for an off-device copy that needs no Drive API, such as letting the user pick a folder through Android's Storage Access Framework. A folder inside the Drive app chosen that way is written by Android's document provider, not by this app calling the Drive API. This contradicts the "no folder picker" decision in the brief, so it needs a decision.
+   - Use a different mechanism for an off-device copy that needs no Drive API, such as letting the user pick a folder through Android's Storage Access Framework. The app would then write through whichever storage app owns that folder instead of calling a cloud API itself. Not investigated: which cloud apps offer their folders to that picker (the Drive app may not), and it contradicts the "no folder picker" decision in the brief.
+
+   The manual export already reaches Drive today: the Android share sheet lets the user send the backup file to the Drive app themselves.
 2. **The backup reminder.** `recordBackupCompleted()` is called when the local backup succeeds, as the brief specifies. Without Drive, that local copy is on the same device as the library, and it silences the 30-day reminder to export a copy elsewhere. Decide whether the reminder should track off-device copies only.
 3. **Play release.** Remove `REQUEST_INSTALL_PACKAGES` and the in-app installer before submitting to Play.
 

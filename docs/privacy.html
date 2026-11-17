@@ -27,7 +27,7 @@
   <body>
     <main>
       <h1>WatchTime — Privacy Policy</h1>
-      <p class="muted">Last updated: 21 July 2026</p>
+      <p class="muted">Last updated: 17 November 2026</p>
 
       <p>
         WatchTime is a personal, local-first TV and movie tracker. It has no user accounts, no advertising, and no
@@ -37,9 +37,11 @@
       <h2>The short version</h2>
       <ul>
         <li>The developer does <strong>not</strong> collect, store, transmit, sell, or share any of your data.</li>
-        <li>Everything you create in the app stays <strong>on your device</strong>.</li>
-        <li>The only network requests go directly from your device to the metadata services listed below, using
-          API keys that <strong>you</strong> provide.</li>
+        <li>Everything you create in the app stays <strong>on your device</strong>, unless you have Android's own
+          backup turned on (see Backups below).</li>
+        <li>Network requests go directly from your device to the metadata services listed below, using API keys
+          that <strong>you</strong> provide. The app also checks GitHub for a newer version; that request carries
+          nothing about you or your library.</li>
         <li>No analytics, no ads, no trackers, no accounts.</li>
       </ul>
 
@@ -73,18 +75,42 @@
         part of making those requests.
       </p>
 
+      <h2>Update checks</h2>
+      <p>
+        About once a week when you open the app, and whenever you press <code>Check for updates</code> in
+        Settings, the app asks GitHub for the latest published release of WatchTime. The request has no API key,
+        no account and no identifier, and includes nothing from your library. Like any web request it reveals your
+        IP address to GitHub, which handles it under its
+        <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noreferrer">privacy statement</a>.
+        In the Android app, choosing to download an update fetches the installer file from the same GitHub release.
+      </p>
+
       <h2>Backups</h2>
       <p>
         The app can export a backup file containing your library and your API keys. That file is created and saved
         wherever you choose; the developer never receives it. Because it contains your API keys, keep it somewhere
         private.
       </p>
+      <p>
+        The Android app also saves backups automatically, to a folder of its own on your device. Those files
+        contain your library and your API keys, are not sent anywhere, and are removed if you uninstall the app.
+      </p>
+      <p>
+        Alongside them the app keeps one copy of your library <strong>without</strong> your API keys. That copy is
+        the only thing the app makes available to Android's built-in backup. If you have backup turned on in your
+        phone's settings, Android may store that copy in your Google account and bring it back when you reinstall
+        the app or set up a new phone. That is Android's service, controlled in your phone's settings and covered
+        by Google's privacy policy; the app does not send the copy anywhere itself, and the developer never
+        receives it.
+      </p>
 
       <h2>Permissions</h2>
       <p>
-        The app requests only internet access, which it needs to contact the metadata services above. It does not
-        request access to your contacts, location, camera, microphone, files beyond the backups you explicitly
-        create, or any other sensitive data.
+        The app requests internet access, which it needs to contact the services above. The Android app also asks
+        for permission to show notifications, only if you turn them on, and declares that it may ask Android to
+        install a WatchTime update you chose to download; Android asks you to allow and confirm that each time. It
+        does not request access to your contacts, location, camera, microphone, files beyond its own backups, or
+        any other sensitive data.
       </p>
 
       <h2>Data retention and deletion</h2>

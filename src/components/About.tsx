@@ -21,8 +21,8 @@ export default function About() {
     <div className="panel">
       <div className="settings-block">
         <p className="muted small">
-          {APP_NAME} is a local-first TV and movie tracker: your library and API keys live only on this device,
-          with no accounts and no server. It connects directly to the services below, under your own keys, to fetch
+          {APP_NAME} is a local-first TV and movie tracker: your library and API keys live on this device, with no
+          accounts and no server. It connects directly to the services below, under your own keys, to fetch
           metadata and ratings.
         </p>
       </div>
@@ -91,7 +91,12 @@ export default function About() {
         <h3>Privacy</h3>
         <p className="muted small">
           No accounts, no analytics, no tracking servers. Nothing in your library leaves this device except the
-          direct requests to the metadata services above, made with your own keys.
+          direct requests to the metadata services above, made with your own keys. The weekly check for a newer
+          version asks GitHub for the latest release and sends nothing about you or your library.
+        </p>
+        <p className="muted small">
+          On Android, one copy of your library without your API keys is kept where the phone's own backup can take
+          it, if you have that turned on in Android's settings. {APP_NAME} does not send it anywhere itself.
         </p>
         <p>
           <a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">
