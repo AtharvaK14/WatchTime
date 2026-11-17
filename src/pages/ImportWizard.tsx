@@ -4,6 +4,7 @@ import { runJsonImport, type JsonImportProgress, type JsonImportResult } from ".
 import type { DisambiguationCandidate, ResolveAmbiguous } from "../importer/matcher";
 import { TMDB_IMAGE_BASE, hasApiKey } from "../tmdb";
 import { useLockBodyScroll } from "../lib/useLockBodyScroll";
+import { ChoiceRow, HeadingWithInfo } from "../components/Sheet";
 
 interface PendingChoice {
   rawTitle: string;
@@ -99,12 +100,17 @@ function JsonImportPanel({ resolveAmbiguous }: { resolveAmbiguous: ResolveAmbigu
 
   return (
     <div className="panel">
-      <p className="muted small">
-        Uses a third-party export (e.g. "TV Time Out") that carries exact IMDb/TVDB IDs and TV Time's own watch
-        status directly, more reliable than TV Time's raw GDPR CSVs since it doesn't need fuzzy title matching or
-        reconstructing watch state from an event log. Files typically named{" "}
-        <code>tvtime-series-*.json</code> and <code>tvtime-movies-*.json</code>.
-      </p>
+      <HeadingWithInfo
+        title="JSON files"
+        info={
+          <p>
+            A third-party export (for example "TV Time Out") carries exact IMDb and TVDB IDs and TV Time's own watch
+            status, so nothing has to be matched by name or rebuilt from an event log. The files are usually named
+            tvtime-series-*.json and tvtime-movies-*.json.
+          </p>
+        }
+      />
+      <p className="muted small">Choose one or both files.</p>
       <div className="field-row">
         <label className="file-label">
           Series JSON
@@ -201,10 +207,16 @@ function CsvImportPanel({ resolveAmbiguous }: { resolveAmbiguous: ResolveAmbiguo
 
   return (
     <div className="panel">
-      <p className="muted small">
-        TV Time's own raw GDPR export. Works, but requires fuzzy title matching for everything and reconstructs
-        watch history from a flat event log, use the JSON import above instead if you have access to it.
-      </p>
+      <HeadingWithInfo
+        title="CSV files"
+        info={
+          <p>
+            TV Time's own GDPR export. It works, but every title is matched by name and watch history is rebuilt from
+            a flat event log, so the JSON export is more accurate if you can get it.
+          </p>
+        }
+      />
+      <p className="muted small">Titles are matched by name, so some may need your help.</p>
       <div className="field-row">
         <label className="file-label">
           <code>tracking-prod-records.csv</code> (movies)
@@ -284,12 +296,15 @@ export default function ImportWizard() {
 
   return (
     <div className="panel">
-      <div className="field-row">
-        <select value={source} onChange={(e) => setSource(e.target.value as "json" | "csv")}>
-          <option value="json">Third-party JSON export (recommended)</option>
-          <option value="csv">TV Time's own raw GDPR CSV export</option>
-        </select>
-      </div>
+      <ChoiceRow
+        label="Export type"
+        value={source}
+        options={[
+          { value: "json", label: "JSON (recommended)" },
+          { value: "csv", label: "TV Time CSV" },
+        ]}
+        onChange={setSource}
+      />
 
       {source === "json" ? (
         <JsonImportPanel resolveAmbiguous={resolveAmbiguous} />

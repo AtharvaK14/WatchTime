@@ -1,4 +1,5 @@
 import { APP_NAME } from "../appInfo";
+import { HeadingWithInfo, InfoButton } from "./Sheet";
 // Official TMDB logo, rendered unmodified (color and orientation) per TMDB's
 // brand terms — do not recolor it via CSS.
 import tmdbLogo from "../assets/tmdb-logo.svg";
@@ -21,9 +22,8 @@ export default function About() {
     <div className="panel">
       <div className="settings-block">
         <p className="muted small">
-          {APP_NAME} is a local-first TV and movie tracker: your library and API keys live on this device, with no
-          accounts and no server. It connects directly to the services below, under your own keys, to fetch
-          metadata and ratings.
+          Your library and API keys stay on this device. No accounts, no server: {APP_NAME} talks directly to the
+          services below with your own keys.
         </p>
       </div>
 
@@ -47,59 +47,85 @@ export default function About() {
            but the data behind it is JustWatch's and TMDB's terms require them
            to be credited wherever it is used. --- */}
       <div className="settings-block about-source">
-        <p className="muted small">
-          Streaming availability ("Available on") from{" "}
-          <a href="https://www.justwatch.com" target="_blank" rel="noreferrer">
-            JustWatch
-          </a>
-          , supplied through the TMDB API. Service names and logos are the trademarks of their respective owners;
-          this app is not affiliated with, endorsed by, or certified by any of them, and shows where a title is
-          listed rather than granting any access to it.
-        </p>
+        <div className="about-credit">
+          <p className="muted small">
+            Streaming availability from{" "}
+            <a href="https://www.justwatch.com" target="_blank" rel="noreferrer">
+              JustWatch
+            </a>
+            , through the TMDB API.
+          </p>
+          <InfoButton title="JustWatch">
+            <p>
+              Service names and logos are the trademarks of their respective owners. This app is not affiliated with,
+              endorsed by, or certified by any of them, and shows where a title is listed rather than granting any
+              access to it.
+            </p>
+          </InfoButton>
+        </div>
       </div>
 
       {/* --- OMDb --- */}
       <div className="settings-block about-source">
-        <p className="muted small">
-          IMDb and Rotten Tomatoes ratings via the{" "}
-          <a href="https://www.omdbapi.com" target="_blank" rel="noreferrer">
-            OMDb API
-          </a>{" "}
-          (CC BY-NC 4.0, non-commercial use). IMDb and Rotten Tomatoes are trademarks of their respective owners;
-          this app is not affiliated with, endorsed by, or certified by them.
-        </p>
+        <div className="about-credit">
+          <p className="muted small">
+            IMDb and Rotten Tomatoes ratings via the{" "}
+            <a href="https://www.omdbapi.com" target="_blank" rel="noreferrer">
+              OMDb API
+            </a>{" "}
+            (CC BY-NC 4.0).
+          </p>
+          <InfoButton title="OMDb">
+            <p>
+              OMDb data is licensed CC BY-NC 4.0, for non-commercial use. IMDb and Rotten Tomatoes are trademarks of
+              their respective owners; this app is not affiliated with, endorsed by, or certified by them.
+            </p>
+          </InfoButton>
+        </div>
       </div>
 
       {/* --- TVmaze --- */}
       <div className="settings-block about-source">
-        <p className="muted small">
-          Per-episode runtimes from{" "}
-          <a href="https://www.tvmaze.com" target="_blank" rel="noreferrer">
-            TVmaze
-          </a>
-          , used under their{" "}
-          <a href="https://www.tvmaze.com/api" target="_blank" rel="noreferrer">
-            API terms
-          </a>
-          . This app is not affiliated with or endorsed by TVmaze.
-        </p>
+        <div className="about-credit">
+          <p className="muted small">
+            Episode runtimes from{" "}
+            <a href="https://www.tvmaze.com" target="_blank" rel="noreferrer">
+              TVmaze
+            </a>
+            .
+          </p>
+          <InfoButton title="TVmaze">
+            <p>
+              Used under TVmaze's{" "}
+              <a href="https://www.tvmaze.com/api" target="_blank" rel="noreferrer">
+                API terms
+              </a>
+              . This app is not affiliated with or endorsed by TVmaze.
+            </p>
+          </InfoButton>
+        </div>
       </div>
 
-      <hr />
-
       <div className="settings-block">
-        <h3>Privacy</h3>
-        <p className="muted small">
-          No accounts, no analytics, no tracking servers. Nothing in your library leaves this device except the
-          direct requests to the metadata services above, made with your own keys. The weekly check for a newer
-          version asks GitHub for the latest release and sends nothing about you or your library.
-        </p>
-        <p className="muted small">
-          On Android, a snapshot of your library is kept where the phone's own backup can take it, if you have that
-          turned on in Android's settings, so a reinstall brings your library back. Your API keys go with it only
-          when the phone has a screen lock, which is when Android encrypts the backup end to end. {APP_NAME} does
-          not send it anywhere itself.
-        </p>
+        <HeadingWithInfo
+          title="Privacy"
+          info={
+            <>
+              <p>
+                No accounts, no analytics, no tracking servers. Nothing in your library leaves this device except the
+                direct requests to the services above, made with your own keys. The weekly check for a newer version
+                asks GitHub for the latest release and sends nothing about you or your library.
+              </p>
+              <p>
+                On Android, a snapshot of your library is kept where the phone's own backup can take it, if you have
+                that turned on in Android's settings, so a reinstall brings your library back. Your API keys go with
+                it only when the phone has a screen lock, which is when Android encrypts the backup end to end.{" "}
+                {APP_NAME} does not send it anywhere itself.
+              </p>
+            </>
+          }
+        />
+        <p className="muted small">No accounts, analytics or tracking.</p>
         <p>
           <a href={PRIVACY_POLICY_URL} target="_blank" rel="noreferrer">
             Privacy policy

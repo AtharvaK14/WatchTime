@@ -20,6 +20,8 @@ import {
 } from "../lib/updates/installer";
 import { displayVersion } from "../lib/updates/version";
 import { notificationsSupported } from "../lib/notifications";
+import { friendlyTime } from "../lib/friendlyTime";
+import { HeadingWithInfo } from "./Sheet";
 
 type CheckMessage = { ok: boolean; text: string };
 
@@ -107,14 +109,18 @@ export default function UpdateSettings() {
   return (
     <div className="panel">
       <div className="settings-block">
-        <h3>Version</h3>
+        <HeadingWithInfo
+          title="Version"
+          info={
+            <p>
+              {APP_NAME} checks GitHub for a newer release once a week when you open it. The check sends nothing
+              about you or your library. Update checks are off in development builds.
+            </p>
+          }
+        />
         <p className="muted small">
-          {APP_NAME} {APP_VERSION}.
-          {updateChecksEnabled()
-            ? ` Checks GitHub for a newer release once a week when you open the app. Last checked: ${
-                lastChecked ? new Date(lastChecked).toLocaleString() : "never"
-              }.`
-            : " Update checks are off in development builds."}
+          {APP_NAME} {APP_VERSION}
+          {updateChecksEnabled() ? ` · Checked ${friendlyTime(lastChecked)}` : " · Checks off in this build"}
         </p>
         <div className="field-row">
           <button onClick={check} disabled={checking || !updateChecksEnabled()}>
@@ -161,10 +167,7 @@ export default function UpdateSettings() {
           {install.step === "failed" && <p className="status-error">{install.text}</p>}
 
           {!installerSupported() && (
-            <p className="muted small">
-              In a browser there is nothing to install: the page updates when the site does. The release page has
-              the Android app.
-            </p>
+            <p className="muted small">The web version updates itself. The release page has the Android app.</p>
           )}
           {installerSupported() && !update.apkUrl && (
             <p className="muted small">This release has no Android package attached. See the release page.</p>
@@ -188,16 +191,13 @@ export default function UpdateSettings() {
             >
               <span className="notif-row-text">
                 <span className="notif-row-label">New versions</span>
-                <span className="notif-row-detail">One notification when a new version of {APP_NAME} is out</span>
+                <span className="notif-row-detail">Needs notifications on for {APP_NAME}</span>
               </span>
               <span className="notif-switch" aria-hidden="true">
                 <span className="notif-switch-knob" />
               </span>
             </button>
           </div>
-          <p className="muted small">
-            Only sent while notifications are turned on for {APP_NAME} under Notifications, and allowed by Android.
-          </p>
         </div>
       )}
     </div>

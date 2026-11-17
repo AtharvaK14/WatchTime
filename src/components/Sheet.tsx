@@ -116,21 +116,26 @@ export function HeadingWithInfo({
 /**
  * A settings row that shows the current choice and opens a sheet of radio
  * options to change it: the app's own picker in place of the system's
- * native <select> dialog.
+ * native <select> dialog. Long lists (regions, shows) get a search field.
  */
 export function ChoiceRow<T extends string>({
   label,
   value,
   options,
   onChange,
+  emptyLabel = "Choose",
+  searchable = false,
 }: {
   label: string;
   value: T;
   options: { value: T; label: string }[];
   onChange: (value: T) => void;
+  /** Shown as the value while nothing in the list is chosen. */
+  emptyLabel?: string;
+  searchable?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const current = options.find((o) => o.value === value)?.label ?? value;
+  const current = options.find((o) => o.value === value)?.label ?? emptyLabel;
   return (
     <>
       <button type="button" className="choice-row" onClick={() => setOpen(true)} aria-haspopup="dialog">
@@ -143,16 +148,53 @@ export function ChoiceRow<T extends string>({
       {open && (
         <Sheet title={label} onClose={() => setOpen(false)} doneLabel="Cancel">
           {(close) => (
-            <SegmentedControl
+            <ChoiceList
               options={options}
               value={value}
-              onChange={(next) => {
+              searchable={searchable}
+              onPick={(next) => {
                 onChange(next);
                 close();
               }}
             />
           )}
         </Sheet>
+      )}
+    </>
+  );
+}
+
+function ChoiceList<T extends string>({
+  options,
+  value,
+  searchable,
+  onPick,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  searchable: boolean;
+  onPick: (value: T) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const shown = q ? options.filter((o) => o.label.toLowerCase().includes(q)) : options;
+  return (
+    <>
+      {searchable && (
+        <input
+          type="text"
+          className="choice-search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search"
+          aria-label="Search the list"
+          autoComplete="off"
+        />
+      )}
+      {shown.length > 0 ? (
+        <SegmentedControl options={shown} value={value} onChange={onPick} />
+      ) : (
+        <p className="muted small choice-empty">Nothing matches.</p>
       )}
     </>
   );

@@ -9,6 +9,7 @@ import { isStoppedWatching } from "../lib/stoppedWatching";
 import { releaseAlertEligibility } from "../lib/watchNext";
 import { exclusionLabel, HORIZON_DAYS, planNotifications } from "../lib/notifications/events";
 import { lastExcludedReleases } from "../lib/notifications";
+import { ChoiceRow, HeadingWithInfo } from "../components/Sheet";
 
 export type HomeCategory =
   | "Watch Next"
@@ -359,34 +360,45 @@ export default function Diagnostics() {
 
   return (
     <div className="panel">
-      <h3>Diagnostics</h3>
-      <p className="muted small">
-        Pick a show to compare what's actually stored in your local database against what TMDB reports, to find
-        real mismatches instead of guessing at them.
-      </p>
-      <div className="field-row">
-        <select
-          value={selectedId ?? ""}
-          onChange={(e) => setSelectedId(e.target.value ? Number(e.target.value) : null)}
-        >
-          <option value="">Select a show...</option>
-          {shows?.map((s) => (
-            <option key={s.tmdbId} value={s.tmdbId}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-        <button disabled={!selectedId || loading} onClick={() => selectedId && runDiagnostic(selectedId)}>
-          {loading ? "Checking..." : "Run diagnostic"}
-        </button>
+      <div className="settings-block">
+        <HeadingWithInfo
+          title="Check a show"
+          info={
+            <p>
+              Compares what is stored on this device for a show against what TMDB reports, to find real mismatches
+              instead of guessing at them.
+            </p>
+          }
+        />
+        <ChoiceRow
+          label="Show"
+          value={selectedId === null ? "" : String(selectedId)}
+          emptyLabel="Choose"
+          searchable
+          options={(shows ?? []).map((s) => ({ value: String(s.tmdbId), label: s.name }))}
+          onChange={(v) => setSelectedId(v ? Number(v) : null)}
+        />
+        <div className="field-row">
+          <button disabled={!selectedId || loading} onClick={() => selectedId && runDiagnostic(selectedId)}>
+            {loading ? "Checking..." : "Run check"}
+          </button>
+        </div>
       </div>
-      <div className="field-row">
-        <button disabled={loading} onClick={runLibrarySummary}>
-          Library-wide Watch Next summary
-        </button>
-        <span className="muted small">
-          Counts every followed show against Home's inclusion rules, using only what's cached right now.
-        </span>
+      <div className="settings-block">
+        <HeadingWithInfo
+          title="Whole library"
+          info={
+            <p>
+              Counts every followed show against Home's rules for Watch next, Lapsed, Not started and Stopped, using
+              only what is saved on this device right now.
+            </p>
+          }
+        />
+        <div className="field-row">
+          <button disabled={loading} onClick={runLibrarySummary}>
+            Watch Next summary
+          </button>
+        </div>
       </div>
       {report && <pre className="diagnostic-report">{report}</pre>}
     </div>

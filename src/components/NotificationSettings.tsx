@@ -134,10 +134,7 @@ export default function NotificationSettings() {
 
   if (!notificationsSupported()) {
     return (
-      <p className="muted small">
-        Release notifications are only available in the Android app. The browser build has no scheduler to hand
-        them to.
-      </p>
+      <p className="muted small">Android app only.</p>
     );
   }
 
@@ -149,19 +146,31 @@ export default function NotificationSettings() {
           "Notifications", and repeating it put the same word on screen twice
           with nothing between them. */}
       <div className="settings-block">
-        <p className="muted small">
-          Tells you when something in <em>your library</em> arrives, as soon as it does. Nothing else is ever
-          announced — there are no recommendations here, and a title you have not added can never trigger one.
-        </p>
-
-        <div className="field-row">
-          <button onClick={toggleEnabled} disabled={busy}>
-            {enabled ? "Turn notifications off" : busy ? "Asking..." : "Turn notifications on"}
+        {/* The main switch, in the same row style as the kinds below. Only
+            titles in the library are ever announced, which the detail says. */}
+        <div className="notif-list">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            className={`notif-row ${enabled ? "on" : ""}`}
+            onClick={toggleEnabled}
+            disabled={busy}
+          >
+            <span className="notif-row-text">
+              <span className="notif-row-label">Release notifications</span>
+              <span className="notif-row-detail">
+                {busy
+                  ? "Asking Android..."
+                  : enabled && !delivering && availability !== null
+                    ? "Blocked by Android"
+                    : "Only for titles in your library"}
+              </span>
+            </span>
+            <span className="notif-switch" aria-hidden="true">
+              <span className="notif-switch-knob" />
+            </span>
           </button>
-          {delivering && <span className="status-ok small">On</span>}
-          {enabled && !delivering && availability !== null && (
-            <span className="muted small">On in WatchTime, blocked by Android</span>
-          )}
         </div>
 
         {enabled && availability !== null && <BlockedByAndroid availability={availability} onRequest={askAgain} />}
@@ -169,7 +178,7 @@ export default function NotificationSettings() {
         {delivering && scheduled !== null && (
           <p className="muted small">
             {scheduled === 0
-              ? "Nothing to announce in the next few weeks. This updates itself as new air dates arrive."
+              ? "Nothing due in the next few weeks."
               : `${scheduled} upcoming release${scheduled === 1 ? "" : "s"} queued.`}
           </p>
         )}
