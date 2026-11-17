@@ -19,10 +19,14 @@ import {
   setBackupCadence,
   targetState,
 } from "../lib/autoBackup/state";
+import { friendlyTime } from "../lib/friendlyTime";
+import { ChoiceRow, HeadingWithInfo } from "./Sheet";
 
-function when(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : "never";
-}
+const CADENCE_OPTIONS: { value: BackupCadence; label: string }[] = [
+  { value: "daily", label: "Every day" },
+  { value: "weekly", label: "Every week" },
+  { value: "off", label: "Off" },
+];
 
 /** One sentence for the result of a "Back up now" press. */
 function describeRun(result: BackupRunResult): { ok: boolean; text: string } {
@@ -35,13 +39,14 @@ function describeRun(result: BackupRunResult): { ok: boolean; text: string } {
     text:
       local.status === "unchanged"
         ? "Nothing has changed since the last backup, so no new file was needed."
-        : `Saved ${local.file}.`,
+        : "Backed up.",
   };
 }
 
 function entryLabel(entry: LocalBackupEntry): string {
-  if (entry.target === SYSTEM_TARGET) return "Snapshot for Android backup";
-  return backupTimeFromFilename(entry.filename)?.toLocaleString() ?? entry.filename;
+  if (entry.target === SYSTEM_TARGET) return "Reinstall snapshot";
+  const time = backupTimeFromFilename(entry.filename);
+  return time ? friendlyTime(time.toISOString()) : entry.filename;
 }
 
 /**
@@ -83,11 +88,17 @@ export default function AutoBackupSettings({ onRestoreText }: { onRestoreText: (
   if (!supported) {
     return (
       <div className="settings-block">
-        <h3>Automatic backups</h3>
-        <p className="muted small">
-          Scheduled backups run only in the Android app, which has a folder of its own to save them in. A browser
-          cannot write files unattended, so here the backup is the export below: run it whenever you want a copy.
-        </p>
+        <HeadingWithInfo
+          title="Automatic backups"
+          info={
+            <p>
+              Scheduled backups run only in the Android app, which has a folder of its own to save them in. A
+              browser cannot write files unattended, so here the backup is the export below: run it whenever you
+              want a copy.
+            </p>
+          }
+        />
+        <p className="muted small">Android app only. Here, use Export below.</p>
       </div>
     );
   }
@@ -120,100 +131,113 @@ export default function AutoBackupSettings({ onRestoreText }: { onRestoreText: (
   return (
     <>
       <div className="settings-block">
-        <h3>If you reinstall or change phones</h3>
+        <HeadingWithInfo
+          title="Reinstall protection"
+          infoTitle="If you reinstall or change phones"
+          info={
+            <>
+              <p>
+                Your library is kept up to date in a snapshot that Android's own backup saves to your Google
+                account, usually overnight. Reinstall the app on a phone signed in to the same account and the
+                library comes back on its own the first time you open it.
+              </p>
+              <p>
+                This needs backup turned on in Android's settings (Settings, then Google or System, then Backup).
+                Changes from the last day or so may not have been backed up yet.
+              </p>
+              <p>
+                Your API keys go along only when the phone has a screen lock, because only then does Android
+                encrypt the backup so that only your devices can read it. Otherwise you enter them again after
+                reinstalling.
+              </p>
+              {snapshot?.droppedEpisodeCache && (
+                <p>
+                  Episode details were left out to fit Android's size limit. They are fetched again after a
+                  restore.
+                </p>
+              )}
+            </>
+          }
+        />
         <p className="muted small">
-          Your library is kept up to date in a snapshot that Android's own backup saves to your Google account,
-          usually overnight. Reinstall the app on a phone signed in to the same account and the library comes
-          back on its own the first time you open it.
+          {snapshot
+            ? `Updated ${friendlyTime(snapshot.at)} · API keys ${snapshot.keysIncluded ? "included" : "not included"}`
+            : "Saved the next time you leave the app."}
         </p>
-        <p className="muted small">
-          This needs backup turned on in Android's settings (Settings, then Google or System, then Backup).
-          Changes from the last day or so may not have been backed up yet. Your API keys go along only when the
-          phone has a screen lock, because only then does Android encrypt the backup so that only your devices
-          can read it; otherwise you enter them again after reinstalling.
-        </p>
-        {snapshot ? (
-          <p className="muted small">
-            Snapshot updated {when(snapshot.at)}, {(snapshot.bytes / (1024 * 1024)).toFixed(1)} MB. API keys{" "}
-            {snapshot.keysIncluded ? "included" : "not included"}.
-            {snapshot.droppedEpisodeCache &&
-              " Episode details were left out to fit Android's size limit; they are fetched again after a restore."}
-          </p>
-        ) : (
-          <p className="muted small">No snapshot yet. One is saved the next time you leave the app.</p>
-        )}
         {snapshot?.overBudget && (
-          <p className="status-error">
-            Your library is larger than Android's backup allows (25 MB), so Android will not save it. Export a
-            backup file below and keep it somewhere safe.
-          </p>
+          <p className="status-error">Too large for Android's backup (25 MB). Export a backup file instead.</p>
         )}
         {system.lastError && (
           <p className="status-error">
-            Last snapshot failed ({when(system.lastErrorAt)}): {system.lastError}
+            Last snapshot failed ({friendlyTime(system.lastErrorAt)}): {system.lastError}
           </p>
         )}
       </div>
 
       <div className="settings-block">
-        <h3>Automatic backups</h3>
-        <p className="muted small">
-          Also saves your library and API keys to a folder on this device and keeps the newest {BACKUP_RETENTION}.
-          It runs when you open or leave the app, once the time below has passed, and only writes a new file when
-          something has changed.
-        </p>
+        <HeadingWithInfo
+          title="Automatic backups"
+          info={
+            <>
+              <p>
+                Saves your library and API keys to a folder on this device and keeps the newest {BACKUP_RETENTION}.
+                It runs when you open or leave the app, once the chosen time has passed, and only writes a new file
+                when something has changed.
+              </p>
+              <p>
+                Android deletes this folder when the app is uninstalled, so these backups protect you from a
+                cleared or damaged library. Reinstall protection is what covers a reinstall. For a copy you
+                control, export a backup file and keep it somewhere else.
+              </p>
+              {folder && <p className="info-sheet-path">{folder}</p>}
+            </>
+          }
+        />
+        <ChoiceRow
+          label="Frequency"
+          value={cadence}
+          options={CADENCE_OPTIONS}
+          onChange={(next) => {
+            setCadence(next);
+            setBackupCadence(next);
+          }}
+        />
         <div className="field-row">
-          <select
-            value={cadence}
-            aria-label="How often to back up"
-            onChange={(e) => {
-              const next = e.target.value as BackupCadence;
-              setCadence(next);
-              setBackupCadence(next);
-            }}
-          >
-            <option value="daily">Every day</option>
-            <option value="weekly">Every week</option>
-            <option value="off">Off</option>
-          </select>
           <button onClick={backUpNow} disabled={busy}>
             {busy ? "Backing up..." : "Back up now"}
           </button>
+          <span className="muted small">Last: {friendlyTime(local.lastSuccessAt)}</span>
         </div>
         {runMessage && <p className={runMessage.ok ? "status-ok" : "status-error"}>{runMessage.text}</p>}
-
-        <p className="muted small">On this device: last backed up {when(local.lastSuccessAt)}.</p>
         {local.lastError && (
           <p className="status-error">
-            Last attempt failed ({when(local.lastErrorAt)}): {local.lastError}
+            Last attempt failed ({friendlyTime(local.lastErrorAt)}): {local.lastError}
           </p>
         )}
-
-        <p className="muted small">
-          {folder ? `Folder: ${folder}. ` : ""}
-          Android removes this folder when the app is uninstalled, so these backups protect you from a cleared or
-          damaged library; the snapshot above is what covers a reinstall. For a copy you control, use the export
-          below and keep the file somewhere else.
-        </p>
       </div>
 
-      <div className="settings-block">
-        <h3>Backups on this device</h3>
-        {entries.length === 0 && <p className="muted small">None yet.</p>}
-        {entries.map((entry) => (
-          <div className="field-row" key={`${entry.target}/${entry.filename}`}>
-            <span className="small">{entryLabel(entry)}</span>
-            <button onClick={() => chooseEntry(entry)}>Restore...</button>
+      {entries.length > 0 && (
+        <div className="settings-block">
+          <HeadingWithInfo
+            title="Backups on this device"
+            info={
+              <p>
+                Choosing one shows what it contains under "Restore from backup", where you pick merge or replace.
+                Nothing changes until you confirm there.
+              </p>
+            }
+          />
+          <div className="backup-list">
+            {entries.map((entry) => (
+              <div className="backup-list-row" key={`${entry.target}/${entry.filename}`}>
+                <span>{entryLabel(entry)}</span>
+                <button onClick={() => chooseEntry(entry)}>Restore</button>
+              </div>
+            ))}
           </div>
-        ))}
-        {readError && <p className="status-error">{readError}</p>}
-        {entries.length > 0 && (
-          <p className="muted small">
-            Choosing one shows what it contains under "Restore from backup" below. Nothing changes until you confirm
-            there.
-          </p>
-        )}
-      </div>
+          {readError && <p className="status-error">{readError}</p>}
+        </div>
+      )}
     </>
   );
 }

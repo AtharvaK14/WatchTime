@@ -1,4 +1,4 @@
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { checkTmdbKey, TMDB_API_KEY_STORAGE } from "../tmdb";
 import { checkOmdbKey, OMDB_API_KEY_STORAGE, isOmdbRateLimited, omdbQuotaResumeTime } from "../omdb";
@@ -37,6 +37,9 @@ import { OmdbKeySteps, TmdbKeySteps } from "../components/KeySetupGuide";
 import NotificationSettings from "../components/NotificationSettings";
 import AutoBackupSettings from "../components/AutoBackupSettings";
 import UpdateSettings from "../components/UpdateSettings";
+import { HeadingWithInfo, InfoButton } from "../components/Sheet";
+import { friendlyTime } from "../lib/friendlyTime";
+import { autoBackupSupported } from "../lib/autoBackup";
 import { forgetSnapshot } from "../lib/autoBackup";
 import { requestNotificationSync } from "../lib/notifications";
 
@@ -194,6 +197,13 @@ function ApiKeys() {
   );
 }
 
+/** One line for the section; the full explanation is behind its ⓘ. */
+const PERSIST_STATUS_SHORT: Record<string, string> = {
+  granted: "Protected",
+  denied: "Not guaranteed",
+  unsupported: "Not guaranteed",
+};
+
 const PERSIST_STATUS_COPY: Record<string, string> = {
   granted:
     "Protected: the system agreed not to auto-clear this app's data under storage pressure. That still doesn't survive \"Clear data\" or uninstalling, so keep backups.",
@@ -209,6 +219,23 @@ function formatCounts(counts: Record<string, number>): string {
     `${counts.watchedEpisodes.toLocaleString()} watched episodes · ${counts.episodes.toLocaleString()} cached episodes · ` +
     `${counts.titleMatches.toLocaleString()} import matches`
   );
+}
+
+/** What a backup holds, in the words a person would use: "1 show · 3 movies · 2 episodes watched". */
+function librarySummary(counts: Record<string, number>): string {
+  const n = (count: number, one: string, many: string) => `${count.toLocaleString()} ${count === 1 ? one : many}`;
+  return [
+    n(counts.shows, "show", "shows"),
+    n(counts.movies, "movie", "movies"),
+    n(counts.watchedEpisodes, "episode watched", "episodes watched"),
+  ].join(" · ");
+}
+
+function keysSummary(keys: { tmdb: string | null; omdb: string | null }): string {
+  if (keys.tmdb && keys.omdb) return "API keys included";
+  if (keys.tmdb) return "TMDB key included";
+  if (keys.omdb) return "OMDb key only";
+  return "No API keys";
 }
 
 function keyOutcomeLabel(outcome: "restored" | "kept-existing" | "absent"): string {
@@ -231,6 +258,12 @@ function BackupRestore() {
   const [restoring, setRestoring] = useState(false);
   const [restoreResult, setRestoreResult] = useState<RestoreResult | null>(null);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  // A backup chosen from the device list is offered further down the page;
+  // the offer is scrolled to so the choice visibly did something.
+  const restoreRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (pending || restoreError) restoreRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [pending, restoreError]);
 
   // Whether the merge-or-replace question is even needed: restoring into an
   // empty database has nothing to destroy, so it gets a single button.
@@ -309,24 +342,35 @@ function BackupRestore() {
   return (
     <div className="panel">
       <div className="settings-block">
-        <h3>Storage status</h3>
+        <HeadingWithInfo
+          title="Storage"
+          info={
+            <>
+              <p>{persistStatus ? PERSIST_STATUS_COPY[persistStatus] : "Checking storage protection..."}</p>
+              {estimate && <p>The library uses {estimate.usageMB.toFixed(1)} MB on this device.</p>}
+            </>
+          }
+        />
         <p className="muted small">
-          {persistStatus ? PERSIST_STATUS_COPY[persistStatus] : "Checking storage protection..."}
-          {estimate && ` Currently using ${estimate.usageMB.toFixed(1)} MB of local storage.`}
-        </p>
-        <p className="muted small">
-          Last backup: {lastBackup ? new Date(lastBackup).toLocaleString() : "never"}
+          {persistStatus ? PERSIST_STATUS_SHORT[persistStatus] : "Checking..."}
+          {estimate && ` · ${estimate.usageMB.toFixed(1)} MB`}
+          {!autoBackupSupported() && ` · Last backup: ${friendlyTime(lastBackup)}`}
         </p>
       </div>
 
       <AutoBackupSettings onRestoreText={offerRestore} />
 
       <div className="settings-block">
-        <h3>Export backup</h3>
-        <p className="muted small">
-          Saves your entire library (shows, movies, watch history, import matches) plus your API keys to a single
-          JSON file. Keep it somewhere outside this device, e.g. your cloud drive.
-        </p>
+        <HeadingWithInfo
+          title="Export backup"
+          info={
+            <p>
+              Saves your entire library (shows, movies, watch history, import matches) plus your API keys to a
+              single JSON file. Keep it somewhere outside this device, for example your cloud drive.
+            </p>
+          }
+        />
+        <p className="muted small">Your library and API keys in one file.</p>
         <button onClick={handleExport} disabled={exporting}>
           {exporting ? "Exporting..." : "Export backup file"}
         </button>
@@ -338,7 +382,7 @@ function BackupRestore() {
         {exportError && <p className="status-error">Export failed: {exportError}</p>}
       </div>
 
-      <div className="settings-block">
+      <div className="settings-block restore-block" ref={restoreRef}>
         <h3>Restore from backup</h3>
         <div className="field-row">
           <label className="file-label">
@@ -359,19 +403,12 @@ function BackupRestore() {
 
         {pending && (
           <div className="settings-block">
-            <p>
-              Backup from {new Date(pending.backup.exportedAt).toLocaleString()}:{" "}
-              {formatCounts(tableCounts(pending.backup))}.
-            </p>
+            <p className="restore-offer-title">Backup from {friendlyTime(pending.backup.exportedAt)}</p>
             <p className="muted small">
-              API keys in file: TMDB {pending.backup.apiKeys.tmdb ? "yes" : "no"} · OMDb{" "}
-              {pending.backup.apiKeys.omdb ? "yes" : "no"}
+              {librarySummary(tableCounts(pending.backup))} · {keysSummary(pending.backup.apiKeys)}
             </p>
             {!pending.backup.apiKeys.tmdb && !pending.backup.apiKeys.omdb && (
-              <p className="muted small">
-                This backup has no API keys in it. Keys already saved in this app are kept; if there are none, enter
-                them under API Keys after restoring.
-              </p>
+              <p className="muted small">Keys already saved here are kept.</p>
             )}
             {pending.warnings.map((w) => (
               <p key={w} className="muted small">
@@ -381,7 +418,16 @@ function BackupRestore() {
 
             {hasExistingData === true && !confirmingReplace && (
               <>
-                <p>You already have data in this app. Choose how to restore:</p>
+                <div className="heading-with-info">
+                  <p className="restore-offer-question">You already have a library here.</p>
+                  <InfoButton title="Merge or replace">
+                    <p>
+                      Merge adds the items in the backup and updates the ones you already have, matched by ID.
+                      Everything else you have stays.
+                    </p>
+                    <p>Replace deletes your current library first, then loads the backup exactly as it is.</p>
+                  </InfoButton>
+                </div>
                 <div className="field-row">
                   <button onClick={() => handleRestore("merge")} disabled={restoring}>
                     {restoring ? "Restoring..." : "Merge into existing"}
@@ -390,18 +436,14 @@ function BackupRestore() {
                     Replace everything...
                   </button>
                 </div>
-                <p className="muted small">
-                  Merge adds and overwrites items from the file by ID and keeps everything else you have. Replace
-                  deletes all current data first, then loads the file exactly.
-                </p>
               </>
             )}
 
             {hasExistingData === true && confirmingReplace && (
               <div className="settings-block">
                 <p className="status-error">
-                  This permanently deletes ALL current shows, movies, and watch history first, then loads the
-                  file. There is no undo.
+                  This deletes all your current shows, movies and watch history, then loads the backup. There is no
+                  undo.
                 </p>
                 <div className="field-row">
                   <button className="danger-button" onClick={() => handleRestore("replace")} disabled={restoring}>
