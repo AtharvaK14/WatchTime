@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android Auto Backup rules for Android 9 to 11 (API 28-30). Same as
+     xml/backup_rules.xml, plus the API keys file, which requireFlags keeps out
+     of any backup that is not end-to-end encrypted (Android 9+ with a screen
+     lock). requireFlags only exists from API 28, which is why this is a
+     separate resource rather than one file for every version.
+
+     The app also writes the keys file only while a screen lock is set
+     (BackupSupportPlugin), so the flag here is a second guard. -->
+<full-backup-content>
+    <include domain="file" path="backup/watchtime-snapshot.json" />
+    <include domain="file" path="backup/watchtime-keys.json" requireFlags="clientSideEncryption" />
+</full-backup-content>

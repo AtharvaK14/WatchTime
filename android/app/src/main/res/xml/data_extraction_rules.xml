@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android Auto Backup rules for Android 12 and later
+     (android:dataExtractionRules). See xml/backup_rules.xml for why the list
+     is this short; keep the files in step with
+     src/lib/autoBackup/snapshot.ts.
+
+     The keys file has no "only if encrypted" condition here: these rules have
+     no per-file flag for it, only an all-or-nothing switch that would also
+     drop the library snapshot on phones without a screen lock. Instead the
+     app writes the keys file only while Android can encrypt the backup end
+     to end, and deletes it when it cannot (BackupSupportPlugin). If the file
+     is not there, there is nothing for these rules to include.
+
+     Device-to-device transfer, a direct copy to the user's new phone, gets
+     the same two files. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <include domain="file" path="backup/watchtime-snapshot.json" />
+        <include domain="file" path="backup/watchtime-keys.json" />
+    </cloud-backup>
+    <device-transfer>
+        <include domain="file" path="backup/watchtime-snapshot.json" />
+        <include domain="file" path="backup/watchtime-keys.json" />
+    </device-transfer>
+</data-extraction-rules>

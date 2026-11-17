@@ -1,0 +1,150 @@
+# Builds, signs and publishes the Android app when a version tag is pushed.
+#
+# To release:
+#   1. Set "version" in package.json (MAJOR.MINOR.PATCH) and commit.
+#   2. Tag that commit "v" + the version, e.g. v1.2.0, and push the tag.
+#
+# package.json is the single source of truth for the version: the Android
+# build reads versionName and versionCode from it, and so does the in-app
+# update check. This workflow refuses to release if the tag disagrees with
+# it, and again if the built APK does.
+#
+# Secrets (Settings -> Secrets and variables -> Actions):
+#   ANDROID_KEYSTORE_BASE64    the release keystore, base64-encoded
+#   ANDROID_KEYSTORE_PASSWORD  the keystore password
+#   ANDROID_KEY_ALIAS          the key's alias
+#   ANDROID_KEY_PASSWORD       the key password
+#
+# Optional variable (same page, Variables tab):
+#   ANDROID_CERT_SHA256        the SHA-256 digest of the release certificate.
+#                              When set, the build fails unless the APK is
+#                              signed by it. Android refuses to install an
+#                              update signed with a different key, so this
+#                              catches a wrong keystore before users do.
+#
+# The keystore must be the one earlier releases were signed with. See
+# docs/backup-and-updates.md.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Creating the release needs to write; nothing else does.
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches package.json
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version. Expected tag v$version."
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build the web bundle
+        run: npm run build
+
+      - name: Sync the web bundle into the Android project
+        run: npx cap sync android
+
+      - name: Decode the keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "::error::The ANDROID_KEYSTORE_BASE64 secret is not set."
+            exit 1
+          fi
+          # Outside the checkout, so it can never end up in an artifact.
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+          echo "WATCHTIME_KEYSTORE_FILE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+
+      - name: Build the signed APK
+        working-directory: android
+        env:
+          WATCHTIME_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          WATCHTIME_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          WATCHTIME_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        # Through bash: gradlew is committed without its executable bit.
+        run: bash ./gradlew :app:assembleRelease --no-daemon --console=plain
+
+      - name: Check the APK
+        env:
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_CERT_SHA256 }}
+        run: |
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$apk" ]; then
+            # Without a usable key Gradle writes app-release-unsigned.apk instead.
+            echo "::error::No signed APK was produced. Check the signing secrets."
+            ls -la android/app/build/outputs/apk/release || true
+            exit 1
+          fi
+
+          build_tools="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+
+          version_name="$("$build_tools/aapt2" dump badging "$apk" | sed -n "s/^package:.* versionName='\([^']*\)'.*/\1/p")"
+          if [ "$version_name" != "$VERSION" ]; then
+            echo "::error::The APK's versionName is '$version_name' but the tag is v$VERSION."
+            exit 1
+          fi
+
+          # Fails if the APK is not properly signed.
+          certs="$("$build_tools/apksigner" verify --print-certs "$apk")"
+          cert_sha256="$(printf '%s\n' "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          echo "Signed by certificate SHA-256: $cert_sha256"
+          if [ -n "$EXPECTED_CERT_SHA256" ]; then
+            expected="$(printf '%s' "$EXPECTED_CERT_SHA256" | tr -d ': ' | tr 'A-F' 'a-f')"
+            if [ "$cert_sha256" != "$expected" ]; then
+              echo "::error::The APK is signed by a different certificate than ANDROID_CERT_SHA256. Installed copies could not update to it."
+              exit 1
+            fi
+          fi
+
+          # The asset name the earlier releases used, and the one the in-app
+          # update check looks for (any .apk asset on the release).
+          cp "$apk" "$RUNNER_TEMP/WatchTime-release.apk"
+
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+
+      - name: Publish the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" "$RUNNER_TEMP/WatchTime-release.apk" \
+            --title "WatchTime $GITHUB_REF_NAME" \
+            --generate-notes \
+            --verify-tag

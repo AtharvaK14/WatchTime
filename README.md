@@ -60,6 +60,9 @@ There is no server and no account. Your library lives in the device's IndexedDB,
 | 🧩 | **Home-screen widgets**: Up Next and Coming Up, marking episodes watched from the widget | ✅ | — |
 | 📥 | **TV Time import**: JSON or GDPR CSV export, with title matching you can confirm | ✅ | ✅ |
 | 💾 | **Backup & restore**: the whole library in one file | ✅ | ✅ |
+| ♻️ | **Survives a reinstall**: Android's own backup carries a snapshot of the library, restored automatically on first launch | ✅ | — |
+| 🗄️ | **Automatic backups**: daily or weekly to a folder on the device, newest 7 kept, restorable from Settings | ✅ | — |
+| ⬆️ | **Update notices**: a weekly check for a newer release, with a banner; the Android app can download and install it | ✅ | ✅ |
 
 ## How it works
 
@@ -211,6 +214,20 @@ npm run cap:sync   # build the web app and copy it into android/
 npm run cap:open   # open the project in Android Studio
 ```
 
+### Releasing
+
+The version is set in one place, `"version"` in `package.json`. The Android build reads `versionName` and `versionCode` from it, and the in-app update check compares against it.
+
+1. Set `"version"` in `package.json` to the new `MAJOR.MINOR.PATCH` and commit.
+2. Tag that commit with `v` plus the version and push the tag:
+
+   ```bash
+   git tag v1.2.0
+   git push origin v1.2.0
+   ```
+
+The [release workflow](.github/workflows/release.yml) then builds the web bundle, builds and signs the APK, checks that its `versionName` matches the tag, and attaches it to a GitHub Release with generated notes. It needs four repository secrets: `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. The keystore must be the one earlier releases were signed with, or installed copies cannot update. A local release build reads the same values from the untracked `android/keystore.properties`.
+
 ### Scripts
 
 | Script | What it does |
@@ -224,6 +241,8 @@ npm run cap:open   # open the project in Android Studio
 | `npm run check:notification-eligibility` | Scenario checks for which shows may be announced |
 | `npm run check:season-association` | Scenario checks that seasons stay with their own show |
 | `npm run check:streaming` | Provider-name normalisation checks |
+| `npm run check:backup` | Scenario checks for automatic backups: retention, scheduling, failed writes, the reinstall snapshot and its keys file, and export and restore round trips |
+| `npm run check:updates` | Scenario checks for version comparison and reading GitHub's release response |
 | `npm run build:mood-vocabulary` | Rebuild the precomputed mood-tag embeddings |
 | `npm run cap:sync` / `cap:open` | Sync and open the Android project |
 
@@ -241,19 +260,24 @@ src/
 │   ├── moodSearch/       Parsing, embeddings, library index, TMDB discovery
 │   ├── recommend/        Watch signals, taste profile, For You sections
 │   ├── notifications/    Release events, scheduling, permissions
+│   ├── autoBackup/       Scheduled backups to the app-owned folder, retention, restore list
+│   ├── updates/          Version comparison, the GitHub release check, the Android installer bridge
 │   ├── streaming/        Where-to-watch providers and app launching
 │   └── widget/           Snapshot and sync for the Android widgets
 ├── importer/         TV Time JSON and CSV import
 ├── db.ts             Dexie schema, the single source of truth
 └── tmdb.ts · omdb.ts · tvmaze.ts   API clients
-android/              Capacitor project, plus native notify/, widget/ and stream/ plugins
+android/              Capacitor project, plus native notify/, widget/, stream/ and update/ plugins
+.github/workflows/    The tag-triggered release build
 scripts/              Scenario checks and build helpers
-docs/                 Privacy policy and README screenshots
+docs/                 Privacy policy, README screenshots, and notes on backups and updates
 ```
 
 ## Privacy
 
-WatchTime collects nothing. Your library, watch history and API keys stay on your device. Network requests go straight from the device to TMDB, OMDb and TVmaze using your own keys, plus a one-time model download from the Hugging Face Hub if you use mood search; that request carries nothing about you. No accounts, analytics or ads. Full policy: [`docs/privacy.html`](docs/privacy.html).
+WatchTime collects nothing. Your library, watch history and API keys stay on your device. Network requests go straight from the device to TMDB, OMDb and TVmaze using your own keys. Two more requests carry nothing about you: a one-time model download from the Hugging Face Hub if you use mood search, and a weekly check of this repository's latest release on GitHub. No accounts, analytics or ads.
+
+Automatic backups are written to a folder on the device. On Android, a snapshot of the library is also left where Android's own backup can take it, if you have that turned on in the phone's settings; your API keys go with it only when the phone has a screen lock, so the backup is end-to-end encrypted. The app itself sends it nowhere. Full policy: [`docs/privacy.html`](docs/privacy.html).
 
 ## Acknowledgements
 

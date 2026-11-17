@@ -1,5 +1,24 @@
 apply plugin: 'com.android.application'
 
+// The app version comes from package.json, the one place it is set. Vite
+// inlines the same field into the web layer (vite.config.ts), which is what
+// the in-app update check compares against, so versionName and the version
+// the app believes it is can never disagree.
+//
+// versionCode is derived rather than kept by hand: MAJOR * 10000 + MINOR * 100
+// + PATCH, so 1.2.0 is 10200. It only ever has to increase, and it does as
+// long as the version does. MINOR and PATCH are capped at 99 to keep that true.
+def appVersionName = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json')).version as String
+def appVersionParts = appVersionName.tokenize('.')
+if (appVersionParts.size() != 3 || !appVersionParts.every { it.isInteger() }) {
+    throw new GradleException("package.json \"version\" must be MAJOR.MINOR.PATCH, got '${appVersionName}'")
+}
+def (appMajor, appMinor, appPatch) = appVersionParts.collect { it.toInteger() }
+if (appMinor > 99 || appPatch > 99) {
+    throw new GradleException("package.json \"version\" MINOR and PATCH must be 99 or less, got '${appVersionName}'")
+}
+def appVersionCode = appMajor * 10000 + appMinor * 100 + appPatch
+
 android {
     namespace = "com.indie.watchtime"
     compileSdk = 36  // Explicit, no root project ext
@@ -8,27 +27,38 @@ android {
         applicationId "com.indie.watchtime"
         minSdkVersion 24  // Capacitor minimum
         targetSdkVersion 35  // Required for Play Store, August 2025+
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
 
+    // Release signing. Nothing here is ever committed: CI supplies the
+    // keystore through environment variables (.github/workflows/release.yml,
+    // from GitHub Actions secrets), and a local build reads the untracked
+    // android/keystore.properties. The environment wins when both are set.
     def keystoreProperties = new Properties()
     def keystorePropertiesFile = rootProject.file("keystore.properties")
     if (keystorePropertiesFile.exists()) {
         keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
     }
+    def signingValue = { String envName, String propertyName ->
+        System.getenv(envName) ?: keystoreProperties[propertyName]
+    }
+    def releaseStoreFile = signingValue('WATCHTIME_KEYSTORE_FILE', 'storeFile')
 
     signingConfigs {
         release {
-            if (keystorePropertiesFile.exists()) {
-                keyAlias keystoreProperties['keyAlias']
-                keyPassword keystoreProperties['keyPassword']
-                storeFile file(keystoreProperties['storeFile'])
-                storePassword keystoreProperties['storePassword']
+            // Left unconfigured when there is no keystore, which makes a
+            // release build come out unsigned rather than fail to configure -
+            // debug builds must still work on a machine with no key.
+            if (releaseStoreFile) {
+                storeFile file(releaseStoreFile)
+                storePassword signingValue('WATCHTIME_KEYSTORE_PASSWORD', 'storePassword')
+                keyAlias signingValue('WATCHTIME_KEY_ALIAS', 'keyAlias')
+                keyPassword signingValue('WATCHTIME_KEY_PASSWORD', 'keyPassword')
             }
         }
     }

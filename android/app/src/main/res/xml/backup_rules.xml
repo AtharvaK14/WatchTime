@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android Auto Backup rules for Android 7.0 to 8.1 (API 24-27), read through
+     android:fullBackupContent. xml-v28/backup_rules.xml replaces this file on
+     Android 9 to 11, and data_extraction_rules.xml applies on Android 12 and
+     later. Keep all three in step with src/lib/autoBackup/snapshot.ts.
+
+     Exactly one file may leave the device here: the snapshot of the library
+     without API keys. These Android versions cannot encrypt the backup end to
+     end, so the keys file is never included.
+
+     Naming an include switches off the defaults, which is the point. Left to
+     the defaults, Auto Backup takes the WebView's data directory: IndexedDB
+     files copied while they may be mid-write (a restore of those can come
+     back corrupt), localStorage with the API keys in it, and the downloaded
+     mood-search model, which alone passes the 25 MB limit and stops the
+     whole backup. See docs/backup-and-updates.md, item 8. -->
+<full-backup-content>
+    <include domain="file" path="backup/watchtime-snapshot.json" />
+</full-backup-content>

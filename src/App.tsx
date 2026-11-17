@@ -32,6 +32,9 @@ import NotificationPrompt from "./components/NotificationPrompt";
 import { useWidgetSync } from "./lib/widget/sync";
 import { useOnline } from "./lib/useOnline";
 import { pruneCachesIfDue } from "./lib/cacheMaintenance";
+import { initAutoBackup } from "./lib/autoBackup";
+import { initUpdateChecks } from "./lib/updates";
+import UpdateBanner from "./components/UpdateBanner";
 import { HomeIcon, ShowsIcon, MoviesIcon, DiscoverIcon, ForYouIcon, SettingsIcon, type IconProps } from "./components/icons";
 import "./index.css";
 
@@ -161,6 +164,13 @@ function App() {
     window.addEventListener(BACKUP_COMPLETED_EVENT, onBackupCompleted);
     return () => window.removeEventListener(BACKUP_COMPLETED_EVENT, onBackupCompleted);
   }, []);
+
+  // Scheduled backups to the app-owned folder (Android only; a no-op on the
+  // web). The scheduler decides for itself whether one is due.
+  useEffect(() => initAutoBackup(), []);
+
+  // The weekly check for a newer release on GitHub. Off in development builds.
+  useEffect(() => initUpdateChecks(), []);
 
   // Android hardware/gesture back button. A ref keeps the listener (set up
   // once) reading the current tab. Open overlays consume the press first
@@ -303,6 +313,8 @@ function App() {
         {nudge.show && nudge.reason && (
           <BackupNudge reason={nudge.reason} onBackUp={() => setTab("settings")} onDismiss={dismissNudge} />
         )}
+
+        <UpdateBanner onOpenSettings={() => setTab("settings")} />
 
         <main>
           {/* Keyed on the tab so React remounts this wrapper on every switch,

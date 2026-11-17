@@ -18,6 +18,8 @@ import { recordBackupCompleted, API_KEYS_CHANGED_EVENT } from "./persistence";
 // the app's display name ends up being. They deliberately match the equally
 // frozen IndexedDB database name ("tv-tracker") rather than a brand name.
 const BACKUP_APP_MARKER = "tv-tracker-backup";
+/** Marks the separate API-keys file kept beside the Android backup snapshot (lib/autoBackup/snapshot.ts). */
+export const BACKUP_APP_MARKER_FOR_KEYS = "tv-tracker-backup-keys";
 export const BACKUP_FORMAT_VERSION = 1;
 
 export const BACKUP_TABLE_NAMES = [
@@ -94,6 +96,19 @@ export async function buildBackup(): Promise<BackupFile> {
     },
     tables: { shows, episodes, watchedEpisodes, movies, titleMatches, settings },
   };
+}
+
+/**
+ * The same backup with the API keys removed, for any copy that leaves the
+ * device without the user choosing where it goes.
+ *
+ * The keys are null rather than absent, which is exactly what a backup made
+ * on an install with no keys looks like - so validateBackup and
+ * restoreBackup need no special case, and restore's "null never deletes a
+ * current key" rule applies unchanged.
+ */
+export function withoutApiKeys(backup: BackupFile): BackupFile {
+  return { ...backup, apiKeys: { tmdb: null, omdb: null } };
 }
 
 /** Includes the time, not just the date, so multiple same-day exports don't collide in Downloads. */
@@ -266,6 +281,17 @@ export function validateBackup(raw: unknown): ValidatedBackup {
     tables: raw.tables as unknown as BackupTables,
   };
   return { backup, warnings };
+}
+
+/** Parses and validates the text of a backup file. Throws with a message fit to show the user. */
+export function parseBackupText(text: string): ValidatedBackup {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new Error("That file isn't valid JSON. Choose a backup file exported by this app.");
+  }
+  return validateBackup(raw);
 }
 
 // ---- Restore --------------------------------------------------------------------
