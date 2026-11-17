@@ -12,6 +12,9 @@
  * keys file beside it, the size budget, when the launch-time restore runs,
  * and restoring from those files into a fresh install.
  *
+ * And the order of the first screens at launch: the app is shown once, and
+ * the "Restoring" screen never replaces it.
+ *
  * What it cannot show: the Capacitor filesystem calls, Android's Auto Backup
  * taking the files and restoring them on reinstall, or the scheduler's app-state triggers. Those
  * need a device; docs/backup-and-updates.md lists them.
@@ -46,6 +49,7 @@ import {
   shouldAutoRestore,
   SNAPSHOT_BUDGET_BYTES,
 } from "../src/lib/autoBackup/snapshot";
+import { startWithRestore } from "../src/lib/autoBackup/startup";
 
 let checks = 0;
 const failures: string[] = [];
@@ -443,6 +447,73 @@ console.log("Rejecting what is not a backup");
 }
 
 db.close();
+// ---- The first screens at launch ----------------------------------------------
+
+// The first device test hung here: the wait timer fired at once, the app
+// rendered, and the restore then put its "Restoring" screen over the app for
+// good. Each case records the screens in the order they were shown.
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+async function launch(
+  restore: (onRestoring: () => void) => Promise<string | null>,
+  waitMs = 40
+): Promise<string[]> {
+  const shown: string[] = [];
+  await startWithRestore({
+    restore,
+    showRestoring: () => shown.push("restoring"),
+    showApp: () => shown.push("app"),
+    onOutcome: (outcome) => shown.push(`outcome:${outcome}`),
+    waitMs,
+  });
+  // Lets a timer that should have been cleared fire, if it was not.
+  await sleep(waitMs + 20);
+  return shown;
+}
+
+console.log("The first screens at launch");
+expect(
+  "a quick restore: restoring screen, then the app, then the result",
+  await launch(async (onRestoring) => {
+    await sleep(5);
+    onRestoring();
+    await sleep(5);
+    return "restored";
+  }),
+  ["restoring", "app", "outcome:restored"]
+);
+expect(
+  "nothing to restore: just the app",
+  await launch(async () => null),
+  ["app"]
+);
+expect(
+  "a restore that starts after the wait: the app stays, the result still comes",
+  await launch(async (onRestoring) => {
+    await sleep(60);
+    onRestoring();
+    await sleep(5);
+    return "restored";
+  }),
+  ["app", "outcome:restored"]
+);
+expect(
+  "a restore that outlasts the wait: the app once, then the result",
+  await launch(async (onRestoring) => {
+    onRestoring();
+    await sleep(60);
+    return "restored";
+  }),
+  ["restoring", "app", "outcome:restored"]
+);
+expect(
+  "a restore that throws: the app",
+  await launch(async () => {
+    throw new Error("broken");
+  }),
+  ["app"]
+);
+
 console.log();
 if (failures.length === 0) {
   console.log(`All ${checks} checks pass.`);
