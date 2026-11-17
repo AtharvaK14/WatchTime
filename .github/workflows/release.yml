@@ -46,7 +46,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Check the tag matches package.json
         run: |
@@ -57,12 +57,12 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 21
@@ -120,9 +120,17 @@ jobs:
             exit 1
           fi
 
-          # Fails if the APK is not properly signed.
-          certs="$("$build_tools/apksigner" verify --print-certs "$apk")"
-          cert_sha256="$(printf '%s\n' "$certs" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          # Fails if the APK is not properly signed. The digest is matched by
+          # its own shape rather than the whole line: apksigner's wording
+          # around it differs between build-tools versions, and an exact
+          # match read nothing on the runner (v1.2.0's first run).
+          certs="$("$build_tools/apksigner" verify --print-certs "$apk" 2>&1)"
+          cert_sha256="$(printf '%s\n' "$certs" | grep -ioE 'certificate SHA-256 digest: [0-9a-f]{64}' | head -n 1 | awk '{print $NF}' | tr 'A-F' 'a-f')"
+          if [ -z "$cert_sha256" ]; then
+            echo "::error::Could not read the signing certificate from apksigner. Its output:"
+            printf '%s\n' "$certs"
+            exit 1
+          fi
           echo "Signed by certificate SHA-256: $cert_sha256"
           if [ -n "$EXPECTED_CERT_SHA256" ]; then
             expected="$(printf '%s' "$EXPECTED_CERT_SHA256" | tr -d ': ' | tr 'A-F' 'a-f')"
