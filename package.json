@@ -16,6 +16,7 @@
     "check:season-association": "tsx scripts/check-season-association.ts",
     "check:notification-eligibility": "tsx scripts/check-notification-eligibility.ts",
     "check:watch-history": "tsx scripts/check-watch-history.ts",
+    "check:backup": "tsx scripts/check-backup.ts",
     "preview": "vite preview",
     "cap:sync": "npm run build && npx cap sync android",
     "cap:open": "npx cap open android"
@@ -44,6 +45,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.3",
+    "fake-indexeddb": "^6.2.8",
     "oxlint": "^1.71.0",
     "tsx": "^4.23.0",
     "typescript": "~6.0.2",

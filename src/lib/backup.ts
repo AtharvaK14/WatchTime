@@ -96,6 +96,19 @@ export async function buildBackup(): Promise<BackupFile> {
   };
 }
 
+/**
+ * The same backup with the API keys removed, for any copy that leaves the
+ * device without the user choosing where it goes.
+ *
+ * The keys are null rather than absent, which is exactly what a backup made
+ * on an install with no keys looks like - so validateBackup and
+ * restoreBackup need no special case, and restore's "null never deletes a
+ * current key" rule applies unchanged.
+ */
+export function withoutApiKeys(backup: BackupFile): BackupFile {
+  return { ...backup, apiKeys: { tmdb: null, omdb: null } };
+}
+
 /** Includes the time, not just the date, so multiple same-day exports don't collide in Downloads. */
 export function backupFilename(exportedAt: string): string {
   const date = exportedAt.slice(0, 10);
@@ -266,6 +279,17 @@ export function validateBackup(raw: unknown): ValidatedBackup {
     tables: raw.tables as unknown as BackupTables,
   };
   return { backup, warnings };
+}
+
+/** Parses and validates the text of a backup file. Throws with a message fit to show the user. */
+export function parseBackupText(text: string): ValidatedBackup {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    throw new Error("That file isn't valid JSON. Choose a backup file exported by this app.");
+  }
+  return validateBackup(raw);
 }
 
 // ---- Restore --------------------------------------------------------------------

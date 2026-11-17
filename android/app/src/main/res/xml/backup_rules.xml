@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android Auto Backup rules for Android 11 and earlier
+     (android:fullBackupContent). data_extraction_rules.xml is the same list
+     for Android 12 and later; keep the two in step.
+
+     Exactly one file may leave the device: the keyless copy of the library
+     that the backup pipeline writes (SYSTEM_BACKUP_DIR / SYSTEM_BACKUP_FILE in
+     src/lib/autoBackup/localStore.ts).
+
+     Naming an include switches off the defaults, which is the point. Left to
+     the defaults, Auto Backup takes the WebView's data directory - that holds
+     localStorage, and so the TMDB and OMDb keys - and the dated backups in
+     this same external folder, which also contain the keys. It also gives up
+     entirely above 25 MB, which the on-device mood-search model alone
+     exceeds. See docs/backup-and-updates.md, item 8. -->
+<full-backup-content>
+    <include domain="external" path="system-backup/watchtime-latest.json" />
+</full-backup-content>

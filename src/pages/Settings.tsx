@@ -5,7 +5,7 @@ import { checkOmdbKey, OMDB_API_KEY_STORAGE, isOmdbRateLimited, omdbQuotaResumeT
 import { db } from "../db";
 import {
   exportAndDownloadBackup,
-  validateBackup,
+  parseBackupText,
   restoreBackup,
   tableCounts,
   ExportCancelledError,
@@ -35,6 +35,7 @@ import Diagnostics from "./Diagnostics";
 import About from "../components/About";
 import { OmdbKeySteps, TmdbKeySteps } from "../components/KeySetupGuide";
 import NotificationSettings from "../components/NotificationSettings";
+import AutoBackupSettings from "../components/AutoBackupSettings";
 import { requestNotificationSync } from "../lib/notifications";
 
 type KeyStatus = "idle" | "checking" | "valid" | "invalid";
@@ -259,21 +260,28 @@ function BackupRestore() {
     }
   }
 
-  async function handleFileChosen(file: File | null) {
+  function resetRestore() {
     setPending(null);
     setConfirmingReplace(false);
     setRestoreResult(null);
     setRestoreError(null);
+  }
+
+  /** Shared by the file picker and the list of backups on this device. */
+  function offerRestore(text: string) {
+    resetRestore();
+    try {
+      setPending(parseBackupText(text));
+    } catch (e) {
+      setRestoreError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function handleFileChosen(file: File | null) {
+    resetRestore();
     if (!file) return;
     try {
-      const text = await file.text();
-      let raw: unknown;
-      try {
-        raw = JSON.parse(text);
-      } catch {
-        throw new Error("That file isn't valid JSON. Choose a backup file exported by this app.");
-      }
-      setPending(validateBackup(raw));
+      offerRestore(await file.text());
     } catch (e) {
       setRestoreError(e instanceof Error ? e.message : String(e));
     }
@@ -308,6 +316,8 @@ function BackupRestore() {
           Last backup: {lastBackup ? new Date(lastBackup).toLocaleString() : "never"}
         </p>
       </div>
+
+      <AutoBackupSettings onRestoreText={offerRestore} />
 
       <div className="settings-block">
         <h3>Export backup</h3>
@@ -355,6 +365,12 @@ function BackupRestore() {
               API keys in file: TMDB {pending.backup.apiKeys.tmdb ? "yes" : "no"} · OMDb{" "}
               {pending.backup.apiKeys.omdb ? "yes" : "no"}
             </p>
+            {!pending.backup.apiKeys.tmdb && !pending.backup.apiKeys.omdb && (
+              <p className="muted small">
+                This backup has no API keys in it. Keys already saved in this app are kept; if there are none, enter
+                them under API Keys after restoring.
+              </p>
+            )}
             {pending.warnings.map((w) => (
               <p key={w} className="muted small">
                 ⚠ {w}
@@ -674,7 +690,7 @@ export default function Settings() {
           user is there to do; the one destructive action sits alone at the
           end, in its own group, away from everything else. */}
       <SettingsGroup label="Your library">
-        <SettingsRow title="Backup & Restore" sub="Export your library to a file, restore it anywhere">
+        <SettingsRow title="Backup & Restore" sub="Automatic backups on this device, export to a file, restore">
           <BackupRestore />
         </SettingsRow>
         <SettingsRow title="Import from TV Time" sub="JSON export recommended, CSV fallback available">
